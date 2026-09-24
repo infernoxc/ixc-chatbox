@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!-- Part of IXC - Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
+     Diagnostics: http://localhost:8767/diag  (also works as an OBS dock). Costs nothing while closed: IXC only samples while a panel is open. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IXC Diagnostics</title>
+<style>
+  :root { --bg: #0f0e13; --card: #17161c; --line: #2a2830; --dim: #9b98a4; --ok: #6be38a; --bad: #ff7a7a; --warn: #ffcf6b; --red: #e3141e; }
+  * { box-sizing: border-box; } html, body { margin: 0; background: var(--bg); color: #eeedf2; font: 13px "Bahnschrift", "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; background: #16161b; border-bottom: 2px solid var(--red); padding: 8px 12px; display: flex; gap: 10px; align-items: center; z-index: 2; }
+  header b { font-size: 15px; } header span { color: var(--dim); font-size: 12px; } header button { margin-left: auto; }
+  button { background: #1f1e25; border: 1px solid #34323c; color: #e8e7ec; border-radius: 7px; padding: 4px 9px; font: 600 12px "Bahnschrift", sans-serif; cursor: pointer; }
+  main { padding: 10px 12px 30px; display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-width: 0; }
+  h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .8px; color: var(--dim); text-transform: uppercase; display: flex; gap: 6px; align-items: center; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: inline-block; } .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+  table { width: 100%; border-collapse: collapse; } td { padding: 2px 0; vertical-align: top; } td:first-child { color: var(--dim); width: 42%; padding-right: 8px; } td:last-child { overflow-wrap: anywhere; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  #events { grid-column: 1 / -1; } #events pre { margin: 0; max-height: 300px; overflow: auto; font: 11px Consolas, monospace; color: #cfcdd6; white-space: pre-wrap; }
+  #off { display: none; padding: 30px; text-align: center; color: var(--dim); }
+</style>
+</head>
+<body>
+<header><b>IXC Diagnostics</b><span id="ver"></span><span id="conn">connecting…</span><button id="pause">Pause</button></header>
+<div id="off"></div>
+<main id="grid"></main>
+<script src="/core/ixc.js"></script>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let paused = false, last = null;
+const link = IXC.connect({ role: 'diag', topics: ['diag'], onState: (up) => { document.getElementById('conn').innerHTML = up ? '<span class="ok">live</span>' : '<span class="bad">IXC not running</span>'; if (up) link.send({ type: 'diag.get' }); },
+  on: (m) => { if (m.type === 'diag' && !paused) { last = m.d; render(m.d); } } });
+document.getElementById('pause').onclick = (e) => { paused = !paused; e.target.textContent = paused ? 'Resume' : 'Pause'; if (!paused && last) render(last); };
+const good = (b) => b ? 'ok' : 'bad';
+const row = (k, v, cls) => `<tr><td>${esc(k)}</td><td class="${cls || ''}">${v === null || v === undefined || v === '' ? '-' : esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`;
+const sec = (title, dot, rows) => `<section><h2><i class="dot ${dot}"></i>${esc(title)}</h2><table>${rows.join('')}</table></section>`;
+function render(d) {
+  document.getElementById('ver').textContent = 'v' + d.version + ' · ' + d.time;
+  if (d.disabled) { document.getElementById('off').style.display = 'block'; document.getElementById('off').textContent = 'Diagnostics are turned off (diagnostics.enabled in config.json).'; return; }
+  const p = d.process, c = d.clients, out = [];
+  out.push(sec('IXC Core process', p.cpuPercent < 1 ? 'ok' : 'warn', [row('CPU', p.cpuPercent + ' %'), row('RAM (working set)', p.ramMB + ' MB'), row('Private memory', p.privateMB + ' MB'), row('Threads / handles', p.threads + ' / ' + p.handles),
+    row('Up for', Math.floor(p.uptimeSec / 3600) + 'h ' + Math.floor(p.uptimeSec % 3600 / 60) + 'm'), row('Errors', p.errors, p.errors ? 'warn' : ''), row('Reconnects', p.reconnects)]));
+  out.push(sec('Pages connected', c.musicPlayer || c.ttsPlayer ? 'ok' : 'warn', [row('Music player (OBS source)', c.musicPlayer, good(c.musicPlayer)), row('Music docks', c.musicDock), row('TTS sources (OBS)', c.ttsPlayer, good(c.ttsPlayer)), row('Chat pages', c.chatPages), row('Phones', c.phones), row('Diagnostic panels', c.diagPanels)]));
+  if (d.chat) { const ch = d.chat; out.push(sec('Chat (Streamer.bot)', ch.streamerbot === 'connected' ? 'ok' : 'bad', [row('Streamer.bot', ch.streamerbot, ch.streamerbot === 'connected' ? 'ok' : 'bad'), row('Authentication', ch.auth, ch.auth === 'ok' || ch.auth === 'not required' ? 'ok' : 'warn'),
+    row('Connected since', ch.connectedSince), row('Reconnects', ch.reconnects), row('Messages', ch.messages), row('Per platform', Object.entries(ch.perPlatform || {}).map(([k, v]) => k + ' ' + v).join(', ')),
+    row('Duplicates dropped', ch.duplicatesDropped), row('Last event', ch.lastEvent), row('Viewers', Object.entries(ch.viewers || {}).map(([k, v]) => k + ' ' + (v ?? '-')).join(', ')), row('Your accounts', (ch.yourAccounts || []).join(', '))])); }
+  if (d.tts) { const t = d.tts; out.push(sec('Text-to-speech', !t.enabled ? '' : t.ttsSourcesConnected ? (/offline/.test(t.engine) ? 'warn' : 'ok') : 'bad', [row('TTS', t.enabled ? 'ON' : 'OFF', t.enabled ? 'ok' : ''), row('Voice', t.voice), row('Engine', t.engine, /offline|failed/.test(t.engine) ? 'warn' : ''),
+    row('TTS sources in OBS', t.ttsSourcesConnected, good(t.ttsSourcesConnected)), row('Now', t.current), row('Waiting', t.queue), row('Read / failed', t.played + ' / ' + t.failed), row('Avg. voice time', t.avgSynthMs + ' ms'),
+    row('Not read', Object.entries(t.notRead || {}).map(([k, v]) => k + ': ' + v).join(' · ')), row('Neural voice error', t.neuralError, 'warn'), row('Offline voices', (t.offlineVoices || []).join(', '))])); }
+  if (d.music) { const m = d.music; out.push(sec('Music', m.playerConnected ? 'ok' : 'warn', [row('Player in OBS', m.playerConnected ? 'connected' : 'not connected', good(m.playerConnected)), row('Now', (m.playing ? '▶ ' : '⏸ ') + (m.title || '-')), row('Queue', m.queue), row('Note', m.note),
+    row('Music goes to', (m.destination || '').toUpperCase()), row('OBS routing', m.routing, m.routingOk ? 'ok' : 'warn'), row('OBS', m.obs, /connected/.test(m.obs) ? 'ok' : 'bad'), row('Searches / link checks', m.searches + ' / ' + m.linkChecks), row('Spotify app keys', m.spotifyApp ? 'set' : 'not set')])); }
+  if (d.remote) { const r = d.remote; out.push(sec('Phone access (internet)', r.tunnel === 'online' ? (r.reachable ? 'ok' : 'warn') : '', [row('Tunnel', r.tunnel, r.tunnel === 'online' ? 'ok' : ''), row('Address', r.url), row('Reachable from internet', r.url ? (r.reachable ? 'yes (verified)' : 'not yet') : '-', r.reachable ? 'ok' : ''),
+    row('Signed-in phones', r.sessions), row('Phones connected', r.phones), row('Pairing code active', r.pairingActive ? 'yes (' + r.pairExpiresIn + ' s left)' : 'no'), row('Paired / refused', r.pairings + ' / ' + r.refusedPairings, r.refusedPairings ? 'warn' : ''),
+    row('cloudflared', r.cloudflared), row('Tunnel RAM', r.tunnelRamMB ? r.tunnelRamMB + ' MB' : '-'), row('Last error', r.error, 'warn')])); }
+  out.push(`<section id="events"><h2>Recent events</h2><pre>${esc((d.events || []).slice().reverse().join('\n'))}</pre></section>`);
+  document.getElementById('grid').innerHTML = out.join('');
+}
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Adds (or with -Remove, removes) the IXC custom browser dock(s) in OBS Studio. OBS must be CLOSED.
 # Backs up the OBS settings file first.   Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
-param([ValidateSet('music', 'chat')][string]$App = 'music', [string]$ChannelNames = '', [switch]$Remove)
+param([ValidateSet('music', 'chat')][string]$App = 'music', [switch]$Remove)
 $ErrorActionPreference = 'Stop'
 if (Get-Process obs64 -EA SilentlyContinue) { Write-Host 'Close OBS first (File > Exit), then run this again.' -ForegroundColor Yellow; exit 1 }
 $obs = Join-Path $env:APPDATA 'obs-studio'
@@ -8,10 +8,8 @@ $ini = @("$obs\user.ini", "$obs\global.ini") | ? { (Test-Path $_) -and ([IO.File
 if (-not $ini) { Write-Host 'OBS settings not found. Start OBS once, close it, then run this again.' -ForegroundColor Yellow; exit 1 }
 $dataDir = Join-Path $env:LOCALAPPDATA 'IXC-OBS'
 $port = try { (Get-Content -Raw "$dataDir\config.json" | ConvertFrom-Json).helper.port } catch { $null }; if (-not $port) { $port = 8767 }
-if (-not $ChannelNames -and (Test-Path "$dataDir\channel_names.txt")) { $ChannelNames = (Get-Content "$dataDir\channel_names.txt" -TotalCount 1).Trim() }
-$own = if ($ChannelNames) { '&own=' + [uri]::EscapeDataString($ChannelNames) } else { '' }
 $dock = @{ music = @{ title = 'IXC Music'; url = "http://localhost:$port/music/dock.html" }
-           chat  = @{ title = 'IXC ChatBox'; url = "http://localhost:$port/chat/chat.html?dock=1&viewers=1&size=14&max=150&fade=0$own" } }[$App]
+           chat  = @{ title = 'IXC ChatBox'; url = "http://localhost:$port/chat/chat.html?dock=1&viewers=1&size=14&max=150&fade=0" } }[$App]
 Copy-Item $ini "$ini.before-ixc-$(Get-Date -f yyyyMMdd-HHmmss).bak"
 $t = [IO.File]::ReadAllText($ini)
 $line = [regex]::Match($t, '(?m)^ExtraBrowserDocks=(.*)$')

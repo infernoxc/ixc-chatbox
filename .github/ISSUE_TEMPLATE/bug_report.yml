@@ -4,7 +4,7 @@ labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: "Thanks for reporting! **Never paste your config.json, phone_key.txt, Streamer.bot password or stream keys.**"
+      value: "Thanks for reporting! **Never paste your config.json, Streamer.bot / OBS / Spotify passwords or keys, phone QR links or stream keys.**"
   - type: dropdown
     id: part
     attributes: { label: Which part?, options: [Chat display, Replies / suggestions, Text-to-speech, Phone view, Installer / uninstaller, Other] }
@@ -21,5 +21,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: "Contents of %LOCALAPPDATA%\\IXC-OBS\\helper.log / chat-relay.log (remove anything private)."
+      description: "The *Recent events* from http://localhost:8767/diag and the end of %LOCALAPPDATA%\\IXC-OBS\\ixc-core.log (remove anything private)."
       render: text

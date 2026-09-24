@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!-- Part of IXC - Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
+     Phone remote. Opened from the QR code in the IXC docks, through a secure Cloudflare tunnel (works on mobile data). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0e13">
+<meta name="referrer" content="no-referrer">
+<title>IXC Remote</title>
+<style>
+  :root { --red: #e3141e; --bg: #0f0e13; --card: #17161c; --line: #2a2830; --dim: #9b98a4; --tw: #9146ff; --kick: #53fc18; --yt: #ff0033; --ok: #6be38a; --warn: #ffcf6b; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: #eeedf2; font: 15px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; height: 100dvh; }
+  header { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; background: #16161b; border-bottom: 2px solid var(--red); }
+  header b { font-size: 16px; letter-spacing: .5px; } #net { margin-left: auto; font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
+  #net i { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); } #net.up i { background: var(--ok); }
+  main { flex: 1; overflow: hidden; position: relative; }
+  .tab { position: absolute; inset: 0; overflow-y: auto; padding: 10px 12px 16px; display: none; } .tab.show { display: block; }
+  nav { display: flex; background: #16161b; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex: 1; background: none; border: 0; color: var(--dim); font-family: inherit; font-weight: 600; font-size: 12px; padding: 9px 0 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button span { font-size: 19px; } nav button.sel { color: #fff; } nav button.sel span { filter: drop-shadow(0 0 6px rgba(227,20,30,.8)); }
+  button.b, select, input[type=text], textarea { font-family: inherit; font-weight: 600; font-size: 14px; border-radius: 9px; border: 1px solid #34323c; background: #1f1e25; color: #eee; padding: 9px 12px; }
+  input[type=text], textarea { font-weight: 400; background: #0c0b10; width: 100%; } button.b:active { transform: scale(.97); }
+  button.red { background: var(--red); border-color: var(--red); color: #fff; } button.big { width: 100%; padding: 14px; font-size: 16px; }
+  .row { display: flex; gap: 8px; align-items: center; } .row > * { min-width: 0; } .grow { flex: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+  h3 { margin: 4px 0 8px; font-size: 12px; letter-spacing: .8px; color: var(--dim); text-transform: uppercase; }
+  .dim { color: var(--dim); font-size: 12px; } .ok { color: var(--ok); } .warn { color: var(--warn); }
+  input[type=range] { width: 100%; accent-color: var(--red); height: 28px; }
+  /* chat */
+  #chatTab { display: none; flex-direction: column; padding: 0; } #chatTab.show { display: flex; }
+  #chatList { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  .m { background: var(--card); border-left: 3px solid var(--p); border-radius: 8px; padding: 6px 9px; margin-top: 6px; line-height: 1.35; overflow-wrap: anywhere; font-size: 14px; }
+  .m b { color: var(--n, var(--p)); margin-right: 5px; } .m .tg { font-family: inherit; font-weight: 700; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--p); color: var(--pt); margin-right: 6px; vertical-align: 1px; }
+  .m img { height: 1.5em; vertical-align: middle; } .m.old { opacity: .8; }
+  .twitch { --p: var(--tw); --pt: #fff; } .kick { --p: var(--kick); --pt: #000; } .youtube { --p: var(--yt); --pt: #fff; }
+  #composer { display: flex; gap: 6px; padding: 8px 10px; background: #16161b; border-top: 1px solid var(--line); }
+  #plat { flex: none; min-width: 64px; } #plat.twitch { background: var(--tw); } #plat.kick { background: var(--kick); color: #000; } #plat.youtube { background: var(--yt); }
+  /* lists */
+  .li { display: flex; gap: 8px; align-items: center; padding: 8px 4px; border-top: 1px solid var(--line); font-size: 14px; } .li:first-child { border-top: 0; }
+  .li .x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .li small { color: var(--dim); flex: none; font-size: 11px; }
+  .li button { flex: none; padding: 6px 10px; } .li.cur .x { color: #fff; font-weight: 600; } .li img { width: 52px; height: 30px; object-fit: cover; border-radius: 4px; flex: none; background: #000; }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; } .seg button { padding: 10px 2px; font-size: 12px; }
+  .seg button.sel[data-m=all] { background: var(--red); border-color: var(--red); } .seg button.sel[data-m=twitch] { background: var(--tw); border-color: var(--tw); }
+  .seg button.sel[data-m=kick] { background: var(--kick); border-color: var(--kick); color: #000; } .seg button.sel[data-m=youtube] { background: var(--yt); border-color: var(--yt); }
+  #nowImg { width: 100%; max-height: 34vh; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; display: block; }
+  .tab > .card, .tab > button.big { max-width: 680px; margin-left: auto; margin-right: auto; } #chatList, #composer { max-width: 900px; width: 100%; margin: 0 auto; }
+  .ctl { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 8px; margin-top: 10px; } .ctl button { font-size: 22px; padding: 10px; }
+  #bar { height: 4px; background: #2a2830; border-radius: 2px; margin-top: 8px; overflow: hidden; } #bar i { display: block; height: 100%; width: 0; background: var(--red); }
+  .toggle { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; } .sw { width: 52px; height: 30px; border-radius: 15px; background: #34323c; position: relative; border: 0; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .15s; } .sw.on { background: var(--red); } .sw.on::after { left: 25px; }
+  #pair { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; flex-direction: column; gap: 14px; }
+  #pair.show { display: flex; } #pair h2 { margin: 0; } #pair p { color: var(--dim); margin: 0; line-height: 1.5; max-width: 340px; }
+  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom)); background: #2a2830; color: #fff; padding: 9px 14px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 60; max-width: 90vw; text-align: center; }
+  #toast.show { opacity: 1; }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; } td { padding: 3px 0; vertical-align: top; } td:first-child { color: var(--dim); width: 45%; }
+</style>
+</head>
+<body>
+<header><b>IXC</b><span class="dim">Remote</span><span id="net"><i></i><span id="netT">connecting…</span></span></header>
+<main>
+  <section id="chatTab" class="tab show"><div id="chatList"></div>
+    <div id="composer"><button class="b" id="plat">ALL</button><input type="text" id="msgIn" maxlength="480" placeholder="Reply to chat…" enterkeyhint="send" autocomplete="off"><button class="b red" id="sendBtn">Send</button></div></section>
+  <section id="ttsTab" class="tab">
+    <div class="card"><div class="toggle"><div><b>Read chat aloud</b><div class="dim" id="ttsInfo"></div></div><button class="sw" id="ttsOn" aria-label="TTS on/off"></button></div>
+      <div class="row" style="margin-top:6px"><select id="ttsVoice" class="grow"></select></div>
+      <div class="row" style="margin-top:8px"><select id="ttsRead" class="grow"><option value="all">Read all messages</option><option value="name">Name + message</option><option value="tts">Only !tts messages</option></select></div>
+      <div style="margin-top:8px" class="dim">Speed <span id="vSpeed"></span></div><input type="range" id="sSpeed" min="-50" max="100" step="5">
+      <div class="dim">Volume <span id="vVolume"></span></div><input type="range" id="sVolume" min="0" max="100" step="5">
+      <div class="row" style="margin-top:6px"><button class="b grow" id="ttsTest">Test</button><button class="b grow" id="ttsSkip">Skip</button><button class="b grow" id="ttsClear">Clear</button></div></div>
+    <div class="card"><h3>Now + waiting</h3><div id="ttsQueue"></div></div>
+    <div class="card"><h3>Recently read</h3><div id="ttsHist"></div></div>
+    <div class="card"><h3>Never speak a user</h3><div class="row"><input type="text" id="neverIn" placeholder="username"><button class="b" id="neverAdd">Add</button></div><div id="neverList" style="margin-top:6px"></div></div>
+    <div class="card"><h3>Not read (and why)</h3><div id="ttsSkipped"></div></div>
+  </section>
+  <section id="musicTab" class="tab">
+    <div class="card"><img id="nowImg" alt=""><div style="margin-top:8px;font-weight:600" id="nowT">Nothing playing</div><div class="dim" id="nowS"></div><div id="bar"><i></i></div>
+      <div class="ctl"><button class="b" id="mPrev">&#9198;</button><button class="b red" id="mToggle">&#9654;</button><button class="b" id="mNext">&#9197;</button></div>
+      <div style="margin-top:8px" class="dim">Music volume <span id="vMVol"></span></div><input type="range" id="mVol" min="0" max="100"></div>
+    <div class="card"><h3>Music goes to</h3><div class="seg" id="route"><button class="b" data-m="all">ALL</button><button class="b" data-m="twitch">TWITCH</button><button class="b" data-m="kick">KICK</button><button class="b" data-m="youtube">YOUTUBE</button></div><div class="dim" id="routeS" style="margin-top:6px"></div></div>
+    <div class="card"><h3>Add music</h3><div class="row"><input type="text" id="mq" placeholder="Song name, or YouTube / Spotify link" enterkeyhint="go"><button class="b red" id="mGo">Go</button></div><div id="mRes"></div></div>
+    <div class="card"><h3>Queue</h3><div id="mQueue"></div></div>
+  </section>
+  <section id="statTab" class="tab"><div id="stat" class="card dim">Loading…</div><button class="b big" id="signOut" style="margin-top:6px">Sign this phone out</button></section>
+</main>
+<nav><button data-t="chatTab" class="sel"><span>&#128172;</span>Chat</button><button data-t="ttsTab"><span>&#128266;</span>TTS</button><button data-t="musicTab"><span>&#127925;</span>Music</button><button data-t="statTab"><span>&#128202;</span>Status</button></nav>
+<div id="pair"><h2>IXC Remote</h2><p id="pairMsg">Open the 📱 button in the IXC dock on your PC and scan the QR code with this phone's camera.</p></div>
+<div id="toast"></div>
+<script src="/core/ixc.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let toastT; const say = (t) => { $('toast').textContent = t; $('toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('toast').classList.remove('show'), 3000); };
+const KEY = 'ixc_session';
+const getS = () => { try { return localStorage.getItem(KEY); } catch { return null; } }, setS = (v) => { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch {} };
+let link = null;
+
+// ---------- pairing ----------
+async function start() {
+  const code = new URLSearchParams(location.hash.slice(1)).get('p');
+  if (code) {
+    history.replaceState(null, '', location.pathname);   // the code is single-use; don't leave it in history
+    $('pair').classList.add('show'); $('pairMsg').textContent = 'Pairing with your PC…';
+    try { const r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, device: (navigator.userAgentData && navigator.userAgentData.platform) || (navigator.userAgent.match(/\(([^;)]+)/) || [])[1] || 'phone' }) });
+      const d = await r.json(); if (!r.ok) { $('pairMsg').textContent = d.error || 'Pairing failed.'; return; } setS(d.session); }
+    catch (e) { $('pairMsg').textContent = 'Could not reach your PC. Is IXC running?'; return; }
+  }
+  if (!getS()) { $('pair').classList.add('show'); return; }
+  $('pair').classList.remove('show'); connect();
+}
+function connect() {
+  link = IXC.connect({ role: 'mobile', topics: ['chat', 'tts', 'music.state', 'reload'], session: getS,
+    onAuthFailed: () => { link.close(); setS(null); $('pair').classList.add('show'); $('pairMsg').textContent = 'This phone is signed out (the session expired, IXC restarted, or phones were signed out on the PC). Scan a new QR code from the IXC dock.'; },
+    onState: (up) => { $('net').classList.toggle('up', up); $('netT').textContent = up ? 'live' : 'reconnecting…'; if (up) diag(); },
+    on: onMsg });
+}
+function onMsg(m) {
+  switch (m.type) {
+    case 'chat': chatEvent(m.e); break;
+    case 'chat.history': $('chatList').innerHTML = ''; (m.events || []).forEach(e => chatEvent(e, true)); break;
+    case 'tts.state': tts = m; paintTts(); break;
+    case 'tts.voices': voices = m.voices || []; $('ttsVoice').innerHTML = voices.map(v => `<option value="${esc(v.key)}">${esc(v.label)}${v.isNew ? ' ★' : ''}</option>`).join(''); paintTts(); break;
+    case 'music.state': ms = m.s || {}; msAt = Date.now(); paintMusic(); break;
+    case 'music.route': route = m; paintRoute(); break;
+    case 'diag': paintDiag(m.d); break;
+    case 'error': say('✗ ' + m.error); break;
+  }
+}
+
+// ---------- tabs ----------
+let tab = 'chatTab';
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.t; document.querySelectorAll('nav button').forEach(x => x.classList.toggle('sel', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('show', t.id === tab)); if (tab === 'statTab') diag(); if (tab === 'chatTab') chatBottom(true); });
+
+// ---------- chat ----------
+const TAG = { twitch: 'TWITCH', kick: 'KICK', youtube: 'YT' };
+const pick = (...v) => v.find(x => typeof x === 'string' && x.trim() !== '');
+function chatEvent(p, old) {
+  if (!p || !p.event || !p.data) return; const src = String(p.event.source || '').toLowerCase(), type = String(p.event.type || ''); if (!TAG[src] || (type !== 'ChatMessage' && type !== 'Message')) return;
+  const d = p.data, m = typeof d.message === 'object' && d.message ? d.message : {}, u = d.user || m.user || {};
+  const name = pick(m.displayName, m.username, u.name, u.displayName, u.login, d.displayName, d.userName, d.username) || 'Viewer';
+  let text = pick(m.message, m.text, typeof d.message === 'string' ? d.message : null, d.text, d.content) || ''; if (!text) return;
+  let html = esc(text).replace(/\[emote:(\d+):([^\]\s]*)\]/g, (x, id, nm) => `<img src="https://files.kick.com/emotes/${id}/fullsize" alt="${esc(nm)}">`);
+  const el = document.createElement('div'); el.className = 'm ' + src + (old ? ' old' : ''); const color = src === 'twitch' ? pick(m.color, u.color) : null;
+  el.innerHTML = `<span class="tg">${TAG[src]}</span><b style="${color ? '--n:' + esc(color) : ''}">${esc(name)}</b>${html}`; el.dataset.p = src; el.dataset.n = name;
+  const L = $('chatList'), stick = L.scrollHeight - L.scrollTop - L.clientHeight < 60; L.appendChild(el); while (L.children.length > 200) L.firstChild.remove(); if (stick || old) chatBottom();
+}
+const chatBottom = (force) => requestAnimationFrame(() => { $('chatList').scrollTop = $('chatList').scrollHeight; });
+const PL = ['all', 'twitch', 'kick', 'youtube']; let target = 'all';
+const setTarget = (t) => { target = t; $('plat').textContent = t === 'all' ? 'ALL' : TAG[t]; $('plat').className = 'b ' + (t === 'all' ? '' : t); };
+$('plat').onclick = () => setTarget(PL[(PL.indexOf(target) + 1) % 4]);
+$('chatList').onclick = (e) => { const m = e.target.closest('.m'); if (!m) return; setTarget(m.dataset.p); $('msgIn').value = '@' + m.dataset.n + ' '; $('msgIn').focus(); };
+async function sendChat() { const t = $('msgIn').value.trim(); if (!t || !link) return; $('sendBtn').disabled = true;
+  const d = await link.ask({ type: 'chat.send', platform: target, message: t }, 'chat.sent', 15000); $('sendBtn').disabled = false;
+  const ok = (d.results || []).filter(x => x.ok), bad = (d.results || []).filter(x => !x.ok);
+  if (ok.length) { $('msgIn').value = ''; say('✓ sent to ' + ok.map(x => TAG[x.platform]).join(' + ') + (bad.length ? ' (not ' + bad.map(x => TAG[x.platform]).join(', ') + ')' : '')); } else say('✗ not sent: ' + ((bad[0] && bad[0].error) || d.error || 'Streamer.bot?')); }
+$('sendBtn').onclick = sendChat; $('msgIn').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } };
+
+// ---------- TTS ----------
+let tts = null, voices = [];
+const setTts = (patch) => link && link.send({ type: 'tts.set', patch });
+function paintTts() {
+  if (!tts) return; const s = tts.settings;
+  $('ttsOn').classList.toggle('on', s.enabled); $('ttsInfo').textContent = (s.enabled ? 'ON' : 'OFF') + ' · ' + tts.engine + (tts.players ? '' : ' · ⚠ no TTS source in OBS');
+  if (document.activeElement !== $('ttsVoice')) $('ttsVoice').value = s.voice; if (document.activeElement !== $('ttsRead')) $('ttsRead').value = s.readMode;
+  if (document.activeElement !== $('sSpeed')) $('sSpeed').value = s.speed; $('vSpeed').textContent = (s.speed > 0 ? '+' : '') + s.speed + '%';
+  if (document.activeElement !== $('sVolume')) $('sVolume').value = s.volume; $('vVolume').textContent = s.volume + '%';
+  const row = (h, btn) => `<div class="li"><small>${esc(h.at)}</small><span class="x">${esc(h.text)}</span><small>${esc(h.status)}</small>${btn || ''}</div>`;
+  $('ttsQueue').innerHTML = (tts.current ? [tts.current] : []).concat(tts.queue).map(h => row(h)).join('') || '<div class="dim">Nothing waiting.</div>';
+  $('ttsHist').innerHTML = tts.history.map(h => row(h, `<button class="b" data-r="${h.n}">&#8635;</button>`)).join('') || '<div class="dim">Nothing read yet.</div>';
+  $('ttsSkipped').innerHTML = (tts.skipped || []).map(h => `<div class="li"><span class="x">${esc(h.user ? h.user + ': ' : '')}${esc(h.text)}</span><small>${esc(h.reason)}</small></div>`).join('') || '<div class="dim">Nothing skipped.</div>';
+  $('neverList').innerHTML = (s.neverSpeak || []).map(n => `<div class="li"><span class="x">${esc(n)}</span><button class="b" data-un="${esc(n)}">&#10005;</button></div>`).join('');
+}
+$('ttsOn').onclick = () => tts && setTts({ enabled: !tts.settings.enabled });
+$('ttsVoice').onchange = () => setTts({ voice: $('ttsVoice').value }); $('ttsRead').onchange = () => setTts({ readMode: $('ttsRead').value });
+let spT, voT; $('sSpeed').oninput = (e) => { $('vSpeed').textContent = e.target.value + '%'; clearTimeout(spT); spT = setTimeout(() => setTts({ speed: +e.target.value }), 300); };
+$('sVolume').oninput = (e) => { $('vVolume').textContent = e.target.value + '%'; clearTimeout(voT); voT = setTimeout(() => setTts({ volume: +e.target.value }), 300); };
+$('ttsTest').onclick = () => link.send({ type: 'tts.test', voice: $('ttsVoice').value }); $('ttsSkip').onclick = () => link.send({ type: 'tts.skip' }); $('ttsClear').onclick = () => link.send({ type: 'tts.clear' });
+$('ttsHist').onclick = (e) => { const b = e.target.closest('[data-r]'); if (b) { link.send({ type: 'tts.replay', n: +b.dataset.r }); say('Replaying…'); } };
+$('neverAdd').onclick = () => { const n = $('neverIn').value.trim().replace(/^@/, ''); if (!n || !tts) return; setTts({ neverSpeak: [...(tts.settings.neverSpeak || []), n] }); $('neverIn').value = ''; say('✓ ' + n + ' will never be read'); };
+$('neverList').onclick = (e) => { const b = e.target.closest('[data-un]'); if (b && tts) setTts({ neverSpeak: (tts.settings.neverSpeak || []).filter(x => x !== b.dataset.un) }); };
+
+// ---------- music ----------
+let ms = {}, msAt = 0, route = {};
+const thumb = (it) => it && it.id ? `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg` : '';
+const mcmd = (c) => link && link.send({ type: 'music.cmd', c });
+function paintMusic() {
+  const it = (ms.queue || [])[ms.index]; $('nowT').textContent = ms.title || (it && it.title) || 'Nothing playing';
+  $('nowS').textContent = !ms.ready ? '⚠ music player not open in OBS' : (ms.playing ? '▶ playing' : '⏸ paused') + (ms.note ? ' · ' + ms.note : '');
+  const src = thumb(it); if ($('nowImg').dataset.src !== src) { $('nowImg').dataset.src = src; if (src) $('nowImg').src = src; else $('nowImg').removeAttribute('src'); }
+  $('mToggle').innerHTML = ms.playing ? '&#9208;' : '&#9654;'; if (document.activeElement !== $('mVol') && ms.volume != null) { $('mVol').value = ms.volume; $('vMVol').textContent = ms.volume; }
+  $('mQueue').innerHTML = (ms.queue || []).map((q, i) => `<div class="li ${i === ms.index ? 'cur' : ''}"><img src="${thumb(q)}" alt=""><span class="x">${esc(q.title || q.q || q.id || 'playlist')}</span><button class="b" data-j="${i}">&#9654;</button><button class="b" data-x="${i}">&#10005;</button></div>`).join('') || '<div class="dim">Queue is empty.</div>';
+  mbar(); }
+function mbar() { const pos = (ms.pos || 0) + (ms.playing ? (Date.now() - (ms.t || Date.now())) / 1000 : 0); $('bar').firstElementChild.style.width = ms.dur ? Math.min(100, 100 * pos / ms.dur) + '%' : '0'; }
+setInterval(() => { if (ms.playing && tab === 'musicTab' && !document.hidden) mbar(); }, 1000);
+function paintRoute() { document.querySelectorAll('#route button').forEach(b => b.classList.toggle('sel', b.dataset.m === route.mode)); $('routeS').innerHTML = (route.ok ? '<span class="ok">✓</span> ' : '<span class="warn">⚠</span> ') + esc(route.status || ''); }
+$('mPrev').onclick = () => mcmd({ cmd: 'prev' }); $('mNext').onclick = () => mcmd({ cmd: 'next' }); $('mToggle').onclick = () => mcmd({ cmd: 'toggle' });
+let mvT; $('mVol').oninput = (e) => { $('vMVol').textContent = e.target.value; clearTimeout(mvT); mvT = setTimeout(() => mcmd({ cmd: 'volume', v: +e.target.value }), 200); };
+document.querySelectorAll('#route button').forEach(b => b.onclick = async () => { $('routeS').textContent = 'switching…'; const r = await link.ask({ type: 'music.route', mode: b.dataset.m }, 'music.routed', 15000); if (r.result && !r.result.ok) say('✗ ' + (r.result.error || 'not applied')); });
+$('mQueue').onclick = (e) => { const j = e.target.closest('[data-j]'), x = e.target.closest('[data-x]'); if (j) mcmd({ cmd: 'jump', i: +j.dataset.j }); if (x) mcmd({ cmd: 'remove', i: +x.dataset.x }); };
+let results = [];
+async function mGo() { const s = $('mq').value.trim(); if (!s) return; $('mRes').innerHTML = '<div class="dim" style="margin-top:6px">Working…</div>';
+  if (/^(https?:\/\/|www\.)|youtu\.?be|spotify[.:]/i.test(s)) { const r = await link.ask({ type: 'music.add', url: s, mode: 'add' }, 'music.added', 60000);
+    $('mRes').innerHTML = `<div class="${r.ok ? 'ok' : 'warn'}" style="margin-top:6px">${esc(r.ok ? '✓ Added: ' + r.title + (r.items ? ' (' + r.items.length + ' songs)' : '') : '✗ ' + r.error)}</div>`; if (r.ok) $('mq').value = ''; return; }
+  const r = await link.ask({ type: 'music.search', q: s }, 'music.results', 25000); results = r.results || [];
+  $('mRes').innerHTML = results.slice(0, 8).map((x, i) => `<div class="li"><img src="${thumb(x)}" alt=""><span class="x">${esc(x.title)}</span><button class="b" data-p="${i}">&#9654;</button><button class="b" data-a="${i}">+</button></div>`).join('') || `<div class="dim">${esc(r.error || 'No results.')}</div>`; }
+$('mGo').onclick = mGo; $('mq').onkeydown = (e) => { if (e.key === 'Enter') mGo(); };
+$('mRes').onclick = (e) => { const p = e.target.closest('[data-p]'), a = e.target.closest('[data-a]'); const b = p || a; if (!b) return; const r = results[+(b.dataset.p ?? b.dataset.a)]; mcmd({ cmd: p ? 'playnow' : 'add', item: { id: r.id, title: r.title } }); b.textContent = '✓'; };
+
+// ---------- status ----------
+function diag() { if (link && link.up && tab === 'statTab') link.send({ type: 'diag.get' }); }
+setInterval(() => { if (!document.hidden) diag(); }, 5000);
+function paintDiag(d) {
+  if (d.disabled) { $('stat').textContent = 'Diagnostics are turned off on the PC.'; return; }
+  const r = (k, v, c) => `<tr><td>${esc(k)}</td><td class="${c || ''}">${esc(v ?? '-')}</td></tr>`; const ch = d.chat || {}, t = d.tts || {}, m = d.music || {}, p = d.process;
+  $('stat').innerHTML = `<table>${r('IXC', 'v' + d.version + ' · CPU ' + p.cpuPercent + '% · ' + p.ramMB + ' MB')}${r('Streamer.bot', ch.streamerbot, ch.streamerbot === 'connected' ? 'ok' : 'warn')}${r('Chat messages', ch.messages)}
+    ${r('TTS', (t.enabled ? 'ON' : 'OFF') + ' · ' + (t.engine || ''))}${r('TTS source in OBS', t.ttsSourcesConnected ? 'yes' : 'no', t.ttsSourcesConnected ? 'ok' : 'warn')}${r('TTS waiting / read', (t.queue ?? 0) + ' / ' + (t.played ?? 0))}
+    ${r('OBS', m.obs, /connected/.test(m.obs || '') ? 'ok' : 'warn')}${r('Music player', m.playerConnected ? 'connected' : 'not connected', m.playerConnected ? 'ok' : 'warn')}${r('Music goes to', (m.destination || '').toUpperCase() + ' · ' + (m.routing || ''))}
+    ${r('Phones connected', d.clients.phones)}${r('Tunnel', (d.remote || {}).tunnel)}${r('Errors / reconnects', p.errors + ' / ' + p.reconnects)}</table>
+    <h3 style="margin-top:10px">Recent events</h3><div style="font:11px monospace;white-space:pre-wrap;color:#bbb">${esc((d.events || []).slice(-15).reverse().join('\n'))}</div>`; }
+$('signOut').onclick = () => { if (link) link.send({ type: 'remote.logout' }); setS(null); setTimeout(() => location.reload(), 300); };
+start();
+</script>
+</body>
+</html>

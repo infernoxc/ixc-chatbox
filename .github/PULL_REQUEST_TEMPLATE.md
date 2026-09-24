@@ -5,6 +5,6 @@
 - [ ] Tested in OBS (version: ) on Windows (version: )
 
 ## Checklist
-- [ ] Works on Windows PowerShell 5.1 (and C# 5 for ChatRelay.cs)
+- [ ] Works on Windows PowerShell 5.1 (and C# 5 for src/core/*.cs)
 - [ ] No new downloads/dependencies, no personal paths, names, keys or tokens
 - [ ] CHANGELOG.md updated under [Unreleased]
