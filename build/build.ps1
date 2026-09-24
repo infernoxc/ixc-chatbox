@@ -15,7 +15,7 @@ New-Item -ItemType Directory -Force $stage | Out-Null
 foreach ($item in 'src', 'scripts', 'config', 'docs') { Copy-Item "$repo\$item" "$stage\$item" -Recurse }
 foreach ($file in 'Install.bat', 'Uninstall.bat', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'CHANGELOG.md', 'SECURITY.md', 'VERSION') { Copy-Item "$repo\$file" $stage }
 # never ship local settings / secrets
-Get-ChildItem $stage -Recurse -File -Include 'config.json', 'phone_key.txt', '*.log', 'channel_names.txt' | Remove-Item -Force
+Get-ChildItem $stage -Recurse -File -Include 'config.json', 'phone_key.txt', '*.log', 'channel_names.txt', '*.exe', '*.exe.new', '*.bak' | Remove-Item -Force   # ixc-core.exe is built on the user's PC
 $zip = Join-Path $dist "$name.zip"; if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 # write entries with "/" separators (the ZIP standard) so every unzip tool extracts folders correctly

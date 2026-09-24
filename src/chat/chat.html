@@ -2,16 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IXC ChatBox</title>
 <!--
-  IXC ChatBox - Twitch + Kick + YouTube chat in one place, via Streamer.bot's WebSocket server (default 127.0.0.1:8080).
+  IXC ChatBox - Twitch + Kick + YouTube chat in one place (via Streamer.bot, through IXC).
   Part of IXC ChatBox - Copyright (c) 2026 Ishan (InFerNoxC) - MIT License.
   OVERLAY (on stream):  http://localhost:8767/chat/chat.html?max=6&fade=45            newest at the bottom, old ones fade out
-  DOCK (OBS panel):     http://localhost:8767/chat/chat.html?dock=1&viewers=1&size=14  scrollable, reply box, TTS, suggestions
-  PHONE:                served by the chat relay (http://<your-PC-IP>:8768/?key=...) - only if you enabled phone access
-  Options: size=<px text>  max=<messages kept>  fade=<seconds, 0 = never>  avatars=0  badges=0  demo=1
-           host=<Streamer.bot host>  port=<Streamer.bot WebSocket port>  helper=<IXC Helper port>  relay=<chat relay port>
-           own=<your channel names, comma separated - TTS skips your own bot replies>
+  DOCK (OBS panel):     http://localhost:8767/chat/chat.html?dock=1&viewers=1&size=14  scrollable, reply box, TTS controls, suggestions
+  PHONE:                📱 button in the dock -> QR code (works over mobile data; see docs/USAGE.md)
+  Options: size=<px text>  max=<messages kept>  fade=<seconds, 0 = never>  avatars=0  badges=0  demo=1  viewers=1  alpha=<0-1>
+           direct=1 (overlay only: read Streamer.bot directly, without IXC)  host= / port= (Streamer.bot, with direct=1)
 -->
 <style>
   :root { --size: 20px; }
@@ -20,7 +20,7 @@
   #list { position: fixed; left: 0; right: 0; bottom: 0; top: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 12px; box-sizing: border-box; }
   body.dock { background: #0f0e13; }
   body.dock #list { top: var(--vbar, 0px); overflow-y: auto; justify-content: flex-start; scroll-behavior: smooth; padding: 6px 8px 10px; }
-  body.dock #list::before { content: ""; flex: 1 0 auto; }            /* keeps few messages at the bottom */
+  body.dock #list::before { content: ""; flex: 1 0 auto; }
   #list::-webkit-scrollbar { width: 6px; } #list::-webkit-scrollbar-thumb { background: #3a3842; border-radius: 3px; }
 
   .msg { display: flex; gap: .55em; align-items: flex-start; background: rgba(14, 14, 18, var(--alpha, .55)); border: 1px solid rgba(255,255,255,.05);
@@ -28,6 +28,7 @@
          animation: in .32s cubic-bezier(.2,.9,.3,1) both; }
   body.dock .msg { background: #16151b; margin-top: .35em; }
   .msg.out { animation: out .45s ease forwards; }
+  .msg.old { animation: none; }
   .av { flex: 0 0 auto; width: 1.7em; height: 1.7em; border-radius: 50%; object-fit: cover; background: var(--p); display: grid; place-items: center;
         font-weight: 700; font-size: .85em; color: var(--pt); position: relative; margin-top: .05em; }
   .av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
@@ -41,6 +42,7 @@
   .youtube { --p: #ff0033; --pt: #ffffff; }
   .twitch  { --p: #9146ff; --pt: #ffffff; }
   #status { position: fixed; top: 6px; right: 10px; font-size: 12px; color: #8a8a94; letter-spacing: 1px; opacity: 0; transition: opacity .4s; z-index: 6; }
+  body.dock #status { top: auto; bottom: calc(var(--comp, 0px) + 6px); }
   #status.show { opacity: .9; }
   #newbtn { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 7; display: none; cursor: pointer; border: 0; border-radius: 999px;
             background: #e3141e; color: #fff; font: 600 13px "Bahnschrift", sans-serif; padding: 6px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
@@ -50,19 +52,19 @@
   #vbar { display: none; padding: 7px 10px 5px; font-size: 13px; letter-spacing: .4px; gap: 12px; align-items: center; }
   body.viewers #vbar { display: flex; }
   #tts { display: flex; gap: 6px; align-items: center; padding: 5px 10px 7px; font: 12px "Bahnschrift", sans-serif; color: #b8b6c0; flex-wrap: wrap; }
-  #tts button, #tts select { font: 600 12px "Bahnschrift", sans-serif; border-radius: 6px; border: 1px solid #34323c; background: #1f1e25; color: #e8e7ec; padding: 3px 8px; cursor: pointer; }
+  #tts button, #tts select, #ttsPanel button, #ttsPanel select { font: 600 12px "Bahnschrift", sans-serif; border-radius: 6px; border: 1px solid #34323c; background: #1f1e25; color: #e8e7ec; padding: 3px 8px; cursor: pointer; }
   #tts button.on { background: #e3141e; border-color: #e3141e; color: #fff; }
+  #tts select { max-width: 150px; }
   #tts .sp { flex: 1; }
+  #qn { font-size: 11px; color: #9b98a4; }
   #vbar .v { display: flex; align-items: center; gap: 5px; color: #d8d8de; }
   #vbar .d { width: 8px; height: 8px; border-radius: 50%; background: var(--p); }
   #vbar .n { font-weight: 700; color: #fff; min-width: 14px; }
   #vbar .t { margin-left: auto; color: #fff; font-weight: 700; }
   #vbar .t span { color: #e3141e; }
-  /* platform tag on every message (dock + phone) */
   .tag { display: none; font: 700 .62em "Bahnschrift", sans-serif; letter-spacing: .6px; padding: .1em .45em; border-radius: .35em; margin-right: .45em; vertical-align: .12em; background: var(--p); color: var(--pt); }
   body.dock .tag { display: inline-block; }
   body.dock .msg { cursor: pointer; } body.dock .msg:hover { border-color: rgba(255,255,255,.18); }
-  /* reply bar */
   #composer { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: #16161b; border-top: 2px solid #e3141e; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); gap: 6px; align-items: center; }
   body.dock #composer { display: flex; }
   body.dock #list { bottom: var(--comp, 0px); }
@@ -79,12 +81,22 @@
   #sug .s small { margin-left: auto; color: #8f8c99; font-size: 11px; }
   #sug .s i { width: 8px; height: 8px; border-radius: 50%; background: var(--p, #e3141e); flex: 0 0 auto; }
   #sug .h { padding: 5px 10px 3px; color: #8f8c99; font-size: 11px; letter-spacing: .8px; }
-  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--comp, 44px) + 12px); z-index: 10; background: #24222b; color: #fff; padding: 6px 12px; border-radius: 8px; font: 600 12px "Bahnschrift", sans-serif; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
+  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--comp, 44px) + 12px); z-index: 30; background: #24222b; color: #fff; padding: 6px 12px; border-radius: 8px; font: 600 12px "Bahnschrift", sans-serif; opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 92vw; text-align: center; }
   #toast.show { opacity: 1; }
-  #phoneBox { display: none; position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.82); align-items: center; justify-content: center; flex-direction: column; gap: 10px; font: 13px "Bahnschrift", sans-serif; color: #ddd; text-align: center; padding: 14px; }
-  #phoneBox.show { display: flex; } #phoneBox #qr { background: #fff; padding: 10px; border-radius: 8px; } #phoneBox code { color: #fff; word-break: break-all; font-size: 12px; }
-  body.phone #tts { display: none; }
-  body.phone { --size: 16px; }
+  /* TTS settings drawer */
+  #ttsPanel { display: none; position: fixed; inset: 0; z-index: 20; background: #0f0e13; overflow-y: auto; font: 13px "Bahnschrift", "Segoe UI", sans-serif; color: #e8e7ec; padding: 10px 12px 30px; }
+  #ttsPanel.show { display: block; }
+  #ttsPanel h3 { margin: 4px 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; } #ttsPanel h3 button { margin-left: auto; }
+  #ttsPanel h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: .8px; color: #9b98a4; text-transform: uppercase; }
+  #ttsPanel label.r { display: grid; grid-template-columns: 110px 1fr 46px; align-items: center; gap: 8px; margin: 5px 0; }
+  #ttsPanel label.c { display: flex; align-items: center; gap: 7px; margin: 5px 0; cursor: pointer; }
+  #ttsPanel input[type=range] { accent-color: #e3141e; width: 100%; } #ttsPanel input[type=checkbox] { accent-color: #e3141e; }
+  #ttsPanel textarea { width: 100%; box-sizing: border-box; min-height: 52px; background: #0c0b10; border: 1px solid #34323c; color: #fff; border-radius: 7px; padding: 6px 8px; font: 12px Consolas, monospace; }
+  #ttsPanel .li { display: flex; gap: 6px; align-items: center; padding: 5px 7px; background: #16151b; border-radius: 7px; margin-top: 4px; font-size: 12px; }
+  #ttsPanel .li .x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } #ttsPanel .li small { color: #9b98a4; flex: none; }
+  #ttsPanel .li.playing { border: 1px solid #e3141e; } #ttsPanel .li button { padding: 2px 7px; }
+  #ttsPanel .hint { color: #9b98a4; font-size: 11px; line-height: 1.4; }
+  #ttsPanel .eng { font-size: 11px; color: #9b98a4; margin-bottom: 6px; } #ttsPanel .eng.bad { color: #ffcf6b; }
   @keyframes in  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   @keyframes out { to { opacity: 0; transform: translateX(-12px); } }
 </style>
@@ -93,38 +105,63 @@
 <div id="status"></div>
 <div id="head">
   <div id="vbar"><div class="v twitch"><i class="d"></i>Twitch <b class="n" id="vc-twitch">-</b></div><div class="v kick"><i class="d"></i>Kick <b class="n" id="vc-kick">-</b></div><div class="v youtube"><i class="d"></i>YouTube <b class="n" id="vc-youtube">-</b></div><div class="t">&#128065; <span id="vc-total">0</span> watching</div></div>
-  <div id="tts"><button id="ttsBtn" title="Read chat messages out loud">&#128264; TTS OFF</button>
-    <select id="ttsVoice" title="Voice (neural, heard by viewers too)"><option value="in-male">Indian male</option><option value="in-female">Indian female</option><option value="us-male">US male</option><option value="us-female">US female</option><option value="jarvis">Jarvis-style</option></select>
+  <div id="tts"><button id="ttsBtn" title="Read chat messages out loud (viewers hear it through the IXC ChatBox TTS source)">&#128264; TTS OFF</button>
+    <select id="ttsVoice" title="Voice"></select>
     <select id="ttsRead" title="What to read"><option value="all">read all</option><option value="name">name + message</option><option value="tts">only !tts</option></select>
-    <span class="sp"></span><button id="ttsTest" title="Test the voice">Test</button><button id="ttsSkip" title="Stop current message">Skip</button><button id="phoneBtn" title="Open this chat on your phone">&#128241;</button></div>
+    <span id="qn"></span><span class="sp"></span><button id="ttsTest" title="Test the voice">Test</button><button id="ttsSkip" title="Stop the current message">Skip</button><button id="ttsCfg" title="TTS settings, queue and history">&#9881;</button><button id="phoneBtn" title="Open IXC on your phone (works on mobile data)">&#128241;</button></div>
 </div>
 <div id="list"></div>
 <button id="newbtn">&#8595; new messages</button>
 <div id="sug"></div>
 <div id="toast"></div>
 <div id="composer"><button id="plat" title="Where to send (click to change)">ALL</button><input id="msgIn" type="text" autocomplete="off" maxlength="480" placeholder="Reply to chat...  ( ! = commands   @ = users )"><button id="sendBtn">Send</button></div>
-<div id="phoneBox"><div style="font-size:15px;color:#fff;font-weight:700">Open chat on your phone</div><div>Phone must be on the same Wi-Fi / network as this PC. Scan:</div><div id="qr"></div><code id="phoneUrl"></code><div style="color:#8f8c99">Keep this link private - it lets someone type in your chat.</div><button id="phoneClose" style="margin-top:6px;background:#e3141e;border:0;color:#fff;border-radius:7px;padding:7px 16px;font:700 13px Bahnschrift">Close</button></div>
+<div id="ttsPanel">
+  <h3>Chat TTS <span id="tpState" style="font-size:12px;color:#9b98a4"></span><button id="tpClose">Close</button></h3>
+  <div class="eng" id="tpEng"></div>
+  <h4>Queue</h4><div id="tpQueue"></div><div style="margin-top:6px"><button id="tpSkip">Skip current</button> <button id="tpClear">Clear queue</button></div>
+  <h4>Voice</h4>
+  <label class="r">Speed <input id="sSpeed" type="range" min="-50" max="100" step="5"><span id="vSpeed"></span></label>
+  <label class="r">Pitch <input id="sPitch" type="range" min="-30" max="30" step="1"><span id="vPitch"></span></label>
+  <label class="r">Volume <input id="sVolume" type="range" min="0" max="100" step="5"><span id="vVolume"></span></label>
+  <label class="c"><input type="checkbox" id="cFallback"> If the neural voice fails, use the offline Windows voice</label>
+  <h4>What gets read</h4>
+  <label class="c"><input type="checkbox" id="cIgnoreOwn"> Ignore my own account (and my replies)</label>
+  <label class="c"><input type="checkbox" id="cIgnoreBots"> Ignore bot accounts (Streamer.bot, Nightbot, BotRix…)</label>
+  <label class="c"><input type="checkbox" id="cReadEmotes"> Read emote names</label>
+  <label class="c"><input type="checkbox" id="cReadEmoji"> Read emoji</label>
+  <label class="c"><input type="checkbox" id="cReadLinks"> Read links out (otherwise "link")</label>
+  <label class="r">Max length <input id="sMaxChars" type="range" min="40" max="500" step="10"><span id="vMaxChars"></span></label>
+  <div>Never speak these users <span class="hint">(one per line)</span></div><textarea id="tNever" spellcheck="false"></textarea>
+  <div style="margin-top:6px">Skip messages containing <span class="hint">(one per line)</span></div><textarea id="tBlocked" spellcheck="false"></textarea>
+  <div style="margin-top:6px">Extra bot names <span class="hint">(one per line)</span></div><textarea id="tBots" spellcheck="false"></textarea>
+  <div style="margin-top:6px">My other account names <span class="hint">(found automatically from Streamer.bot; add any it missed)</span></div><textarea id="tOwn" spellcheck="false"></textarea>
+  <div style="margin-top:6px"><button id="tpSaveLists">Save lists</button></div>
+  <h4>Busy chat</h4>
+  <label class="r">Queue size <input id="sQueueMax" type="range" min="1" max="30" step="1"><span id="vQueueMax"></span></label>
+  <label class="r">Too old after <input id="sStaleSec" type="range" min="10" max="300" step="5"><span id="vStaleSec"></span></label>
+  <label class="r">Max per minute <input id="sPerMinute" type="range" min="1" max="60" step="1"><span id="vPerMinute"></span></label>
+  <label class="r">Same user wait <input id="sUserCooldownSec" type="range" min="0" max="60" step="1"><span id="vUserCooldownSec"></span></label>
+  <div class="hint">When the queue is full the oldest message is dropped. Messages still waiting after "too old" are skipped, so TTS stays in step with chat. !tts messages go first.</div>
+  <h4>Recently read</h4><div id="tpHist"></div>
+  <h4>Not read (and why)</h4><div id="tpSkipped"></div>
+</div>
+<script src="/core/ixc.js"></script>
+<script src="/core/phone.js"></script>
 <script>
 (() => {
   const q = new URLSearchParams(location.search);
-  const HOST = q.get('host') || '127.0.0.1', PORT = q.get('port') || '8080';
-  const RELAY_PORT = String(q.get('relay') || 8768), HELPER_PORT = String(q.get('helper') || 8767);
-  const PHONE = location.port === RELAY_PORT;                   // opened from the chat relay (phone / other device)
-  const DOCK = PHONE || !!(q.get('dock') || q.get('bg'));
-  const RELAY = PHONE ? '' : `http://localhost:${RELAY_PORT}`;
-  let KEY = q.get('key') || ''; try { if (PHONE) { if (KEY) localStorage.setItem('ixc_key', KEY); else KEY = localStorage.getItem('ixc_key') || ''; } } catch {}
-  const api = (p) => `${RELAY}/api/${p}${p.includes('?') ? '&' : '?'}key=${encodeURIComponent(KEY)}`;
-  if (PHONE) { document.body.classList.add('phone'); const vm = document.createElement('meta'); vm.name = 'viewport'; vm.content = 'width=device-width, initial-scale=1, viewport-fit=cover'; document.head.appendChild(vm); }
+  const DOCK = !!(q.get('dock') || q.get('bg'));
+  const DIRECT = q.get('direct') === '1';
   const MAX = +(q.get('max') || (DOCK ? 150 : 14)), FADE = +(q.get('fade') ?? (DOCK ? 0 : 90)) * 1000;
   const SHOW_AV = q.get('avatars') !== '0', SHOW_BADGES = q.get('badges') !== '0';
-  document.documentElement.style.setProperty('--size', (+(q.get('size') || (PHONE ? 16 : DOCK ? 14 : 16))) + 'px');
+  document.documentElement.style.setProperty('--size', (+(q.get('size') || (DOCK ? 14 : 16))) + 'px');
   document.documentElement.style.setProperty('--alpha', q.get('alpha') || (DOCK ? '1' : '.55'));
   if (DOCK) document.body.classList.add('dock');
   const list = document.getElementById('list'), newbtn = document.getElementById('newbtn'), status = document.getElementById('status');
   const setStatus = (t) => { status.textContent = t; status.classList.toggle('show', !!t); };
   const LETTER = { kick: 'K', youtube: '▶', twitch: 'T' };
   const TAG = { kick: 'KICK', youtube: 'YT', twitch: 'TWITCH' };
-  const USERS = new Map();                                     // recent chatters (for @ suggestions), newest last
+  const USERS = new Map();
 
   // ---------- scrolling (dock): follow new messages unless the user scrolled up ----------
   let follow = true;
@@ -139,22 +176,18 @@
   const emoteUrl = (e) => e && (e.imageUrl || e.ImageUrl || e.url || e.image || (e.images && (e.images.url || e.images[0])) ||
                                (e.id && e.provider === 'twitch' ? `https://static-cdn.jtvnw.net/emoticons/v2/${e.id}/default/dark/2.0` : null));
   function renderText(text, emotes, parts) {
-    // 1) message split into parts (YouTube / some Kick payloads): [{text}] and [{emote/imageUrl}]
     if (Array.isArray(parts) && parts.length) {
-      return parts.map(p => { if (typeof p === 'string') return esc(p); const u = emoteUrl(p.emote || p) ; if (u && (p.emote || p.imageUrl || p.url)) return img(u, p.text || (p.emote && p.emote.name) || p.name);
+      return parts.map(p => { if (typeof p === 'string') return esc(p); const u = emoteUrl(p.emote || p); if (u && (p.emote || p.imageUrl || p.url)) return img(u, p.text || (p.emote && p.emote.name) || p.name);
         return esc(p.text ?? ''); }).join('');
     }
     text = String(text || '');
-    // 2) emotes with positions (Twitch / Kick): replace by index, counting unicode code points
     const pos = (emotes || []).filter(e => e && Number.isInteger(e.startIndex) && Number.isInteger(e.endIndex) && emoteUrl(e)).sort((a, b) => a.startIndex - b.startIndex);
     if (pos.length) {
       const cp = Array.from(text); let out = '', i = 0;
       for (const e of pos) { if (e.startIndex < i) continue; out += esc(cp.slice(i, e.startIndex).join('')); out += img(emoteUrl(e), e.name || e.code || cp.slice(e.startIndex, e.endIndex + 1).join('')); i = e.endIndex + 1; }
       return out + esc(cp.slice(i).join(''));
     }
-    // 3) Kick inline codes [emote:12345:name]
     let html = esc(text).replace(/\[emote:(\d+):([^\]\s]*)\]/g, (m, id, nm) => img(`https://files.kick.com/emotes/${id}/fullsize`, nm));
-    // 4) emotes known only by name: replace whole words
     const named = (emotes || []).filter(e => e && (e.name || e.code) && emoteUrl(e));
     if (named.length) { const map = new Map(named.map(e => [e.name || e.code, emoteUrl(e)]));
       html = html.split(/(\s+)/).map(w => map.has(w) ? img(map.get(w), w) : w).join(''); }
@@ -162,9 +195,9 @@
   }
 
   // ---------- one chat line ----------
-  function add(m) {
+  function add(m, old) {
     if (!m.text && !m.html) return;
-    const el = document.createElement('div'); el.className = 'msg ' + m.platform;
+    const el = document.createElement('div'); el.className = 'msg ' + m.platform + (old ? ' old' : '');
     const av = document.createElement('div'); av.className = 'av';
     if (SHOW_AV && m.avatar) { const im = new Image(); im.src = m.avatar; im.alt = ''; im.onerror = () => { im.remove(); av.prepend(document.createTextNode((m.name || '?')[0].toUpperCase())); }; av.appendChild(im); }
     else av.textContent = (m.name || LETTER[m.platform] || '?')[0].toUpperCase();
@@ -172,14 +205,13 @@
     const body = document.createElement('div'); body.className = 'body';
     const badges = SHOW_BADGES ? (m.badges || []).map(b => `<img class="badge" src="${esc(b)}" alt="">`).join('') : '';
     body.innerHTML = `<span class="tag">${TAG[m.platform] || ''}</span>${badges}<span class="name" style="--n:${esc(m.color || 'var(--p)')}">${esc(m.name || 'Viewer')}</span><span class="text">${m.html ?? esc(m.text)}</span>`;
-    el.dataset.p = m.platform; el.dataset.n = m.name || '';
+    el.dataset.p = m.platform; el.dataset.n = m.name || ''; if (m.id) el.dataset.id = m.id;
     el.append(av, body); list.appendChild(el);
     if (m.name) { USERS.delete(m.name.toLowerCase()); USERS.set(m.name.toLowerCase(), { name: m.name, platform: m.platform }); }
     const msgs = list.querySelectorAll('.msg:not(.out)');
-    if (msgs.length > MAX) { const old = msgs[0]; if (DOCK) old.remove(); else remove(old); }
-    if (FADE > 0) setTimeout(() => remove(el), FADE);
+    if (msgs.length > MAX) { const o = msgs[0]; if (DOCK) o.remove(); else remove(o); }
+    if (FADE > 0 && !old) setTimeout(() => remove(el), FADE); else if (FADE > 0 && old) el.remove();
     toBottom();
-    ttsFor(m);
   }
   function remove(el) { if (!el || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 480); }
 
@@ -198,113 +230,123 @@
     const parts = arr(m.parts, d.parts);
     const badges = arr(m.badges, u.badges, d.badges).map(b => typeof b === 'string' ? b : (b.imageUrl || b.image || b.url)).filter(x => typeof x === 'string' && /^https?:/.test(x));
     const partsHtml = parts.length && parts.some(p => p && (p.emote || p.imageUrl)) ? renderText('', null, parts) : null;
-    return { platform: src, name, text, color: src === 'twitch' ? color : null, avatar: avatar || (src === 'twitch' ? twitchAvatar(name, u) : null),
-             badges, html: partsHtml ?? renderText(text, emotes, null) };
+    const id = pick(m.msgId, m.messageId, m.id, d.messageId, d.msgId, d.eventId, d.id);
+    return { platform: src, id, name, text, color: src === 'twitch' ? color : null, avatar, badges, html: partsHtml ?? renderText(text, emotes, null) };
   }
-  function twitchAvatar(name, u) { const login = (u.login || u.name || name || '').toLowerCase(); return null && login; }   // Twitch sends no avatar in chat events
 
-  // ---------- viewer counter (optional: ?viewers=1) ----------
+  // ---------- viewer counter (?viewers=1) ----------
   const VC = { twitch: null, kick: null, youtube: null };
   if (q.get('viewers')) document.body.classList.add('viewers');
-  // dock header height follows the dock size (the toolbar wraps on narrow docks); keep the newest message in view on resize
   const head = document.getElementById('head');
   const fitHead = () => { document.documentElement.style.setProperty('--vbar', (DOCK ? head.offsetHeight : 0) + 'px'); if (DOCK && follow) list.scrollTop = list.scrollHeight; };
   if (window.ResizeObserver) { new ResizeObserver(fitHead).observe(head); new ResizeObserver(fitHead).observe(document.body); } else window.addEventListener('resize', fitHead);
   requestAnimationFrame(fitHead);
-
-  // ---------- TTS (dock only, so overlays never double-speak) ----------
-  const TTS = { on: false, voice: 'in-male', read: 'all', queue: 0, lastCmd: 0 };
-  const HELPER = (/^https?:/.test(location.protocol) && location.port === HELPER_PORT) ? location.origin + '/api' : `http://localhost:${HELPER_PORT}/api`;   // neural voices, played by the OBS "IXC ChatBox TTS" source -> viewers hear it too
-  let helperOk = true;
-  const store = { get: (k, d) => { try { return localStorage.getItem('ixc_' + k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem('ixc_' + k, v); } catch {} } };
-  const synth = window.speechSynthesis;
-  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const OWN_NAMES = (q.get('own') || '').split(',').map(s => s.trim()).filter(Boolean).map(escRe);
-  const OWN = new RegExp('^(' + [...OWN_NAMES, 'streamer\\.?bot', 'kickbot', 'botrix', 'nightbot', 'streamelements'].join('|') + ')$', 'i');
-  function pickVoice(kind) {   // local Windows fallback voices (only you hear these)
-    const v = synth ? synth.getVoices() : []; const f = (re) => v.find(x => re.test(x.name));
-    if (/female/.test(kind)) return f(/Zira|Aria|Jenny|Hazel|Susan|female/i) || v[0];
-    if (kind === 'jarvis') return f(/Mark|George|Ryan|Guy|David/i) || v[0];
-    return f(/David|Guy|Mark|male/i) || v[0];
-  }
-  function speakLocal(text) {
-    if (!synth) return; const u = new SpeechSynthesisUtterance(text.slice(0, 220)); const vo = pickVoice(TTS.voice); if (vo) u.voice = vo;
-    if (TTS.voice === 'jarvis') { u.pitch = 0.8; u.rate = 1.06; } synth.speak(u);
-  }
-  function speak(text, force) {
-    if (!TTS.on && !force) return;
-    fetch(`${HELPER}/say`, { method: 'POST', body: JSON.stringify({ text: text.slice(0, 240), voice: TTS.voice }) })
-      .then(r => { helperOk = r.ok; if (!r.ok) speakLocal(text); }).catch(() => { helperOk = false; speakLocal(text); });
-  }
-  function ttsFor(m) {
-    if (!DOCK || PHONE || !m.text) return;
-    let t = m.text.trim();
-    if (t.startsWith('!')) TTS.lastCmd = Date.now();
-    if (!TTS.on) return;
-    const own = OWN.test((m.name || '').trim());
-    if (own && (Date.now() - TTS.lastCmd < 2500 || /https?:\/\/|\.com|\.gg\b|discord|instagram|twitch\.tv|kick\.com/i.test(t))) return;   // your bot's replies / timers
-    if (/^(streamer\.?bot|kickbot|botrix|nightbot|streamelements)$/i.test((m.name || '').trim())) return;
-    if (TTS.read === 'tts') { if (!/^!tts\s+/i.test(t)) return; t = t.replace(/^!tts\s+/i, ''); } else if (t.startsWith('!')) return;
-    t = t.replace(/https?:\/\/\S+/g, 'link').replace(/\[emote:\d+:([^\]]*)\]/g, '$1').replace(/(.)\1{4,}/g, '$1$1$1');
-    if (!t) return;
-    speak(TTS.read === 'name' ? `${m.name} says ${t}` : t);
-  }
-  if (DOCK && !PHONE) {
-    const b = document.getElementById('ttsBtn'), sv = document.getElementById('ttsVoice'), sr = document.getElementById('ttsRead');
-    TTS.on = store.get('tts_on', '0') === '1'; TTS.voice = store.get('tts_voice', 'in-male'); TTS.read = store.get('tts_read', 'name');
-    if (![...sv.options].some(o => o.value === TTS.voice)) TTS.voice = 'in-male';
-    const paint = () => { b.textContent = (TTS.on ? '\u{1F50A} TTS ON' : '\u{1F508} TTS OFF'); b.classList.toggle('on', TTS.on); sv.value = TTS.voice; sr.value = TTS.read; };
-    b.onclick = () => { TTS.on = !TTS.on; store.set('tts_on', TTS.on ? '1' : '0'); if (!TTS.on && synth) synth.cancel(); paint(); };
-    sv.onchange = () => { TTS.voice = sv.value; store.set('tts_voice', TTS.voice); };
-    sr.onchange = () => { TTS.read = sr.value; store.set('tts_read', TTS.read); };
-    document.getElementById('ttsTest').onclick = () => speak(TTS.voice === 'jarvis' ? 'Good evening. All systems are online, and chat is connected.' : 'Chat text to speech is working.', true);
-    document.getElementById('ttsSkip').onclick = () => { if (synth) synth.cancel(); fetch(`${HELPER}/skip`, { method: 'POST', body: '{}' }).catch(() => {}); };
-    if (synth && synth.onvoiceschanged !== undefined) synth.onvoiceschanged = () => {};
-    paint();
-  }
   function findCount(o, depth) { if (!o || typeof o !== 'object' || depth > 4) return null;
     for (const [k, v] of Object.entries(o)) if (typeof v === 'number' && /viewer|concurrent|watching/i.test(k)) return v;
     for (const v of Object.values(o)) { const r = findCount(v, depth + 1); if (r !== null) return r; } return null; }
-  function setVC(p, n) { VC[p] = n; const el = document.getElementById('vc-' + p); if (el) el.textContent = (n === null ? '-' : n);
+  function setVC(p, n) { VC[p] = n; const el = document.getElementById('vc-' + p); if (el) el.textContent = (n === null || n === undefined ? '-' : n);
     document.getElementById('vc-total').textContent = Object.values(VC).reduce((a, b) => a + (b || 0), 0); }
   function onViewers(src, type, data) {
     if ((src === 'twitch' || src === 'kick') && type === 'ViewerCountUpdate') { const n = findCount(data, 0); if (n !== null) setVC(src, n); return true; }
     if (src === 'youtube' && type === 'StatisticsUpdated') { const n = findCount(data, 0); if (n !== null) setVC('youtube', n); return true; }
     if (type === 'StreamOffline' || type === 'BroadcastEnded') { setVC(src, null); return true; }
     return false; }
-
-  // ---------- Streamer.bot connection ----------
-  let ws, retry = 1000;
-  function connect() {
-    try { ws = new WebSocket(`ws://${HOST}:${PORT}/`); } catch (e) { return later(); }
-    ws.onopen = () => { retry = 1000; setStatus('');
-      ws.send(JSON.stringify({ request: 'Subscribe', id: 'ixc-chat', events: { Twitch: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'], YouTube: ['Message', 'StatisticsUpdated', 'BroadcastEnded'], Kick: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'] } })); };
-    ws.onmessage = (ev) => { let p; try { p = JSON.parse(ev.data); } catch { return; } handleEvent(p); };
-    ws.onclose = () => { setStatus('CHAT RECONNECTING'); later(); };
-    ws.onerror = () => { try { ws.close(); } catch {} };
-  }
-  function later() { setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); }
-  function handleEvent(p) {
+  function handleEvent(p, old) {
     if (!p || !p.event || !p.data) return;
     const src = String(p.event.source || '').toLowerCase(); if (!['twitch', 'youtube', 'kick'].includes(src)) return;
-    if (onViewers(src, String(p.event.type || ''), p.data)) return;
-    add(parse(src, p.data));
+    const type = String(p.event.type || '');
+    if (onViewers(src, type, p.data)) return;
+    if (/Deleted|Banned|TimedOut/.test(type)) { hideFrom(src, p.data); return; }
+    if (type !== 'ChatMessage' && type !== 'Message') return;
+    add(parse(src, p.data), old);
   }
-  // ---------- phone: chat comes from the relay (it keeps the last messages, so the phone also sees history) ----------
-  let pollSeq = -1;
-  async function poll() {
-    try { const r = await fetch(api(`events?since=${pollSeq}`), { cache: 'no-store' });
-      if (r.status === 403) { setStatus('WRONG / MISSING KEY - scan the QR again'); return setTimeout(poll, 5000); }
-      const d = await r.json(); if (pollSeq >= 0 && d.seq < pollSeq) pollSeq = -1;     // relay restarted
-      for (const e of d.events || []) handleEvent(e); pollSeq = d.seq; setStatus('');
-    } catch (e) { setStatus('CONNECTING TO PC...'); }
-    setTimeout(poll, 1000);
+  function hideFrom(src, d) {   // moderation: remove deleted messages / messages of banned users from the view
+    const id = pick(d.messageId, d.msgId, d.targetMessageId, d.message && d.message.id, d.id); const who = pick(d.user && (d.user.name || d.user.login), d.userName, d.username, d.targetUser && d.targetUser.name);
+    list.querySelectorAll('.msg').forEach(el => { if (el.dataset.p === src && ((id && el.dataset.id === id) || (!id && who && el.dataset.n.toLowerCase() === who.toLowerCase()))) el.remove(); }); }
+
+  // ---------- connection: IXC Core (one shared Streamer.bot connection, history on connect) ----------
+  let link = null, ttsState = null, voices = [];
+  if (q.get('demo')) {
+    const D = [['kick', { user: { name: 'ShadowSniper', profilePicture: '' }, text: 'that spray transfer was insane [emote:37226:KEKW]' }],
+               ['twitch', { message: { displayName: 'Rushkaa', color: '#ff6b6b', message: 'GG Kappa how many kills?', emotes: [{ name: 'Kappa', startIndex: 3, endIndex: 7, imageUrl: 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/2.0' }] } }],
+               ['youtube', { user: { name: 'Aman Verma' }, message: 'first time here, love the setup' }],
+               ['twitch', { message: { displayName: 'neonfox', color: '#4fc3f7', message: 'chicken dinner incoming' } }]];
+    let i = 0; const t = setInterval(() => { add(parse(...D[i++ % D.length])); if (i > 24) clearInterval(t); }, 700);
+  } else if (DIRECT) directConnect();
+  if (!DIRECT) {
+    link = IXC.connect({ role: 'chat', topics: DOCK ? ['chat', 'tts', 'reload'] : ['chat', 'reload'], onState: (up) => setStatus(up ? '' : 'IXC NOT RUNNING'), on: (m) => {
+      if (q.get('demo') && (m.type === 'chat' || m.type === 'chat.history')) return;
+      if (m.type === 'chat') handleEvent(m.e);
+      else if (m.type === 'chat.history') { if (!list.children.length) (m.events || []).forEach(e => handleEvent(e, true)); }
+      else if (m.type === 'chat.status') { setStatus(m.streamerbot ? '' : 'CHAT RECONNECTING'); if (m.viewers) for (const p in m.viewers) setVC(p, m.viewers[p]); }
+      else if (m.type === 'tts.state') { ttsState = m; paintTts(); }
+      else if (m.type === 'tts.voices') { voices = m.voices || []; fillVoices(); }
+      else if (m.type === 'chat.suggest') { CMDS = m.commands || []; VIEWERS = m.users || []; }
+      else if (m.type === 'error') say('✗ ' + m.error);
+    } });
   }
+  function directConnect() {   // legacy: straight to Streamer.bot (overlay only, no TTS)
+    const HOST = q.get('host') || '127.0.0.1', PORT = q.get('port') || '8080'; let ws, retry = 1000;
+    const go = () => { try { ws = new WebSocket(`ws://${HOST}:${PORT}/`); } catch (e) { return setTimeout(go, retry); }
+      ws.onopen = () => { retry = 1000; setStatus(''); ws.send(JSON.stringify({ request: 'Subscribe', id: 'ixc-chat', events: { Twitch: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'], YouTube: ['Message', 'StatisticsUpdated', 'BroadcastEnded'], Kick: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'] } })); };
+      ws.onmessage = (ev) => { let p; try { p = JSON.parse(ev.data); } catch { return; } handleEvent(p); };
+      ws.onclose = () => { setStatus('CHAT RECONNECTING'); setTimeout(go, retry); retry = Math.min(retry * 2, 15000); }; ws.onerror = () => { try { ws.close(); } catch {} }; };
+    go(); }
+
+  // ---------- toast ----------
+  const toast = document.getElementById('toast'); let toastT;
+  const say = (t) => { toast.textContent = t; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 3200); };
+
+  // ---------- TTS controls (settings live in IXC, so every dock / phone shows the same thing) ----------
+  const $ = (id) => document.getElementById(id);
+  const setTts = (patch) => link && link.send({ type: 'tts.set', patch });
+  function fillVoices() { const sv = $('ttsVoice'); const cur = ttsState && ttsState.settings.voice;
+    sv.innerHTML = voices.map(v => `<option value="${esc(v.key)}">${esc(v.label)}${v.isNew ? ' ★' : ''}</option>`).join(''); if (cur) sv.value = cur; }
+  const SLIDERS = { speed: v => (v > 0 ? '+' : '') + v + '%', pitch: v => (v > 0 ? '+' : '') + v + 'Hz', volume: v => v + '%', maxChars: v => v, queueMax: v => v, staleSec: v => v + 's', perMinute: v => v, userCooldownSec: v => v + 's' };
+  const CHECKS = { fallback: 'cFallback', ignoreOwn: 'cIgnoreOwn', ignoreBots: 'cIgnoreBots', readEmotes: 'cReadEmotes', readEmoji: 'cReadEmoji', readLinks: 'cReadLinks' };
+  const LISTS = { neverSpeak: 'tNever', blockedWords: 'tBlocked', botNames: 'tBots', ownNames: 'tOwn' };
+  function paintTts() {
+    if (!DOCK || !ttsState) return; const s = ttsState.settings;
+    const b = $('ttsBtn'); b.textContent = s.enabled ? '\u{1F50A} TTS ON' : '\u{1F508} TTS OFF'; b.classList.toggle('on', s.enabled);
+    if (document.activeElement !== $('ttsVoice')) $('ttsVoice').value = s.voice; if (document.activeElement !== $('ttsRead')) $('ttsRead').value = s.readMode;
+    $('qn').textContent = ttsState.players === 0 ? '⚠ TTS source not in OBS' : (ttsState.queue.length ? ttsState.queue.length + ' waiting' : '');
+    $('qn').title = ttsState.players === 0 ? 'Add http://localhost:8767/chat/tts.html as a browser source in OBS - that is what plays the voice.' : '';
+    if (!$('ttsPanel').classList.contains('show')) return;
+    for (const k in SLIDERS) { const el = $('s' + k[0].toUpperCase() + k.slice(1)); if (document.activeElement !== el) el.value = s[k]; $('v' + k[0].toUpperCase() + k.slice(1)).textContent = SLIDERS[k](s[k]); }
+    for (const k in CHECKS) $(CHECKS[k]).checked = !!s[k];
+    for (const k in LISTS) if (document.activeElement !== $(LISTS[k]) && !$(LISTS[k]).dataset.dirty) $(LISTS[k]).value = (s[k] || []).join('\n');
+    $('tpState').textContent = s.enabled ? 'ON' : 'OFF';
+    $('tpEng').textContent = 'Engine: ' + ttsState.engine + ' · TTS sources in OBS: ' + ttsState.players; $('tpEng').className = 'eng' + (/offline|failed/.test(ttsState.engine) || !ttsState.players ? ' bad' : '');
+    const row = (h, btn) => `<div class="li ${h.status === 'playing' ? 'playing' : ''}"><small>${esc(h.at)}</small><span class="x" title="${esc(h.text)}">${esc(h.text)}</span><small>${esc(h.status)}</small>${btn || ''}</div>`;
+    const cur = ttsState.current ? [ttsState.current] : [];
+    $('tpQueue').innerHTML = cur.concat(ttsState.queue).map(h => row(h)).join('') || '<div class="hint">Nothing waiting.</div>';
+    $('tpHist').innerHTML = ttsState.history.map(h => row(h, `<button data-replay="${h.n}" title="Say it again">&#8635;</button>`)).join('') || '<div class="hint">Nothing read yet.</div>';
+    $('tpSkipped').innerHTML = (ttsState.skipped || []).map(h => `<div class="li"><small>${esc(h.at)}</small><span class="x" title="${esc(h.text)}">${esc(h.user ? h.user + ': ' : '')}${esc(h.text)}</span><small>${esc(h.reason)}</small></div>`).join('') || '<div class="hint">Nothing skipped yet.</div>';
+  }
+  if (DOCK && link) {
+    $('ttsBtn').onclick = () => { if (!ttsState) return say('✗ IXC is not running'); setTts({ enabled: !ttsState.settings.enabled }); };
+    $('ttsVoice').onchange = () => setTts({ voice: $('ttsVoice').value });
+    $('ttsRead').onchange = () => setTts({ readMode: $('ttsRead').value });
+    $('ttsTest').onclick = () => link.send({ type: 'tts.test', voice: $('ttsVoice').value });
+    $('ttsSkip').onclick = $('tpSkip').onclick = () => link.send({ type: 'tts.skip' });
+    $('tpClear').onclick = () => link.send({ type: 'tts.clear' });
+    $('ttsCfg').onclick = () => { $('ttsPanel').classList.add('show'); paintTts(); };
+    $('tpClose').onclick = () => $('ttsPanel').classList.remove('show');
+    $('tpHist').onclick = (e) => { const b = e.target.closest('[data-replay]'); if (b) link.send({ type: 'tts.replay', n: +b.dataset.replay }); };
+    for (const k in SLIDERS) { const id = k[0].toUpperCase() + k.slice(1); let t; $('s' + id).oninput = (e) => { $('v' + id).textContent = SLIDERS[k](+e.target.value); clearTimeout(t); t = setTimeout(() => setTts({ [k]: +e.target.value }), 250); }; }
+    for (const k in CHECKS) $(CHECKS[k]).onchange = (e) => setTts({ [k]: e.target.checked });
+    for (const k in LISTS) $(LISTS[k]).oninput = (e) => e.target.dataset.dirty = '1';
+    $('tpSaveLists').onclick = () => { const p = {}; for (const k in LISTS) { p[k] = $(LISTS[k]).value.split('\n').map(s => s.trim()).filter(Boolean); delete $(LISTS[k]).dataset.dirty; } setTts(p); say('✓ Lists saved'); };
+    // one-time move of v1 settings (they were kept inside this page) into IXC
+    try { if (!localStorage.getItem('ixc_tts_v2')) { const p = {}; const own = (q.get('own') || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (localStorage.getItem('ixc_tts_on') === '1') p.enabled = true; const v = localStorage.getItem('ixc_tts_voice'); if (v) p.voice = v; const r = localStorage.getItem('ixc_tts_read'); if (r) p.readMode = r; if (own.length) p.ownNames = own;
+        if (Object.keys(p).length) setTimeout(() => setTts(p), 800); localStorage.setItem('ixc_tts_v2', '1'); } } catch (e) {}
+  } else if (DOCK) { document.getElementById('tts').style.display = 'none'; }
 
   // ---------- reply bar: send to All / Twitch / Kick / YouTube, ! = commands, @ = users ----------
+  let CMDS = [], VIEWERS = [];
   if (DOCK) {
-    const comp = document.getElementById('composer'), inp = document.getElementById('msgIn'), plat = document.getElementById('plat'), sendBtn = document.getElementById('sendBtn');
-    const sug = document.getElementById('sug'), toast = document.getElementById('toast');
+    const comp = $('composer'), inp = $('msgIn'), plat = $('plat'), sendBtn = $('sendBtn'), sug = $('sug');
     const fitComp = () => document.documentElement.style.setProperty('--comp', comp.offsetHeight + 'px');
     if (window.ResizeObserver) new ResizeObserver(fitComp).observe(comp); fitComp();
     const PL = ['all', 'twitch', 'kick', 'youtube'], PLN = { all: 'ALL', twitch: 'TWITCH', kick: 'KICK', youtube: 'YT' };
@@ -312,14 +354,9 @@
     const setTarget = (t) => { target = PL.includes(t) ? t : 'all'; plat.textContent = PLN[target]; plat.className = target === 'all' ? '' : target; try { localStorage.setItem('ixc_target', target); } catch {} };
     setTarget(target);
     plat.onclick = () => { setTarget(PL[(PL.indexOf(target) + 1) % PL.length]); inp.focus(); };
-    let toastT; const say = (t) => { toast.textContent = t; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 2600); };
-
-    // suggestions data: commands + viewers from the relay, plus everyone who chatted
-    let CMDS = [], VIEWERS = [];
-    const loadSug = () => fetch(api('suggest'), { cache: 'no-store' }).then(r => r.json()).then(d => { CMDS = d.commands || []; VIEWERS = d.users || []; }).catch(() => {});
-    loadSug(); setInterval(loadSug, 60000);
+    const loadSug = () => link && link.send({ type: 'chat.suggest' });
+    setTimeout(loadSug, 1500); setInterval(loadSug, 60000);
     const allUsers = () => { const m = new Map(); for (const v of VIEWERS) m.set(v.name.toLowerCase(), v); for (const [k, v] of USERS) { m.delete(k); m.set(k, v); } return [...m.values()].reverse(); };
-
     let items = [], sel = 0, tok = null;
     function currentToken() { const pos = inp.selectionStart ?? inp.value.length; const before = inp.value.slice(0, pos); const m = before.match(/(^|\s)([!@][^\s]*)$/); return m ? { text: m[2], start: pos - m[2].length, end: pos } : null; }
     function showSug() {
@@ -348,40 +385,18 @@
       if (e.key === 'Enter') { e.preventDefault(); send(); }
     });
     async function send() {
-      const text = inp.value.trim(); if (!text) return; sendBtn.disabled = true;
-      try { const r = await fetch(api('send'), { method: 'POST', body: JSON.stringify({ platform: target, message: text }) }); const d = await r.json();
-        const ok = (d.results || []).filter(x => x.ok).map(x => TAG[x.platform]), bad = (d.results || []).filter(x => !x.ok);
-        if (ok.length) { inp.value = ''; hideSug(); }
-        say(ok.length ? `✓ sent to ${ok.join(' + ')}${bad.length ? '  (not ' + bad.map(x => TAG[x.platform]).join(', ') + ': offline?)' : ''}` : `✗ not sent: ${(bad[0] && bad[0].error) || 'check Streamer.bot'}`);
-      } catch (e) { say('✗ chat relay not running (IXC Chat Relay)'); }
+      const text = inp.value.trim(); if (!text) return; if (!link) return say('✗ reply needs IXC (remove direct=1)'); sendBtn.disabled = true;
+      const d = await link.ask({ type: 'chat.send', platform: target, message: text }, 'chat.sent', 15000);
+      const ok = (d.results || []).filter(x => x.ok).map(x => TAG[x.platform]), bad = (d.results || []).filter(x => !x.ok);
+      if (ok.length) { inp.value = ''; hideSug(); }
+      say(ok.length ? `✓ sent to ${ok.join(' + ')}${bad.length ? '  (not ' + bad.map(x => TAG[x.platform]).join(', ') + ': ' + (bad[0].error || 'offline?') + ')' : ''}` : `✗ not sent: ${(bad[0] && bad[0].error) || d.error || 'check Streamer.bot'}`);
       sendBtn.disabled = false; inp.focus();
     }
     sendBtn.onclick = send;
-    // click a message = reply to that person on their platform
     list.addEventListener('click', (e) => { const m = e.target.closest('.msg'); if (!m || !m.dataset.n) return; setTarget(m.dataset.p); inp.value = '@' + m.dataset.n + ' '; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); });
-
-    // phone button (PC dock): QR code with the private link
-    const pb = document.getElementById('phoneBtn'), box = document.getElementById('phoneBox');
-    if (pb) pb.onclick = async () => {
-      try { const d = await (await fetch(`${RELAY}/api/phone`)).json(); const url = (d.urls || []).find(u => /\/\/(192\.168|10\.|172\.)/.test(u)) || (d.urls || [])[0];
-        document.getElementById('phoneUrl').textContent = url || (d.disabled ? 'Phone access is OFF. Enable it once with scripts\\enable-phone-access.ps1 (see docs/CHAT.md).' : 'no network found'); const qr = document.getElementById('qr'); qr.innerHTML = '';
-        if (url) { if (!window.QRCode) await new Promise((ok) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; s.onload = ok; s.onerror = ok; document.head.appendChild(s); });
-          if (window.QRCode) new QRCode(qr, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); else qr.textContent = '(QR needs internet - type the link instead)'; }
-        box.classList.add('show');
-      } catch (e) { say('✗ chat relay not running'); } };
-    document.getElementById('phoneClose').onclick = () => box.classList.remove('show');
+    $('phoneBtn').onclick = () => IXCPhone.open();
   }
-  if (PHONE) document.body.classList.add('viewers');
-
   window.ixcChatTest = (src, data) => add(parse(src, data));
-
-  if (q.get('demo')) {
-    const D = [['kick', { user: { name: 'ShadowSniper', profilePicture: '' }, text: 'that spray transfer was insane [emote:37226:KEKW]' }],
-               ['twitch', { message: { displayName: 'Rushkaa', color: '#ff6b6b', message: 'GG Kappa how many kills?', emotes: [{ name: 'Kappa', startIndex: 3, endIndex: 7, imageUrl: 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/2.0' }] } }],
-               ['youtube', { user: { name: 'Aman Verma' }, message: 'first time here, love the setup' }],
-               ['twitch', { message: { displayName: 'neonfox', color: '#4fc3f7', message: 'chicken dinner incoming' } }]];
-    let i = 0; const t = setInterval(() => { add(parse(...D[i++ % D.length])); if (i > 24) clearInterval(t); }, 700);
-  } else if (PHONE) { poll(); } else { connect(); }
 })();
 </script>
 </body>

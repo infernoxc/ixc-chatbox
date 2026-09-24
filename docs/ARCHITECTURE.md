@@ -1,43 +1,51 @@
 # Architecture
 
 ```
-OBS Studio                                     your PC                                         internet
-┌──────────────────────────────┐   WS    ┌──────────────────────────────┐
-│ Dock "IXC ChatBox"            │ ──────▶ │ Streamer.bot WebSocket :8080  │ ──▶ Twitch / Kick / YouTube
-│   /chat/chat.html?dock=1      │         └──────────────▲───────────────┘
-│ Overlay /chat/chat.html       │   HTTP  ┌──────────────┴───────────────┐
-│   (reply box, ! and @ lists) ─┼───────▶ │ Chat relay  :8768 (localhost) │   authenticated Streamer.bot client
-│                               │         │ src/chat/relay/ChatRelay.cs   │   (password read on this PC)
-│ Browser source                │   HTTP  ├──────────────────────────────┤
-│   "IXC ChatBox TTS" /chat/tts ┼───────▶ │ IXC Helper  :8767 (localhost) │ ──▶ Microsoft neural voices (TTS)
-└──────────────────────────────┘         │ src/helper/ixc-helper.ps1     │
-  phone (optional, private Wi-Fi, key) ─▶ relay :8768 (only after enable-phone-access.ps1)
+OBS Studio                                   your PC                                            internet
+┌─────────────────────────────┐  one WS   ┌───────────────────────────────────────┐  WS   ┌─────────────────────┐
+│ Dock   /chat/chat.html?dock │ ◀───────▶ │ IXC Core  localhost:8767              │ ◀───▶ │ Streamer.bot :8080  │ ─▶ Twitch / Kick / YouTube
+│ Overlay /chat/chat.html     │ ◀──────── │  src/core/*.cs (ixc-core.exe)         │       └─────────────────────┘
+│ Source /chat/tts.html       │ ◀──────── │  chat · TTS queue · music · diagnostics│ ───▶ Microsoft neural voices (TTS)
+└─────────────────────────────┘  (push)   │  remote listener 127.0.0.1:8769 ─────┐│
+                                          └───────────────────────────────────────┘│
+phone (mobile data) ══ HTTPS/WSS ══▶ Cloudflare ══▶ cloudflared.exe (outbound tunnel) ─┘
 ```
+
+**IXC Core** is one small native program (C# 5 on .NET Framework 4.8), built on your PC by `src/core/build-core.ps1` with the compiler that ships with Windows.
+It replaces the v1 PowerShell helper and chat relay. There's one Streamer.bot connection for everything, and pages get updates **pushed**
+over one WebSocket each, so nothing polls.
 
 | File | Role |
 |---|---|
-| `src/chat/chat.html` | The chat UI: overlay, dock and phone modes, emotes, avatars, badges, viewer counts, TTS controls, reply box and suggestions. Reads chat straight from Streamer.bot; the phone view polls the relay. |
-| `src/chat/tts.html` | Plays queued TTS MP3s inside OBS (1 fps browser source). |
-| `src/chat/relay/ChatRelay.cs` | C# 5, compiled at start by the Windows-built-in compiler (`Add-Type`). One authenticated Streamer.bot connection (`SendMessage`, `GetCommands`, `GetActiveViewers`), the last 300 chat events, and an HTTP API. |
-| `src/chat/relay/chat-relay.ps1` | Loads config, finds Streamer.bot's settings, creates the phone key, starts the relay. |
-| `src/helper/ixc-helper.ps1` | Serves the pages and the TTS queue. Shared with [IXC Music](https://github.com/infernoxc/ixc-music) (which is why it also has music endpoints). |
-| `src/helper/edge-tts.ps1` | Minimal TLS WebSocket client for Microsoft Edge's "Read aloud" voices. |
+| `src/core/Core.cs` | HTTP server, WebSocket hub (topics), config, diagnostics, file serving (no path escapes) |
+| `src/core/Links.cs` | Reconnecting clients for Streamer.bot (authenticated) and OBS (obs-websocket 5) |
+| `src/core/Chat.cs` | Chat events → dedup (by message id) → pages, phones and TTS; replies, `!`/`@` suggestions |
+| `src/core/Tts.cs` | TTS filters, text cleanup, queue policy, Edge neural voices, offline Windows (SAPI) fallback |
+| `src/core/Music.cs` | IXC Music: dock ↔ player, YouTube/Spotify links, audio destination (only when IXC Music is installed) |
+| `src/core/Remote.cs` | Phone access: cloudflared tunnel, one-time pairing, sessions, rate limits |
+| `src/core/web/` | `ixc.js` (page ↔ core link), `phone.js` (QR dialog), `mobile.html` (phone UI), `diag.html` |
+| `src/chat/chat.html`, `tts.html` | Chat UI (dock + overlay) and the TTS player source |
 
-## Relay API (`http://localhost:8768`)
+## TTS pipeline
+`Streamer.bot event → duplicate id? → TTS on? → mirrored on another platform (same person + text within 15 s)? → own account / bot /
+never-speak / blocked word? → command or !tts? → per-user and per-minute limits → cleanup → queue (max size; drop oldest normal item)`
+→ when it's its turn: skip if older than `staleSec` → synthesize (next item is prepared while the current one plays) →
+`tts.play` to the OBS source → the source reports `tts.done` → next. A watchdog moves on if a source never reports back.
+Only the last 5 items keep their audio in memory (for replay).
+
+## HTTP API (`http://localhost:8767`, requests from other websites are refused)
 | Path | Notes |
 |---|---|
-| `GET /api/ping` | `{ok, app, streamerbot, auth, phone, log}` |
-| `GET /api/events?since=N` | Raw Streamer.bot events (`since=-1` returns the last 60) |
-| `POST /api/send` | `{"platform":"all","message":"..."}` (platform: `all`, `twitch`, `kick` or `youtube`) returns per-platform results |
-| `GET /api/suggest` | `{"commands":["!..."],"users":[{name,platform}]}` |
-| `GET /api/phone` | PC only: the phone URL(s) with key, or `{"disabled":true}` |
+| `GET /api/ping` · `GET /api/diag` | status · full diagnostics |
+| `POST /api/chat/send` `{platform, message}` · `GET /api/chat/suggest` · `GET /api/chat/history` | chat |
+| `GET/POST /api/tts/settings` · `GET /api/tts/state` · `POST /api/tts/say {text, voice}` · `POST /api/tts/skip` · `/clear` · `/replay {n}` · `GET /api/tts/audio?n=` | TTS |
+| `GET /api/remote/status` · `POST /api/remote/pair` · `/stop` · `/revoke` | phone access (PC only) |
+| v1: `POST /api/say`, `POST /api/skip`, `GET /api/tts.mp3?n=` | still work |
 
-Requests from other devices need `?key=<phone key>`, and they're only possible when phone access is on.
-
-## Helper TTS API (`http://localhost:8767`)
-`POST /api/say {"text","voice"}` → `{n}` · `GET /api/says?since=N` → `{seq, skip, err, items}` · `GET /api/tts.mp3?n=N` → `audio/mpeg` · `POST /api/skip`.
-`/api/*` rejects requests with a foreign `Origin` header.
+## WebSocket (`/ws`)
+Send `{"type":"hello","role":"chat","topics":["chat","tts"]}` first. Topics: `chat`, `tts`, `tts.play`, `music.state`, `music.cmd`, `remote`, `diag`, `reload`.
+Messages: `chat.send`, `chat.suggest`, `tts.set {patch}`, `tts.test`, `tts.say`, `tts.skip`, `tts.clear`, `tts.replay`, `diag.get`, `ping`.
+Phones use the same protocol through the tunnel, after `{"session": "<token>"}`, and only with an allow-list of topics and messages.
 
 ## Data
-`%LOCALAPPDATA%\IXC-OBS\`: `app\`, `config.json`, `phone_key.txt`, `channel_names.txt`, `helper.log`, `chat-relay.log`.
-TTS preferences are stored in OBS's browser storage.
+`%LOCALAPPDATA%\IXC-OBS\`: `app\` (program), `config.json`, `ixc-core.log`, `bin\cloudflared.exe` (only after you first use the phone remote).

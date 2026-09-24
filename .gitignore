@@ -15,3 +15,7 @@ desktop.ini
 .vscode/
 .idea/
 *.bak
+
+# built on the user's PC by build-core.ps1
+src/core/ixc-core.exe
+*.exe.new

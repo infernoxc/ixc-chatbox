@@ -33,7 +33,7 @@ Uninstallable=yes
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install.ps1"""; StatusMsg: "Installing IXC ChatBox..."; Flags: runhidden waituntilterminated
+Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install.ps1"""; StatusMsg: "Installing IXC ChatBox..."; Flags: runhidden waituntilterminated
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{localappdata}\IXC-OBS\app\scripts\uninstall.ps1"" -App chat"; Flags: runhidden waituntilterminated; RunOnceId: "IXCUninstall"
+Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{localappdata}\IXC-OBS\app\scripts\uninstall.ps1"" -App chat"; Flags: runhidden waituntilterminated; RunOnceId: "IXCUninstall"
