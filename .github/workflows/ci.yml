@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke tests (Windows PowerShell 5.1, fresh-install run)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1
+      - name: Build release ZIP
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -SkipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolkit-zip
+          path: dist/*

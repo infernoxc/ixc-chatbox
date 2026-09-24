@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- Part of IXC ChatBox - https://github.com/infernoxc/ixc-chatbox
+     Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IXC ChatBox - TTS</title>
+<!-- OBS browser source: http://localhost:8767/chat/tts.html  ("Control audio via OBS" ON, all tracks, monitor + output)
+     Plays the chat messages the Chat dock sends when TTS is ON. Audio only - nothing visible. -->
+<style>html,body{margin:0;background:transparent}</style>
+</head>
+<body>
+<script>
+const API = location.origin + '/api', q = new URLSearchParams(location.search), VOL = Math.min(1, +(q.get('vol') || 1));
+let since = -1, skip = -1, queue = [], busy = false, audio = new Audio(); audio.volume = VOL;
+window.ixcTts = { played: 0, failed: 0, last: '' };
+function next() {
+  if (busy || !queue.length) return; busy = true; const n = queue.shift();
+  audio.src = `${API}/tts.mp3?n=${n}`; window.ixcTts.last = n;
+  const done = (ok) => { if (ok) window.ixcTts.played++; else window.ixcTts.failed++; busy = false; setTimeout(next, 250); };
+  audio.onended = () => done(true); audio.onerror = () => done(false);
+  audio.play().catch(() => done(false));
+}
+async function poll() {
+  try { const d = await (await fetch(`${API}/says?since=${Math.max(0, since)}`, { cache: 'no-store' })).json();
+    if (skip >= 0 && d.skip !== skip) { queue = []; audio.pause(); audio.removeAttribute('src'); busy = false; }   // Skip pressed in the dock
+    skip = d.skip;
+    if (since < 0 || d.seq < since) since = d.seq;                   // start, or helper restarted: ignore old messages
+    else { for (const it of d.items || []) queue.push(it.n); since = d.seq; if (queue.length > 5) queue.splice(0, queue.length - 5); next(); } } catch (e) {}
+  setTimeout(poll, 600);
+}
+poll();
+</script>
+</body>
+</html>

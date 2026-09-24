@@ -1,0 +1,17 @@
+# local settings / secrets - never commit
+config.json
+!config/config.example.json
+phone_key.txt
+channel_names.txt
+*.log
+
+# build output
+dist/
+
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.bak

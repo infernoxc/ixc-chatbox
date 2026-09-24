@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest an idea
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes: { label: Your idea, description: What should it do, and why would it help your stream? }
+    validations: { required: true }
+  - type: textarea
+    id: alt
+    attributes: { label: Anything else?, description: Screenshots, examples from other tools, etc. }

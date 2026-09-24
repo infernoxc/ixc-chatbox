@@ -1,0 +1,44 @@
+{
+    "_readme":  "IXC settings. The installer copies this to %LOCALAPPDATA%\\IXC-OBS\\config.json - edit THAT copy, then restart IXC (Start menu \u003e IXC for OBS \u003e Stop, then Start). Never commit your real config.json.",
+    "version":  "1.0.0",
+    "helper":  {
+                   "port":  8767
+               },
+    "tts":  {
+                "enabled":  true,
+                "maxChars":  240,
+                "voices":  {
+                               "in-male":  {
+                                               "voice":  "en-IN-PrabhatNeural"
+                                           },
+                               "in-female":  {
+                                                 "voice":  "en-IN-NeerjaNeural"
+                                             },
+                               "us-male":  {
+                                               "voice":  "en-US-AndrewNeural"
+                                           },
+                               "us-female":  {
+                                                 "voice":  "en-US-JennyNeural"
+                                             },
+                               "jarvis":  {
+                                              "voice":  "en-GB-RyanNeural",
+                                              "rate":  "+6%",
+                                              "pitch":  "-3Hz"
+                                          }
+                           }
+            },
+    "chatRelay":  {
+                      "enabled":  true,
+                      "port":  8768,
+                      "phoneAccess":  false,
+                      "hiddenCommands":  [
+
+                                         ],
+                      "extraCommandsFile":  ""
+                  },
+    "streamerbot":  {
+                        "websocketUrl":  "ws://127.0.0.1:8080/",
+                        "password":  "",
+                        "settingsPath":  "auto"
+                    }
+}

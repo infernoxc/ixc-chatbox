@@ -1,0 +1,31 @@
+name: Release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches VERSION
+        shell: powershell
+        run: |
+          $v = (Get-Content VERSION -TotalCount 1).Trim()
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match VERSION $v" }
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+      - name: Test + build ZIP and installer
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -Installer
+      - name: Create GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $t = "${{ github.ref_name }}"; $notes = "docs\release-notes\$t.md"
+          $files = Get-ChildItem dist -File | % FullName
+          if (Test-Path $notes) { gh release create $t $files --title "IXC ChatBox $t" --notes-file $notes }
+          else { gh release create $t $files --title "IXC ChatBox $t" --generate-notes }
