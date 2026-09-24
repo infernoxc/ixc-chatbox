@@ -27,5 +27,7 @@ jobs:
         run: |
           $t = "${{ github.ref_name }}"; $notes = "docs\release-notes\$t.md"
           $files = Get-ChildItem dist -File | % FullName
+          gh release view $t *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload $t $files --clobber; exit 0 }   # release already made by hand: refresh its files
           if (Test-Path $notes) { gh release create $t $files --title "IXC ChatBox $t" --notes-file $notes }
           else { gh release create $t $files --title "IXC ChatBox $t" --generate-notes }
