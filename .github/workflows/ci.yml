@@ -9,7 +9,7 @@ jobs:
   test-and-build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Smoke tests (Windows PowerShell 5.1, fresh-install run)
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1
