@@ -47,6 +47,15 @@ namespace IXC {
       mode = (mode ?? "all").ToLowerInvariant(); if (mode != "all" && mode != "off" && !Platforms.Contains(mode)) return J.D("ok", false, "error", "mode must be all, twitch, kick, youtube or off");
       if (save) { Cfg.Set("music.routing.mode", mode); Cfg.Save(); }
       if (!Obs.Ready) { routeOk = false; routeStatus = "saved - will apply when OBS connects (" + Obs.Status + ")"; PublishRoute(); return J.D("ok", false, "pending", true, "mode", mode, "error", routeStatus); }
+      // right after OBS opens its WebSocket it can still be loading the scene collection; a request in that window comes
+      // back "OBS is not ready to perform the request" - not a real failure, just early, so retry briefly instead of
+      // surfacing an error (this used to need a second manual click on the destination button to clear)
+      for (int attempt = 1; attempt <= 8; attempt++) {
+        var r = await ApplyRouteOnce(mode);
+        if (!(bool)r["ok"] && (string)r["error"] != null && ((string)r["error"]).IndexOf("not ready", StringComparison.OrdinalIgnoreCase) >= 0 && attempt < 8) { await Task.Delay(500); continue; }
+        return r; }
+      return await ApplyRouteOnce(mode); }
+    static async Task<Dictionary<string, object>> ApplyRouteOnce(string mode) {
       try {
         var want = new Dictionary<string, object>(); var managed = Platforms.SelectMany(Tracks).Distinct().ToList();
         var mine = mode == "all" ? managed : mode == "off" ? new List<int>() : Tracks(mode);
