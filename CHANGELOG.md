@@ -3,6 +3,11 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-26
+### Fixed
+- Switching the shared music destination (ALL / TWITCH ONLY / KICK ONLY / YOUTUBE ONLY) right after OBS starts could fail with
+  "OBS is not ready to perform the request." It now retries automatically until OBS finishes loading, instead of failing once.
+
 ## [2.0.0] - 2026-09-24
 ### Changed
 - **IXC Core**: one small native program replaces the PowerShell helper and the chat relay. In a 60-second test with the usual OBS pages
