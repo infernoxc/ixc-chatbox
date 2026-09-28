@@ -215,7 +215,9 @@ setInterval(() => { if (!document.hidden) diag(); }, 5000);
 function paintDiag(d) {
   if (d.disabled) { $('stat').textContent = 'Diagnostics are turned off on the PC.'; return; }
   const r = (k, v, c) => `<tr><td>${esc(k)}</td><td class="${c || ''}">${esc(v ?? '-')}</td></tr>`; const ch = d.chat || {}, t = d.tts || {}, m = d.music || {}, p = d.process;
-  $('stat').innerHTML = `<table>${r('IXC', 'v' + d.version + ' · CPU ' + p.cpuPercent + '% · ' + p.ramMB + ' MB')}${r('Streamer.bot', ch.streamerbot, ch.streamerbot === 'connected' ? 'ok' : 'warn')}${r('Chat messages', ch.messages)}
+  const viewers = Object.entries(ch.viewers || {}).filter(([, v]) => v != null); const vTotal = viewers.reduce((s, [, v]) => s + (+v || 0), 0);
+  $('stat').innerHTML = `<table>${r('IXC', 'v' + d.version + ' · CPU ' + p.cpuPercent + '% · ' + p.ramMB + ' MB')}${r('Streamer.bot', ch.streamerbot, ch.streamerbot === 'connected' ? 'ok' : 'warn')}
+    ${r('Viewers', viewers.length ? viewers.map(([k, v]) => k[0].toUpperCase() + k.slice(1) + ' ' + v).join(' · ') + '  (total ' + vTotal + ')' : 'no platform live right now')}${r('Chat messages', ch.messages)}
     ${r('TTS', (t.enabled ? 'ON' : 'OFF') + ' · ' + (t.engine || ''))}${r('TTS source in OBS', t.ttsSourcesConnected ? 'yes' : 'no', t.ttsSourcesConnected ? 'ok' : 'warn')}${r('TTS waiting / read', (t.queue ?? 0) + ' / ' + (t.played ?? 0))}
     ${r('OBS', m.obs, /connected/.test(m.obs || '') ? 'ok' : 'warn')}${r('Music player', m.playerConnected ? 'connected' : 'not connected', m.playerConnected ? 'ok' : 'warn')}${r('Music goes to', (m.destination || '').toUpperCase() + ' · ' + (m.routing || ''))}
     ${r('Phones connected', d.clients.phones)}${r('Tunnel', (d.remote || {}).tunnel)}${r('Errors / reconnects', p.errors + ' / ' + p.reconnects)}</table>
