@@ -1,10 +1,10 @@
 # Installer for IXC Music / IXC ChatBox (per user, NO admin rights needed).
 # Both projects share one small background program, IXC Core; installing both simply adds each app next to it.
 # Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
-#   .\scripts\install.ps1                         install / update, start it, add it to Windows login
-#   .\scripts\install.ps1 -AddObsDocks            also add this app's dock to OBS (close OBS first)
+#   .\scripts\install.ps1                         install/update, start it, add to Windows login, add/refresh its OBS dock (skipped silently if OBS is open)
+#   .\scripts\install.ps1 -NoObsDocks             skip touching OBS docks entirely
 #   .\scripts\install.ps1 -ChannelNames "a,b"     (ChatBox) extra names of your own accounts - TTS never reads them
-param([switch]$AddObsDocks, [string]$ChannelNames = '', [switch]$NoStart)
+param([switch]$NoObsDocks, [string]$ChannelNames = '', [switch]$NoStart, [switch]$AddObsDocks)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $MyInvocation.MyCommand.Path)
 $apps = @('music', 'chat') | ? { Test-Path "$repo\src\$_" }
@@ -74,7 +74,7 @@ foreach ($a in $apps) { Link "Uninstall $($title[$a])" 'powershell.exe' "-NoProf
 
 # 5. start now, optional OBS dock
 if (-not $NoStart) { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\start.ps1"; for ($i = 0; $i -lt 20; $i++) { try { Invoke-RestMethod "http://localhost:$port/api/ping" -TimeoutSec 1 | Out-Null; break } catch { Start-Sleep -Milliseconds 400 } } }
-if ($AddObsDocks) { foreach ($a in $apps) { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\scripts\add-obs-docks.ps1" -App $a } }
+if (-not $NoObsDocks) { foreach ($a in $apps) { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\scripts\add-obs-docks.ps1" -App $a } }
 $ok = try { (Invoke-RestMethod "http://localhost:$port/api/ping" -TimeoutSec 5).app -eq 'ixc-core' } catch { $false }
 Write-Host ''
 Write-Host ('  IXC Core running: ' + $(if ($NoStart) { 'not started (-NoStart)' } elseif ($ok) { 'YES' } else { "NO - is another program using port $port? See docs/TROUBLESHOOTING.md" }))
