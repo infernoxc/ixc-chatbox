@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!-- IXC overlay: Now Playing. Browser source http://localhost:8767/overlay/nowplaying.html (Dashboard > Overlays adds it to OBS for you).
+     Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Now Playing</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { display: flex; gap: .6em; align-items: center; padding: .55em .7em; max-width: 100%; width: fit-content; box-sizing: border-box; transition: opacity .4s; }
+  .wrap.hidden { opacity: 0; }
+  .art { width: 3.4em; height: 3.4em; border-radius: calc(var(--radius) * .6); object-fit: cover; flex: none; background: #000; }
+  .txt { min-width: 0; max-width: 18em; } .label { font-size: .5em; font-weight: 800; letter-spacing: .18em; color: var(--accent); }
+  .title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .artist { font-size: .7em; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: .22em; background: rgba(255,255,255,.18); border-radius: 1em; margin-top: .35em; overflow: hidden; } .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 1em; transition: width .5s linear; }
+  .time { font-size: .55em; opacity: .75; margin-top: .25em; font-variant-numeric: tabular-nums; } .by { font-size: .55em; opacity: .7; }
+  body.layout-compact .art { width: 2em; height: 2em; } body.layout-compact .label, body.layout-compact .artist, body.layout-compact .by { display: none; } body.layout-compact .txt { max-width: 22em; }
+  body.layout-minimal .art, body.layout-minimal .label, body.layout-minimal .bar, body.layout-minimal .time, body.layout-minimal .by, body.layout-minimal .artist { display: none; }
+  body.layout-minimal .wrap { padding: .35em .6em; } body.layout-minimal .title::before { content: "🎵 "; } body.layout-minimal .title .sep { display: inline; } .title .sep { display: none; opacity: .8; font-weight: 400; }
+</style></head>
+<body class="layout-full anim-slide">
+<div class="wrap box hidden" id="w"><img class="art" id="art" alt=""><div class="txt"><div class="label" id="label">NOW PLAYING</div><div class="title" id="title"></div><div class="artist" id="artist"></div>
+  <div class="bar" id="bar"><i id="fill"></i></div><div class="time" id="time"></div><div class="by" id="by"></div></div></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+const $ = (id) => document.getElementById(id); let S = null, at = 0, st = {}, key = '';
+Overlay.start({ name: 'nowplaying', topics: ['music.state'],
+  defaults: { layout: 'full', label: 'NOW PLAYING', showArt: true, showArtist: true, showProgress: true, time: 'elapsed', showRequester: true, hideWhenPaused: true, animation: 'slide', align: 'left', font: 'Bahnschrift', size: 22, color: '#ffffff', accent: '#e3141e', bg: '#101014', bgOpacity: 75, radius: 14 },
+  apply: (s) => { st = s; $('label').textContent = s.label; $('label').style.display = s.label ? '' : 'none'; render(); },
+  on: (m) => { if (m.type === 'music.state') { S = m.s; at = Date.now(); render(); } },
+  demo: () => { S = { playing: true, pos: 74, dur: 242, title: 'Midnight Drive', index: 0, queue: [{ kind: 'yt', id: 'dQw4w9WgXcQ', title: 'Midnight Drive', artist: 'Neon Waves', by: 'Rushkaa' }] }; at = Date.now(); render(); } });
+function render() {
+  const cur = S && S.queue ? S.queue[S.index] : null; const show = !!cur && (S.playing || !st.hideWhenPaused);
+  $('w').classList.toggle('hidden', !show); if (!cur) return;
+  const title = S.title || cur.title || cur.q || ''; const artist = cur.artist || '';
+  const k = title + '|' + artist; if (k !== key) { key = k; $('w').classList.remove('in'); void $('w').offsetWidth; $('w').classList.add('in'); }
+  $('title').innerHTML = Overlay.esc(title) + (artist ? '<span class="sep"> — ' + Overlay.esc(artist) + '</span>' : '');
+  $('artist').textContent = artist; $('artist').style.display = st.showArtist && artist ? '' : 'none';
+  const art = cur.kind === 'yt' && cur.id ? 'https://i.ytimg.com/vi/' + cur.id + '/mqdefault.jpg' : '';
+  $('art').style.display = st.showArt && art ? '' : 'none'; if (art && $('art').src !== art) $('art').src = art;
+  $('bar').style.display = st.showProgress ? '' : 'none'; $('time').style.display = st.time === 'none' ? 'none' : '';
+  $('by').textContent = st.showRequester && cur.by ? 'requested by ' + cur.by : ''; tick(); }
+function tick() { if (!S) return; const p = S.playing ? (S.pos || 0) + (Date.now() - at) / 1000 : S.pos || 0, d = S.dur || 0;
+  $('fill').style.width = d ? Math.min(100, p / d * 100) + '%' : '0'; $('time').textContent = d ? (st.time === 'remaining' ? '-' + Overlay.time(d - p) : Overlay.time(Math.min(p, d)) + ' / ' + Overlay.time(d)) : ''; }
+setInterval(tick, 500);
+</script></body></html>

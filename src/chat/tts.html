@@ -1,12 +1,11 @@
 <!DOCTYPE html>
-<!-- Part of IXC ChatBox - https://github.com/infernoxc/ixc-chatbox
-     Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<!-- Part of IXC - https://github.com/infernoxc/ixc-chatbox  Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>IXC ChatBox - TTS</title>
-<!-- OBS browser source: http://localhost:8767/chat/tts.html  ("Control audio via OBS" ON; choose its tracks in Advanced Audio Properties)
-     Plays the chat messages IXC decides to read (TTS ON/OFF, filters and queue live in IXC itself). Audio only - nothing visible. -->
+<title>IXC Chat Voice</title>
+<!-- OBS browser source "IXC TTS" (IXC creates it by itself in the scene "IXC Audio"): http://localhost:8767/chat/tts.html
+     Plays the chat messages IXC decides to read (on/off, filters and queue live in IXC). Audio only - nothing visible. -->
 <style>html,body{margin:0;background:transparent}</style>
 </head>
 <body>
@@ -16,7 +15,7 @@ const q = new URLSearchParams(location.search), VOL = Math.min(1, +(q.get('vol')
 let audio = null, playing = 0;
 window.ixcTts = { played: 0, failed: 0, last: 0 };
 const link = IXC.connect({ role: 'tts', topics: ['tts.play', 'reload'], on: (m) => {
-  if (m.type === 'tts.play') play(m); else if (m.type === 'tts.stop') stop();
+  if (m.type === 'tts.play') play(m); else if (m.type === 'tts.stop') stop(); else if (m.type === 'tts.pause') { if (audio) audio.pause(); } else if (m.type === 'tts.resume') { if (audio) audio.play().catch(() => {}); }
 } });
 function release() { if (!audio) return; audio.onended = audio.onerror = null; try { audio.pause(); } catch (e) {} audio.removeAttribute('src'); try { audio.load(); } catch (e) {} audio = null; }   // frees the decoder + buffer
 function done(n, ok, err) { if (playing !== n) return; playing = 0; release(); if (ok) window.ixcTts.played++; else window.ixcTts.failed++; link.send({ type: 'tts.done', n, ok, error: err || '' }); }

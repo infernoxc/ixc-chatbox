@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<!-- IXC phone remote (served by the IXC relay). Opened from the QR code on the PC; works on mobile data or any Wi-Fi.
+     Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="referrer" content="no-referrer">
+<title>IXC Remote</title>
+<style>
+  :root { --bg: #0e0d12; --bg2: #16151c; --card: #1c1b24; --line: #2e2c38; --text: #eeedf3; --dim: #a19eae; --red: #e3141e; --ok: #3ad07a; --warn: #f5b942; --err: #ff5a5f; --tw: #9146ff; --kick: #53fc18; --yt: #ff0033; --rumble: #85c742; color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+  header { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; background: var(--bg2); border-bottom: 2px solid var(--red); }
+  header b { font-size: 17px; } .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--red); display: grid; place-items: center; font: 900 11px sans-serif; color: #fff; }
+  #conn { margin-left: auto; font-size: 12px; display: flex; gap: 6px; align-items: center; color: var(--dim); } #conn i { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); } #conn.ok i { background: var(--ok); } #conn.bad i { background: var(--err); }
+  main { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+  nav { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg2); border-top: 1px solid var(--line); }
+  nav button { background: none; border: 0; color: var(--dim); padding: 9px 0 calc(9px + env(safe-area-inset-bottom)); font: 600 12px sans-serif; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button span { font-size: 20px; } nav button.sel { color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; } .card h3 { margin: 0 0 10px; font-size: 15px; }
+  button.b { font: 600 14px sans-serif; color: var(--text); background: #26242f; border: 1px solid #3a3846; border-radius: 10px; padding: 10px 14px; } button.b.red { background: var(--red); border-color: var(--red); color: #fff; } button.b.on { background: var(--red); border-color: var(--red); color: #fff; }
+  button.b:active { transform: scale(.97); } button.b:disabled { opacity: .45; }
+  .row { display: flex; gap: 8px; align-items: center; } .grow { flex: 1; min-width: 0; } .dim { color: var(--dim); font-size: 13px; } .small { font-size: 12px; }
+  input[type=text], input[type=search], select { width: 100%; font: 16px sans-serif; color: var(--text); background: #0b0a0f; border: 1px solid #3a3846; border-radius: 10px; padding: 11px 12px; outline: none; }
+  input[type=range] { width: 100%; accent-color: var(--red); height: 28px; }
+  .ctrl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; } .ctrl button { font-size: 22px; padding: 12px 0; }
+  .np { display: flex; gap: 12px; align-items: center; } .np img { width: 96px; height: 54px; object-fit: cover; border-radius: 8px; background: #000; flex: none; }
+  .np .t { font-weight: 700; font-size: 16px; } .bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; width: 0; background: var(--red); }
+  .li { display: flex; gap: 10px; align-items: center; padding: 8px; background: #23212b; border-radius: 10px; margin-top: 6px; } .li.cur { outline: 1px solid var(--red); }
+  .li img { width: 56px; height: 32px; object-fit: cover; border-radius: 5px; background: #000; flex: none; } .li .x { flex: 1; min-width: 0; } .li .x b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; } .li button { padding: 7px 10px; }
+  .seg { display: grid; grid-auto-flow: column; gap: 6px; } .seg button { padding: 9px 4px; font-size: 12px; } .seg button.sel { background: var(--red); border-color: var(--red); color: #fff; }
+  .tag { display: inline-block; font: 800 10px sans-serif; letter-spacing: .5px; padding: 2px 6px; border-radius: 5px; color: #fff; } .tag.twitch { background: var(--tw); } .tag.kick { background: var(--kick); color: #000; } .tag.youtube { background: var(--yt); } .tag.rumble { background: var(--rumble); color: #000; }
+  .msg { padding: 7px 9px; border-left: 3px solid var(--p, #777); background: #1e1d26; border-radius: 8px; margin-top: 5px; overflow-wrap: anywhere; } .msg b { color: var(--n, var(--p)); } .msg.alert { border-left-color: #ffb547; }
+  .twitch { --p: var(--tw); } .kick { --p: var(--kick); } .youtube { --p: var(--yt); } .rumble { --p: var(--rumble); }
+  .em { height: 1.5em; vertical-align: middle; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; } .chip { padding: 6px 10px; border-radius: 999px; background: #23212b; border: 1px solid #3a3846; font-size: 12px; font-weight: 600; } .chip.off { opacity: .4; text-decoration: line-through; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; } .kv span:nth-child(odd) { color: var(--dim); }
+  .big { font: 800 34px sans-serif; } .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  #center { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center; text-align: center; padding: 30px; z-index: 50; flex-direction: column; gap: 14px; } #center.show { display: flex; }
+  #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #2a2833; padding: 10px 16px; border-radius: 10px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: 90vw; text-align: center; } #toast.show { opacity: 1; } #toast.bad { background: #5a1b1f; }
+  .spin { width: 28px; height: 28px; border: 3px solid #ffffff33; border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  #chatList { max-height: 52vh; overflow-y: auto; } .sw { position: relative; width: 50px; height: 28px; flex: none; } .sw input { opacity: 0; width: 0; height: 0; position: absolute; } .sw i { position: absolute; inset: 0; background: #3a3846; border-radius: 28px; } .sw i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; } .sw input:checked + i { background: var(--red); } .sw input:checked + i::after { transform: translateX(22px); }
+</style>
+</head>
+<body>
+<header><span class="logo">IXC</span><b>IXC Remote</b><span id="conn"><i></i><span id="connT">Connecting…</span></span></header>
+<main id="main"></main>
+<nav id="tabs"><button data-t="music" class="sel"><span>🎵</span>Music</button><button data-t="chat"><span>💬</span>Chat</button><button data-t="voice"><span>🔊</span>Voice</button><button data-t="status"><span>📊</span>Status</button></nav>
+<div id="center"></div>
+<div id="toast"></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const P = { twitch: ['Twitch', 'TWITCH'], kick: ['Kick', 'KICK'], youtube: ['YouTube', 'YT'], rumble: ['Rumble', 'RUMBLE'] };
+  const pcId = location.pathname.split('/')[2] || ''; const KEY = 'ixc:' + pcId;
+  let code = (location.hash.match(/[#&]c=([\w-]+)/) || [])[1] || null;
+  if (code) history.replaceState(null, '', location.pathname);   // the one-time code never stays in the address bar / history
+  let creds = null; try { creds = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch {}
+  let ws = null, attempt = 0, timer = null, authed = false, pcOnline = false, lastMsg = 0, rtt = 0, pingAt = 0, rid = 0, tab = 'music';
+  const waits = new Map(); const st = { music: null, route: null, tts: null, chat: [], plats: {}, viewers: null, status: null, voices: [], hide: new Set() };
+  let toastT; const toast = (t, bad) => { const e = $('toast'); e.textContent = t; e.className = 'show' + (bad ? ' bad' : ''); clearTimeout(toastT); toastT = setTimeout(() => e.className = '', bad ? 4500 : 2500); };
+  function conn(state, text) { $('conn').className = state; $('connT').textContent = text; }
+  function center(html) { const c = $('center'); if (!html) { c.classList.remove('show'); return; } c.innerHTML = html; c.classList.add('show'); }
+  // ---------- connection: relay -> PC, with sign-in, back-off and keep-alive ----------
+  function open() {
+    timer = null; if (ws) return; if (!pcId) { center('<h2>IXC Remote</h2><p class="dim">Open this page by scanning the QR code in IXC on your PC.</p>'); return; }
+    conn('', attempt ? 'Reconnecting…' : 'Connecting…');
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/phone/' + pcId); } catch { return later(); }
+    ws.onopen = () => { lastMsg = Date.now(); };
+    ws.onmessage = (e) => { lastMsg = Date.now(); let m; try { m = JSON.parse(e.data); } catch { return; } handle(m); };
+    ws.onclose = () => { ws = null; authed = false; pcOnline = false; conn('bad', navigator.onLine ? 'Reconnecting…' : 'Offline'); later(); };
+    ws.onerror = () => { try { ws.close(); } catch {} };
+  }
+  function later() { if (timer) return; const d = Math.min(30000, 600 * Math.pow(2, attempt++)) * (0.75 + Math.random() * 0.5); timer = setTimeout(open, d); }
+  function now() { if (ws) { if (Date.now() - lastMsg > 20000) { try { ws.close(); } catch {} } return; } clearTimeout(timer); timer = null; attempt = 0; open(); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) now(); });
+  window.addEventListener('online', now); window.addEventListener('offline', () => conn('bad', 'Offline - waiting for internet'));
+  window.addEventListener('pageshow', now);
+  setInterval(() => { if (!ws || ws.readyState !== 1) return; if (Date.now() - lastMsg > 45000) { try { ws.close(); } catch {} return; }
+    ws.send('{"t":"ping"}'); if (authed) { pingAt = performance.now(); send({ type: 'ping', t: Date.now() }); } }, 15000);
+  setInterval(() => { if (authed && rtt) send({ type: 'rtt', ms: rtt }); }, 30000);
+  const raw = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+  function send(o) { if (authed) raw(o); else toast('Not connected right now', true); }
+  function ask(o, ms) { const id = 'r' + (++rid); o.reqId = id; return new Promise((res) => { waits.set(id, { res, t: setTimeout(() => { waits.delete(id); res({ ok: false, error: 'No answer from your PC' }); }, ms || 20000) }); send(o); }); }
+  function signIn() {
+    if (creds) raw({ type: 'auth', deviceId: creds.deviceId, token: creds.token });
+    else if (code) raw({ type: 'pair', code, device: navigator.userAgent });
+    else { center('<h2>Scan a new QR code</h2><p class="dim">This phone isn\'t paired with IXC. On your PC open IXC > Phone remote > Show QR code, then scan it with this phone\'s camera.</p>'); } }
+  function hello() { authed = true; attempt = 0; center(null); conn('ok', 'Connected'); raw({ type: 'hello', role: 'mobile', topics: ['chat', 'tts', 'music.state', 'status', 'viewers', 'alerts'] }); pingAt = performance.now(); raw({ type: 'ping', t: Date.now() }); }
+  function handle(m) {
+    if (m.relay) {
+      if (m.relay === 'pc-online') { pcOnline = true; signIn(); }
+      else if (m.relay === 'pc-offline') { pcOnline = false; authed = false; conn('bad', 'PC offline'); if (!st.music) center('<div class="spin"></div><h3>Waiting for your PC</h3><p class="dim">IXC on your PC is closed, asleep or offline. This page connects by itself when it\'s back.</p>'); }
+      else if (m.relay === 'full') toast('Too many phones are connected to this PC', true);
+      return; }
+    if (m.type === 'paired') { if (m.ok) { creds = { deviceId: m.deviceId, token: m.token, name: m.name }; try { localStorage.setItem(KEY, JSON.stringify(creds)); } catch {} code = null; toast('Paired with your PC ✓'); hello(); }
+      else { code = null; center('<h2>QR code not accepted</h2><p class="dim">' + esc(m.error || 'This code expired or was already used.') + '</p><p class="dim">Make a new one on the PC: IXC > Phone remote > Show QR code.</p>'); } return; }
+    if (m.type === 'auth') { if (m.ok) { hello(); return; } if (m.reason === 'revoked' || m.reason === 'unknown' || m.reason === 'expired' || m.reason === 'bad') { creds = null; try { localStorage.removeItem(KEY); } catch {} authed = false; if (code) signIn(); else center('<h2>This phone was signed out</h2><p class="dim">It was removed on the PC or not used for a long time. Scan a new QR code: IXC > Phone remote.</p>'); } return; }
+    if (m.type === 'pong' && pingAt) { rtt = Math.round(performance.now() - pingAt); pingAt = 0; conn('ok', 'Connected · ' + rtt + ' ms'); return; }
+    if (m.reqId && waits.has(m.reqId)) { const w = waits.get(m.reqId); waits.delete(m.reqId); clearTimeout(w.t); w.res(m); }
+    switch (m.type) {
+      case 'music.state': st.music = m.s; st.route = m.route; if (tab === 'music') paintMusic(); break;
+      case 'tts.state': st.tts = m; if (tab === 'voice') paintVoice(); break;
+      case 'tts.voices': st.voices = m.voices || []; if (tab === 'voice') paintVoice(true); break;
+      case 'chat.history': st.chat = m.messages || []; if (tab === 'chat') paintChat(true); break;
+      case 'chat.msg': st.chat.push(m.m); if (st.chat.length > 150) st.chat.shift(); if (tab === 'chat') addMsg(m.m); break;
+      case 'chat.del': st.chat = st.chat.filter(x => !(x.platform === m.platform && ((m.id && x.id === m.id) || (!m.id && m.login && (x.login || '').toLowerCase() === String(m.login).toLowerCase())))); if (tab === 'chat') paintChat(true); break;
+      case 'chat.status': st.plats = m.platforms || {}; if (tab === 'chat') paintChips(); if (tab === 'status') paintStatus(); break;
+      case 'viewers': st.viewers = m; if (tab === 'status') paintStatus(); break;
+      case 'status': st.status = m; if (tab === 'status') paintStatus(); break;
+      case 'alert': toast((m.kind === 'follow' ? '💜 ' : '⭐ ') + m.name + ' ' + (m.text || m.kind)); break;
+      case 'error': toast(m.error, true); break;
+    } }
+  // ---------- tabs ----------
+  $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('sel', x === b)); paint(); };
+  function paint() { ({ music: paintMusic, chat: () => paintChat(true), voice: () => paintVoice(true), status: paintStatus })[tab](); }
+  const thumb = (it) => it && it.id && /^[\w-]{11}$/.test(it.id) ? 'https://i.ytimg.com/vi/' + it.id + '/mqdefault.jpg' : '';
+  const time = (s) => { s = Math.max(0, Math.floor(+s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  let mAt = 0;
+  function paintMusic() {
+    const s = st.music || {}, q = s.queue || [], cur = q[s.index], r = st.route || {}; mAt = Date.now();
+    $('main').innerHTML = `<div class="card"><div class="np"><img src="${thumb(cur)}" alt="" style="${thumb(cur) ? '' : 'visibility:hidden'}"><div class="grow"><div class="t">${esc(s.title || (cur && (cur.title || cur.q)) || 'Nothing playing')}</div><div class="dim">${esc(s.note || (cur && cur.by ? 'requested by ' + cur.by : s.playing ? 'playing' : cur ? 'paused' : ''))}${s.ducked ? ' · 🔉 lowered' : ''}</div></div></div>
+      <div class="bar"><i id="mBar"></i></div><div class="row dim small" style="justify-content:space-between;margin-top:4px"><span id="mPos"></span><span>${s.dur ? time(s.dur) : ''}</span></div>
+      <div class="ctrl"><button class="b" data-c="prev" aria-label="Previous">⏮</button><button class="b red" data-c="toggle" aria-label="Play or pause">${s.playing ? '⏸' : '▶'}</button><button class="b" data-c="next" aria-label="Next">⏭</button></div>
+      <div class="row" style="margin-top:12px"><span>🔊</span><input type="range" id="mVol" min="0" max="100" value="${s.volume ?? 40}" aria-label="Volume"><span id="mVolN" style="width:34px;text-align:right">${s.volume ?? 40}</span></div>
+      <div class="row" style="margin-top:8px"><button class="b ${s.shuffle ? 'on' : ''}" data-c="shuffle">🔀</button><button class="b ${s.repeat ? 'on' : ''}" data-c="repeat">🔁</button><button class="b ${s.autoplay ? 'on' : ''}" data-c="autoplay">Auto</button></div></div>
+      <div class="card"><h3>Music goes to</h3><div class="seg">${['all', 'twitch', 'kick', 'youtube', 'off'].map(x => `<button class="b ${r.mode === x ? 'sel' : ''}" data-r="${x}">${x.toUpperCase()}</button>`).join('')}</div><div class="dim small" style="margin-top:6px">${esc(r.status || '')}</div></div>
+      <div class="card"><h3>Add a song</h3><div class="row"><input type="search" id="mQ" placeholder="Song name or YouTube / Spotify link"><button class="b red" id="mGo">Go</button></div><div id="mRes"></div></div>
+      <div class="card"><h3>Queue (${q.length})</h3>${q.map((it, i) => `<div class="li ${i === s.index ? 'cur' : ''}" style="${it.bad ? 'opacity:.5' : ''}"><img src="${thumb(it)}" alt=""><div class="x"><b>${esc(it.title || it.q || 'song')}</b><span class="dim small">${it.by ? 'by ' + esc(it.by) : i === s.index ? 'now playing' : '#' + (i + 1)}</span></div><button class="b" data-j="${i}" aria-label="Play">▶</button><button class="b" data-x="${esc(it.uid)}" aria-label="Remove">✕</button></div>`).join('') || '<div class="dim">Queue is empty.</div>'}</div>`;
+    $('mVol').oninput = () => { $('mVolN').textContent = $('mVol').value; }; $('mVol').onchange = () => send({ type: 'music.cmd', c: { cmd: 'volume', v: +$('mVol').value } });
+    $('mGo').onclick = go; $('mQ').onkeydown = (e) => { if (e.key === 'Enter') go(); }; tickMusic(); }
+  function tickMusic() { const s = st.music; const b = $('mBar'); if (!s || !b) return; const p = s.playing ? (s.pos || 0) + (Date.now() - mAt) / 1000 : s.pos || 0; b.style.width = s.dur ? Math.min(100, p / s.dur * 100) + '%' : '0'; $('mPos').textContent = time(Math.min(p, s.dur || p)); }
+  setInterval(() => { if (tab === 'music') tickMusic(); }, 1000);
+  async function go() { const v = $('mQ').value.trim(); if (!v) return; const isLink = /^(https?:\/\/|www\.)|youtu\.?be|spotify[.:]/i.test(v); $('mRes').innerHTML = '<div class="dim" style="margin-top:8px">Working…</div>';
+    if (isLink) { const r = await ask({ type: 'music.add', url: v, mode: 'add' }, 60000); $('mRes').innerHTML = `<div class="${r.ok ? 'ok' : 'warn'}" style="margin-top:8px">${esc(r.ok ? '✓ Added: ' + r.title : '✗ ' + r.error)}</div>`; if (r.ok) $('mQ').value = ''; return; }
+    const r = await ask({ type: 'music.search', q: v }); const res = r.results || [];
+    $('mRes').innerHTML = res.slice(0, 8).map((x, i) => `<div class="li"><img src="${thumb(x)}" alt=""><div class="x"><b>${esc(x.title)}</b><span class="dim small">${esc(x.channel || '')} ${esc(x.length || '')}</span></div><button class="b" data-p="${i}">▶</button><button class="b" data-a="${i}">+</button></div>`).join('') || `<div class="dim">${esc(r.error || 'No results.')}</div>`;
+    $('mRes').onclick = async (e) => { const d = e.target.dataset; const i = d.p ?? d.a; if (i == null) return; const x = res[+i]; const r2 = await ask({ type: 'music.add', url: x.kind === 'local' ? 'local:' + x.local : 'https://youtu.be/' + x.id, mode: d.p != null ? 'playnow' : 'add', force: true }, 60000); toast(r2.ok ? (d.p != null ? 'Playing: ' : 'Added: ') + r2.title : r2.error, !r2.ok); }; }
+  $('main').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b || tab !== 'music') return; const d = b.dataset, s = st.music || {};
+    if (d.c) send({ type: 'music.cmd', c: d.c === 'shuffle' || d.c === 'repeat' || d.c === 'autoplay' ? { cmd: d.c, on: !s[d.c] } : { cmd: d.c } });
+    if (d.j) send({ type: 'music.cmd', c: { cmd: 'jump', i: +d.j } }); if (d.x) send({ type: 'music.cmd', c: { cmd: 'remove', uid: d.x } });
+    if (d.r) ask({ type: 'music.route', mode: d.r }).then(r => { if (!r.result || !r.result.ok) toast((r.result && (r.result.error || r.result.status)) || 'Could not switch', true); }); });
+  // chat
+  function paintChips() { const c = $('chips'); if (!c) return; c.innerHTML = Object.keys(P).filter(p => st.plats[p] && st.plats[p].configured).map(p => `<span class="chip ${st.hide.has(p) ? 'off' : ''}" data-p="${p}">${P[p][0]}</span>`).join(''); }
+  function addMsg(m) { const l = $('chatList'); if (!l || st.hide.has(m.platform)) return; const atB = l.scrollHeight - l.scrollTop - l.clientHeight < 60; l.insertAdjacentHTML('beforeend', msgHtml(m)); while (l.children.length > 150) l.firstChild.remove(); if (atB) l.scrollTop = l.scrollHeight; }
+  function msgHtml(m) { const alert = m.kind && m.kind !== 'chat'; const text = alert ? esc((m.text || m.kind) + (m.amount ? ' · ' + m.amount : '')) : (m.parts && m.parts.length ? m.parts : [{ t: 'text', v: m.text }]).map(p => p.t === 'emote' && /^https:\/\//.test(p.url || '') ? `<img class="em" src="${esc(p.url)}" alt="${esc(p.name)}">` : esc(p.v ?? '')).join('');
+    return `<div class="msg ${esc(m.platform)} ${alert ? 'alert' : ''}" ${m.hidden ? 'style="opacity:.5"' : ''}><span class="tag ${esc(m.platform)}">${P[m.platform] ? P[m.platform][1] : ''}</span> <b ${m.color && /^#[0-9a-f]{3,8}$/i.test(m.color) ? `style="--n:${m.color}"` : ''}>${esc(m.name)}</b> ${text}</div>`; }
+  let sendTo = 'all';
+  function paintChat() {
+    const can = Object.keys(P).filter(p => st.plats[p] && st.plats[p].canSend);
+    $('main').innerHTML = `<div class="card"><div class="chips" id="chips"></div><div id="chatList"></div></div>
+      <div class="card"><div class="seg" style="margin-bottom:8px">${['all'].concat(can).map(p => `<button class="b ${sendTo === p ? 'sel' : ''}" data-to="${p}">${p === 'all' ? 'ALL' : P[p][1]}</button>`).join('')}</div>
+      <div class="row"><input type="text" id="cIn" placeholder="${can.length ? 'Reply to chat…' : 'Connect a platform account on the PC to reply'}" ${can.length ? '' : 'disabled'} maxlength="480"><button class="b red" id="cSend" ${can.length ? '' : 'disabled'}>Send</button></div></div>`;
+    paintChips(); const l = $('chatList'); l.innerHTML = st.chat.filter(m => !st.hide.has(m.platform)).map(msgHtml).join(''); l.scrollTop = l.scrollHeight;
+    $('chips').onclick = (e) => { const p = e.target.dataset.p; if (!p) return; if (st.hide.has(p)) st.hide.delete(p); else st.hide.add(p); paintChat(); };
+    document.querySelectorAll('[data-to]').forEach(b => b.onclick = () => { sendTo = b.dataset.to; paintChat(); });
+    const sendIt = async () => { const t = $('cIn').value.trim(); if (!t) return; $('cIn').value = ''; const r = await ask({ type: 'chat.send', platform: sendTo, message: t }); const bad = (r.results || []).filter(x => !x.ok); if (!r.results || !r.results.length) toast('Not sent', true); else if (bad.length) toast('Not sent to ' + bad.map(x => x.platform).join(', '), true); };
+    $('cSend').onclick = sendIt; $('cIn').onkeydown = (e) => { if (e.key === 'Enter') sendIt(); }; }
+  // voice
+  function paintVoice(full) {
+    const t = st.tts || {}, s = t.settings || {};
+    if (!full && $('vState')) { $('vState').textContent = !s.enabled ? 'Off' : t.paused ? 'Paused' : t.speaking ? 'Speaking: ' + (t.current ? t.current.user : '') : 'Listening to chat'; $('vQ').innerHTML = (t.queue || []).slice(0, 8).map(h => `<div class="li"><div class="x"><b>${esc(h.text)}</b><span class="dim small">${esc(h.user)}</span></div></div>`).join('') || '<div class="dim">Nothing waiting.</div>'; return; }
+    $('main').innerHTML = `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">Read chat out loud</h3><div class="dim" id="vState"></div></div><label class="sw"><input type="checkbox" id="vOn" ${s.enabled ? 'checked' : ''}><i></i></label></div>
+      <div class="ctrl"><button class="b" id="vPause">${t.paused ? '▶ Resume' : '⏸ Pause'}</button><button class="b" id="vSkip">⏭ Skip</button><button class="b" id="vClear">🗑 Clear</button></div></div>
+      <div class="card"><h3>Voice</h3><select id="vVoice">${st.voices.map(v => `<option value="${esc(v.key)}" ${v.key === s.voice ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select>
+      <div class="dim small" style="margin-top:10px">Volume</div><input type="range" id="vVol" min="0" max="100" value="${s.volume ?? 100}"><div class="dim small">Speed</div><input type="range" id="vSpd" min="-50" max="100" value="${s.speed ?? 0}">
+      <button class="b" id="vTest" style="margin-top:8px">▶ Test</button></div>
+      <div class="card"><h3>Read from</h3><div class="chips">${Object.keys(P).map(p => `<span class="chip ${(s.platforms || []).includes(p) ? '' : 'off'}" data-tp="${p}">${P[p][0]}</span>`).join('')}</div></div>
+      <div class="card"><h3>Waiting</h3><div id="vQ"></div></div>`;
+    paintVoice(false);
+    const set = (patch) => send({ type: 'settings.set', patch });
+    $('vOn').onchange = () => set({ 'tts.on': $('vOn').checked }); $('vPause').onclick = () => send({ type: t.paused ? 'tts.resume' : 'tts.pause' }); $('vSkip').onclick = () => send({ type: 'tts.skip' }); $('vClear').onclick = () => send({ type: 'tts.clear' });
+    $('vVoice').onchange = () => set({ 'tts.voice': $('vVoice').value }); $('vVol').onchange = () => set({ 'tts.volume': +$('vVol').value }); $('vSpd').onchange = () => set({ 'tts.speed': +$('vSpd').value }); $('vTest').onclick = () => send({ type: 'tts.test', voice: $('vVoice').value });
+    document.querySelectorAll('[data-tp]').forEach(c => c.onclick = () => { const l = new Set(s.platforms || []); const p = c.dataset.tp; if (l.has(p)) l.delete(p); else l.add(p); set({ 'tts.platforms': [...l] }); }); }
+  // status
+  function paintStatus() {
+    const v = st.viewers || {}, s = st.status || {}, pl = Object.keys(P).filter(p => st.plats[p] && st.plats[p].configured);
+    $('main').innerHTML = `<div class="card"><h3>Viewers</h3><div class="big">${v.total == null ? '–' : Number(v.total).toLocaleString('en-US')}</div><div class="dim small">${v.uptime ? 'live for ' + esc(v.uptime) : 'total'}</div>
+      ${pl.map(p => { const x = (v.platforms || {})[p] || {}; return `<div class="row" style="margin-top:8px"><span class="tag ${p}">${P[p][1]}</span><span class="grow dim">${esc(x.state === 'live' ? 'live' : x.state || '')}</span><b>${x.state === 'live' ? Number(x.count).toLocaleString('en-US') : '–'}</b></div>`; }).join('')}</div>
+      <div class="card"><h3>Connections</h3><div class="kv"><span>This phone</span><span class="ok">Connected${rtt ? ' · ' + rtt + ' ms' : ''} · remote</span><span>PC (IXC)</span><span>${esc(s.version ? 'IXC ' + s.version : '')}</span>
+      <span>OBS</span><span class="${s.obs && s.obs.connected ? 'ok' : 'warn'}">${s.obs ? (s.obs.connected ? 'Connected' : esc(s.obs.detail || 'Not connected')) : ''}</span>
+      ${pl.map(p => { const x = st.plats[p]; return `<span>${P[p][0]}</span><span class="${x.state === 'connected' ? 'ok' : 'warn'}">${esc(x.state === 'connected' ? 'Connected' : x.detail || x.state)}</span>`; }).join('')}
+      <span>Health</span><span class="${s.overall === 'healthy' ? 'ok' : 'warn'}">${s.overall === 'healthy' ? 'All good' : esc(((s.issues || [])[0] || {}).message || s.overall || '')}</span></div></div>
+      <div class="card"><button class="b" id="logout">Sign this phone out</button></div>`;
+    $('logout').onclick = () => { if (!confirm('Sign this phone out? You will need a new QR code.')) return; send({ type: 'remote.logout' }); creds = null; try { localStorage.removeItem(KEY); } catch {} center('<h2>Signed out</h2><p class="dim">Scan a new QR code on the PC to connect again.</p>'); }; }
+  if (!creds && !code) center('<h2>IXC Remote</h2><p class="dim">Open IXC on your PC > Phone remote > Show QR code, and scan it with this phone\'s camera.</p>');
+  paint(); open();
+})();
+</script>
+</body>
+</html>

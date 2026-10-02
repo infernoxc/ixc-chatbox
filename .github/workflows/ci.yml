@@ -1,22 +1,59 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  test-and-build:
+  behaviour-tests:
+    # IXC Core on Mono + fake Twitch/Kick/YouTube/Rumble/OBS/GitHub servers + the phone relay in Cloudflare's local runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - name: Install Mono
+        run: sudo apt-get update -q && sudo apt-get install -y -q mono-devel
+      - name: Install test tools
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+      - name: Behaviour tests
+        working-directory: tests
+        run: npm test
+  windows:
+    # a clean Windows that has never had IXC: real compiler, real installer, update, crash recovery, uninstall
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Smoke tests (Windows PowerShell 5.1, fresh-install run)
+      - name: Smoke tests + install/update/uninstall (script)
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1
-      - name: Build release ZIP
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1 -Install
+      - name: Install Inno Setup
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -SkipTests
+        run: choco install innosetup -y --no-progress
+      - name: Build release (ZIP + IXC-Setup.exe)
+        shell: powershell
+        env:
+          IXC_RELAY_URL: ${{ vars.IXC_RELAY_URL }}
+          IXC_TWITCH_CLIENT_ID: ${{ vars.IXC_TWITCH_CLIENT_ID }}
+          IXC_GOOGLE_CLIENT_ID: ${{ vars.IXC_GOOGLE_CLIENT_ID }}
+          IXC_KICK_CLIENT_ID: ${{ vars.IXC_KICK_CLIENT_ID }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -Installer -SkipTests
+      - name: Clean-machine test of IXC-Setup.exe (silent install, crash restart, update, uninstall)
+        shell: powershell
+        run: |
+          $setup = Get-ChildItem dist -Filter 'IXC-Setup-v*.exe' | Select -First 1
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1 -Setup $setup.FullName
+      - name: Live platform check (public Twitch chat, YouTube page)
+        shell: powershell
+        continue-on-error: true
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\live.ps1
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: toolkit-zip
-          path: dist/*
+          name: ixc-release
+          path: |
+            dist/*
+            ${{ runner.temp }}/ixc-setup.log

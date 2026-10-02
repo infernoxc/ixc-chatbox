@@ -1,402 +1,185 @@
 <!DOCTYPE html>
+<!-- Part of IXC - https://github.com/infernoxc/ixc-chatbox  Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IXC ChatBox</title>
-<!--
-  IXC ChatBox - Twitch + Kick + YouTube chat in one place (via Streamer.bot, through IXC).
-  Part of IXC ChatBox - Copyright (c) 2026 Ishan (InFerNoxC) - MIT License.
-  OVERLAY (on stream):  http://localhost:8767/chat/chat.html?max=6&fade=45            newest at the bottom, old ones fade out
-  DOCK (OBS panel):     http://localhost:8767/chat/chat.html?dock=1&viewers=1&size=14  scrollable, reply box, TTS controls, suggestions
-  PHONE:                📱 button in the dock -> QR code (works over mobile data; see docs/USAGE.md)
-  Options: size=<px text>  max=<messages kept>  fade=<seconds, 0 = never>  avatars=0  badges=0  demo=1  viewers=1  alpha=<0-1>
-           direct=1 (overlay only: read Streamer.bot directly, without IXC)  host= / port= (Streamer.bot, with direct=1)
--->
+<title>IXC Chat</title>
+<!-- OBS panel (dock): http://localhost:8767/chat/chat.html?dock=1   (IXC adds it to OBS by itself)
+     The on-stream chat overlay moved to /overlay/chat.html; old overlay links (without dock=1) are forwarded there. -->
+<script>if (!/[?&](dock|bg)=/.test(location.search)) location.replace('/overlay/chat.html' + location.search);</script>
+<link rel="stylesheet" href="/core/ui.css">
 <style>
-  :root { --size: 20px; }
-  html, body { margin: 0; background: transparent; }
-  body { font-family: "Bahnschrift", "Segoe UI", sans-serif; color: #f5f5f7; font-size: var(--size); }
-  #list { position: fixed; left: 0; right: 0; bottom: 0; top: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 12px; box-sizing: border-box; }
-  body.dock { background: #0f0e13; }
-  body.dock #list { top: var(--vbar, 0px); overflow-y: auto; justify-content: flex-start; scroll-behavior: smooth; padding: 6px 8px 10px; }
-  body.dock #list::before { content: ""; flex: 1 0 auto; }
-  #list::-webkit-scrollbar { width: 6px; } #list::-webkit-scrollbar-thumb { background: #3a3842; border-radius: 3px; }
-
-  .msg { display: flex; gap: .55em; align-items: flex-start; background: rgba(14, 14, 18, var(--alpha, .55)); border: 1px solid rgba(255,255,255,.05);
-         border-left: 3px solid var(--p); border-radius: .5em; padding: .45em .6em; margin-top: .4em; flex: 0 0 auto;
-         animation: in .32s cubic-bezier(.2,.9,.3,1) both; }
-  body.dock .msg { background: #16151b; margin-top: .35em; }
-  .msg.out { animation: out .45s ease forwards; }
-  .msg.old { animation: none; }
-  .av { flex: 0 0 auto; width: 1.7em; height: 1.7em; border-radius: 50%; object-fit: cover; background: var(--p); display: grid; place-items: center;
-        font-weight: 700; font-size: .85em; color: var(--pt); position: relative; margin-top: .05em; }
-  .av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
-  .av i { position: absolute; right: -3px; bottom: -3px; width: .8em; height: .8em; border-radius: 50%; background: var(--p); border: 2px solid #111; }
-  .body { min-width: 0; line-height: 1.32; overflow-wrap: anywhere; }
-  .name { font-weight: 600; color: var(--n); margin-right: .35em; letter-spacing: .2px; }
-  .badge { height: 1em; vertical-align: -.12em; margin-right: .2em; }
-  .text { color: #ececf0; }
-  .em { height: 1.6em; vertical-align: middle; margin: -.3em .08em; }
-  .kick    { --p: #53fc18; --pt: #0a0a0a; }
-  .youtube { --p: #ff0033; --pt: #ffffff; }
-  .twitch  { --p: #9146ff; --pt: #ffffff; }
-  #status { position: fixed; top: 6px; right: 10px; font-size: 12px; color: #8a8a94; letter-spacing: 1px; opacity: 0; transition: opacity .4s; z-index: 6; }
-  body.dock #status { top: auto; bottom: calc(var(--comp, 0px) + 6px); }
-  #status.show { opacity: .9; }
-  #newbtn { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 7; display: none; cursor: pointer; border: 0; border-radius: 999px;
-            background: #e3141e; color: #fff; font: 600 13px "Bahnschrift", sans-serif; padding: 6px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
-  #newbtn.show { display: block; }
-  #head { display: none; position: fixed; left: 0; right: 0; top: 0; z-index: 5; background: #16161b; border-bottom: 2px solid #e3141e; }
-  body.dock #head { display: block; }
-  #vbar { display: none; padding: 7px 10px 5px; font-size: 13px; letter-spacing: .4px; gap: 12px; align-items: center; }
-  body.viewers #vbar { display: flex; }
-  #tts { display: flex; gap: 6px; align-items: center; padding: 5px 10px 7px; font: 12px "Bahnschrift", sans-serif; color: #b8b6c0; flex-wrap: wrap; }
-  #tts button, #tts select, #ttsPanel button, #ttsPanel select { font: 600 12px "Bahnschrift", sans-serif; border-radius: 6px; border: 1px solid #34323c; background: #1f1e25; color: #e8e7ec; padding: 3px 8px; cursor: pointer; }
-  #tts button.on { background: #e3141e; border-color: #e3141e; color: #fff; }
-  #tts select { max-width: 150px; }
-  #tts .sp { flex: 1; }
-  #qn { font-size: 11px; color: #9b98a4; }
-  #vbar .v { display: flex; align-items: center; gap: 5px; color: #d8d8de; }
-  #vbar .d { width: 8px; height: 8px; border-radius: 50%; background: var(--p); }
-  #vbar .n { font-weight: 700; color: #fff; min-width: 14px; }
-  #vbar .t { margin-left: auto; color: #fff; font-weight: 700; }
-  #vbar .t span { color: #e3141e; }
-  .tag { display: none; font: 700 .62em "Bahnschrift", sans-serif; letter-spacing: .6px; padding: .1em .45em; border-radius: .35em; margin-right: .45em; vertical-align: .12em; background: var(--p); color: var(--pt); }
-  body.dock .tag { display: inline-block; }
-  body.dock .msg { cursor: pointer; } body.dock .msg:hover { border-color: rgba(255,255,255,.18); }
-  #composer { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: #16161b; border-top: 2px solid #e3141e; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); gap: 6px; align-items: center; }
-  body.dock #composer { display: flex; }
-  body.dock #list { bottom: var(--comp, 0px); }
-  body.dock #newbtn { bottom: calc(var(--comp, 0px) + 10px); }
-  #plat { flex: 0 0 auto; font: 700 12px "Bahnschrift", sans-serif; border: 0; border-radius: 7px; padding: 7px 9px; cursor: pointer; color: #fff; background: #e3141e; }
-  #plat.twitch { background: #9146ff; } #plat.kick { background: #53fc18; color: #0a0a0a; } #plat.youtube { background: #ff0033; }
-  #msgIn { flex: 1; min-width: 0; background: #0c0b10; border: 1px solid #34323c; color: #fff; border-radius: 7px; padding: 7px 9px; font: 14px "Bahnschrift", "Segoe UI", sans-serif; outline: none; }
-  #msgIn:focus { border-color: #e3141e; }
-  #sendBtn { flex: 0 0 auto; background: #e3141e; border: 0; color: #fff; border-radius: 7px; padding: 7px 12px; font: 700 13px "Bahnschrift", sans-serif; cursor: pointer; }
-  #sug { display: none; position: fixed; left: 8px; right: 8px; z-index: 9; bottom: calc(var(--comp, 44px) + 4px); max-height: 46vh; overflow-y: auto; background: #1b1a21; border: 1px solid #3a3842; border-radius: 9px; box-shadow: 0 10px 28px rgba(0,0,0,.6); font: 13px "Bahnschrift", sans-serif; }
-  #sug.show { display: block; }
-  #sug .s { padding: 7px 10px; display: flex; gap: 8px; align-items: center; cursor: pointer; color: #e8e7ec; }
-  #sug .s.sel, #sug .s:hover { background: #2a2830; }
-  #sug .s small { margin-left: auto; color: #8f8c99; font-size: 11px; }
-  #sug .s i { width: 8px; height: 8px; border-radius: 50%; background: var(--p, #e3141e); flex: 0 0 auto; }
-  #sug .h { padding: 5px 10px 3px; color: #8f8c99; font-size: 11px; letter-spacing: .8px; }
-  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--comp, 44px) + 12px); z-index: 30; background: #24222b; color: #fff; padding: 6px 12px; border-radius: 8px; font: 600 12px "Bahnschrift", sans-serif; opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 92vw; text-align: center; }
-  #toast.show { opacity: 1; }
-  /* TTS settings drawer */
-  #ttsPanel { display: none; position: fixed; inset: 0; z-index: 20; background: #0f0e13; overflow-y: auto; font: 13px "Bahnschrift", "Segoe UI", sans-serif; color: #e8e7ec; padding: 10px 12px 30px; }
-  #ttsPanel.show { display: block; }
-  #ttsPanel h3 { margin: 4px 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; } #ttsPanel h3 button { margin-left: auto; }
-  #ttsPanel h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: .8px; color: #9b98a4; text-transform: uppercase; }
-  #ttsPanel label.r { display: grid; grid-template-columns: 110px 1fr 46px; align-items: center; gap: 8px; margin: 5px 0; }
-  #ttsPanel label.c { display: flex; align-items: center; gap: 7px; margin: 5px 0; cursor: pointer; }
-  #ttsPanel input[type=range] { accent-color: #e3141e; width: 100%; } #ttsPanel input[type=checkbox] { accent-color: #e3141e; }
-  #ttsPanel textarea { width: 100%; box-sizing: border-box; min-height: 52px; background: #0c0b10; border: 1px solid #34323c; color: #fff; border-radius: 7px; padding: 6px 8px; font: 12px Consolas, monospace; }
-  #ttsPanel .li { display: flex; gap: 6px; align-items: center; padding: 5px 7px; background: #16151b; border-radius: 7px; margin-top: 4px; font-size: 12px; }
-  #ttsPanel .li .x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } #ttsPanel .li small { color: #9b98a4; flex: none; }
-  #ttsPanel .li.playing { border: 1px solid #e3141e; } #ttsPanel .li button { padding: 2px 7px; }
-  #ttsPanel .hint { color: #9b98a4; font-size: 11px; line-height: 1.4; }
-  #ttsPanel .eng { font-size: 11px; color: #9b98a4; margin-bottom: 6px; } #ttsPanel .eng.bad { color: #ffcf6b; }
-  @keyframes in  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  @keyframes out { to { opacity: 0; transform: translateX(-12px); } }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); }
+  body { display: flex; flex-direction: column; font-size: var(--size, 14px); }
+  header { background: var(--bg2); border-bottom: 2px solid var(--red); padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .chip { font: 600 11px var(--font); border-radius: 999px; padding: 3px 9px 3px 7px; background: var(--card2); border: 1px solid var(--line2); color: var(--dim); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim2); } .chip.st-connected i { background: var(--ok); } .chip.st-reconnecting i, .chip.st-connecting i { background: var(--warn); } .chip.st-auth i, .chip.st-error i { background: var(--err); } .chip.st-unavailable i { background: var(--info); }
+  .chip.hide { opacity: .45; text-decoration: line-through; } .chip b { color: var(--text); font-weight: 700; }
+  .chip.total { margin-left: auto; cursor: default; } .chip.total b { color: #fff; }
+  #ttsbar { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; font-size: 12px; } #ttsbar select { width: auto; max-width: 160px; padding: 4px 6px; font-size: 12px; } #ttsbar button { padding: 4px 8px; font-size: 12px; }
+  #ttsbar .sp { flex: 1; } #qn { color: var(--dim); font-size: 11px; }
+  #list { flex: 1; overflow-y: auto; padding: 6px 8px 10px; scroll-behavior: auto; }
+  .msg { display: flex; gap: .55em; align-items: flex-start; background: var(--card); border: 1px solid #ffffff0a; border-left: 3px solid var(--p); border-radius: 8px; padding: .4em .55em; margin-top: .35em; cursor: pointer; }
+  .msg:hover { border-color: #ffffff22; border-left-color: var(--p); } .msg.dim { opacity: .5; } .msg.me { background: #1d1a26; }
+  .msg.alert { background: linear-gradient(90deg, #2a1d10, var(--card)); border-left-color: #ffb547; cursor: default; } .msg.alert .text { color: #ffd9a0; }
+  .msg.sys { background: transparent; border: 1px dashed var(--line2); color: var(--dim); font-size: .9em; cursor: default; }
+  .av { flex: none; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--p); display: grid; place-items: center; font-weight: 700; font-size: .85em; color: #fff; overflow: hidden; }
+  .av img { width: 100%; height: 100%; object-fit: cover; }
+  .body { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; flex: 1; }
+  .name { font-weight: 700; color: var(--n, var(--p)); margin-right: .35em; } .role { font-size: .8em; margin-right: .2em; }
+  .flag { font-size: 10px; color: var(--warn); margin-left: .4em; border: 1px solid #574420; border-radius: 4px; padding: 0 4px; }
+  .em { height: 1.6em; vertical-align: middle; margin: -.3em .05em; }
+  .twitch { --p: var(--tw); } .kick { --p: var(--kick); } .youtube { --p: var(--yt); } .rumble { --p: var(--rumble); } .test { --p: #777; }
+  .kick .av, .rumble .av { color: #0a0a0a; }
+  #newbtn { position: absolute; left: 50%; transform: translateX(-50%); bottom: 64px; display: none; z-index: 5; }
+  #newbtn.show { display: inline-flex; }
+  #composer { flex: none; background: var(--bg2); border-top: 2px solid var(--red); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); display: flex; gap: 6px; align-items: center; }
+  #plat { flex: none; } #plat.twitch { background: var(--tw); border-color: var(--tw); color: #fff; } #plat.kick { background: var(--kick); border-color: var(--kick); color: #0a0a0a; } #plat.youtube { background: var(--yt); border-color: var(--yt); color: #fff; } #plat.all { background: var(--red); border-color: var(--red); color: #fff; }
+  #sug { display: none; position: absolute; left: 8px; right: 8px; bottom: 54px; z-index: 9; max-height: 46vh; overflow-y: auto; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: var(--shadow); }
+  #sug.show { display: block; } #sug .s { padding: 7px 10px; display: flex; gap: 8px; align-items: center; cursor: pointer; } #sug .s.sel, #sug .s:hover { background: #2a2833; } #sug .s small { margin-left: auto; color: var(--dim); }
+  #menu { position: fixed; z-index: 20; display: none; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 220px; }
+  #menu.show { display: block; } #menu button { width: 100%; justify-content: flex-start; background: transparent; border-color: transparent; } #menu button:hover { background: #2a2833; }
+  #menu .h { padding: 4px 10px 6px; color: var(--dim); font-size: 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+  #conn { position: absolute; top: 8px; right: 10px; z-index: 6; display: none; } #conn.show { display: inline-flex; }
+  main { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 </style>
 </head>
 <body>
-<div id="status"></div>
-<div id="head">
-  <div id="vbar"><div class="v twitch"><i class="d"></i>Twitch <b class="n" id="vc-twitch">-</b></div><div class="v kick"><i class="d"></i>Kick <b class="n" id="vc-kick">-</b></div><div class="v youtube"><i class="d"></i>YouTube <b class="n" id="vc-youtube">-</b></div><div class="t">&#128065; <span id="vc-total">0</span> watching</div></div>
-  <div id="tts"><button id="ttsBtn" title="Read chat messages out loud (viewers hear it through the IXC ChatBox TTS source)">&#128264; TTS OFF</button>
-    <select id="ttsVoice" title="Voice"></select>
-    <select id="ttsRead" title="What to read"><option value="all">read all</option><option value="name">name + message</option><option value="tts">only !tts</option></select>
-    <span id="qn"></span><span class="sp"></span><button id="ttsTest" title="Test the voice">Test</button><button id="ttsSkip" title="Stop the current message">Skip</button><button id="ttsCfg" title="TTS settings, queue and history">&#9881;</button><button id="phoneBtn" title="Open IXC on your phone (works on mobile data)">&#128241;</button></div>
+<header>
+  <div class="chips" id="chips" aria-label="Platforms (click to show or hide in this panel)"></div>
+  <div id="ttsbar">
+    <button id="ttsBtn" title="Read chat out loud (viewers hear it)">🔈 Voice off</button>
+    <button id="pauseBtn" title="Pause / resume the chat voice">⏸</button>
+    <select id="ttsVoice" title="Default voice" aria-label="Default voice"></select>
+    <span id="qn"></span><span class="sp"></span>
+    <button id="skipBtn" title="Stop the message being read now">Skip</button>
+    <button id="appBtn" title="Open the IXC dashboard (settings, phone, overlays, system check)">⚙ IXC</button>
+  </div>
+</header>
+<main>
+  <span id="conn" class="pill st-reconnecting"><i></i>IXC not running</span>
+  <div id="list" class="scroll" aria-live="polite"></div>
+  <button id="newbtn" class="primary small">↓ new messages</button>
+  <div id="sug"></div>
+</main>
+<div id="composer">
+  <button id="plat" class="all" title="Where to send (click to change)">ALL</button>
+  <input id="msgIn" type="text" autocomplete="off" maxlength="480" placeholder="Reply to chat…  ( ! commands · @ people )" aria-label="Reply to chat">
+  <button id="sendBtn" class="primary">Send</button>
 </div>
-<div id="list"></div>
-<button id="newbtn">&#8595; new messages</button>
-<div id="sug"></div>
-<div id="toast"></div>
-<div id="composer"><button id="plat" title="Where to send (click to change)">ALL</button><input id="msgIn" type="text" autocomplete="off" maxlength="480" placeholder="Reply to chat...  ( ! = commands   @ = users )"><button id="sendBtn">Send</button></div>
-<div id="ttsPanel">
-  <h3>Chat TTS <span id="tpState" style="font-size:12px;color:#9b98a4"></span><button id="tpClose">Close</button></h3>
-  <div class="eng" id="tpEng"></div>
-  <h4>Queue</h4><div id="tpQueue"></div><div style="margin-top:6px"><button id="tpSkip">Skip current</button> <button id="tpClear">Clear queue</button></div>
-  <h4>Voice</h4>
-  <label class="r">Speed <input id="sSpeed" type="range" min="-50" max="100" step="5"><span id="vSpeed"></span></label>
-  <label class="r">Pitch <input id="sPitch" type="range" min="-30" max="30" step="1"><span id="vPitch"></span></label>
-  <label class="r">Volume <input id="sVolume" type="range" min="0" max="100" step="5"><span id="vVolume"></span></label>
-  <label class="c"><input type="checkbox" id="cFallback"> If the neural voice fails, use the offline Windows voice</label>
-  <h4>What gets read</h4>
-  <label class="c"><input type="checkbox" id="cIgnoreOwn"> Ignore my own account (and my replies)</label>
-  <label class="c"><input type="checkbox" id="cIgnoreBots"> Ignore bot accounts (Streamer.bot, Nightbot, BotRix…)</label>
-  <label class="c"><input type="checkbox" id="cReadEmotes"> Read emote names</label>
-  <label class="c"><input type="checkbox" id="cReadEmoji"> Read emoji</label>
-  <label class="c"><input type="checkbox" id="cReadLinks"> Read links out (otherwise "link")</label>
-  <label class="r">Max length <input id="sMaxChars" type="range" min="40" max="500" step="10"><span id="vMaxChars"></span></label>
-  <div>Never speak these users <span class="hint">(one per line)</span></div><textarea id="tNever" spellcheck="false"></textarea>
-  <div style="margin-top:6px">Skip messages containing <span class="hint">(one per line)</span></div><textarea id="tBlocked" spellcheck="false"></textarea>
-  <div style="margin-top:6px">Extra bot names <span class="hint">(one per line)</span></div><textarea id="tBots" spellcheck="false"></textarea>
-  <div style="margin-top:6px">My other account names <span class="hint">(found automatically from Streamer.bot; add any it missed)</span></div><textarea id="tOwn" spellcheck="false"></textarea>
-  <div style="margin-top:6px"><button id="tpSaveLists">Save lists</button></div>
-  <h4>Busy chat</h4>
-  <label class="r">Queue size <input id="sQueueMax" type="range" min="1" max="30" step="1"><span id="vQueueMax"></span></label>
-  <label class="r">Too old after <input id="sStaleSec" type="range" min="10" max="300" step="5"><span id="vStaleSec"></span></label>
-  <label class="r">Max per minute <input id="sPerMinute" type="range" min="1" max="60" step="1"><span id="vPerMinute"></span></label>
-  <label class="r">Same user wait <input id="sUserCooldownSec" type="range" min="0" max="60" step="1"><span id="vUserCooldownSec"></span></label>
-  <div class="hint">When the queue is full the oldest message is dropped. Messages still waiting after "too old" are skipped, so TTS stays in step with chat. !tts messages go first.</div>
-  <h4>Recently read</h4><div id="tpHist"></div>
-  <h4>Not read (and why)</h4><div id="tpSkipped"></div>
-</div>
+<div id="menu" role="menu"></div>
 <script src="/core/ixc.js"></script>
-<script src="/core/phone.js"></script>
+<script src="/core/ui.js"></script>
 <script>
 (() => {
-  const q = new URLSearchParams(location.search);
-  const DOCK = !!(q.get('dock') || q.get('bg'));
-  const DIRECT = q.get('direct') === '1';
-  const MAX = +(q.get('max') || (DOCK ? 150 : 14)), FADE = +(q.get('fade') ?? (DOCK ? 0 : 90)) * 1000;
-  const SHOW_AV = q.get('avatars') !== '0', SHOW_BADGES = q.get('badges') !== '0';
-  document.documentElement.style.setProperty('--size', (+(q.get('size') || (DOCK ? 14 : 16))) + 'px');
-  document.documentElement.style.setProperty('--alpha', q.get('alpha') || (DOCK ? '1' : '.55'));
-  if (DOCK) document.body.classList.add('dock');
-  const list = document.getElementById('list'), newbtn = document.getElementById('newbtn'), status = document.getElementById('status');
-  const setStatus = (t) => { status.textContent = t; status.classList.toggle('show', !!t); };
-  const LETTER = { kick: 'K', youtube: '▶', twitch: 'T' };
-  const TAG = { kick: 'KICK', youtube: 'YT', twitch: 'TWITCH' };
-  const USERS = new Map();
-
-  // ---------- scrolling (dock): follow new messages unless the user scrolled up ----------
-  let follow = true;
-  const atBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight < 30;
-  list.addEventListener('scroll', () => { follow = atBottom(); if (follow) newbtn.classList.remove('show'); });
-  newbtn.onclick = () => { follow = true; list.scrollTop = list.scrollHeight; newbtn.classList.remove('show'); };
-  const toBottom = () => { if (!DOCK) return; if (follow) requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; }); else newbtn.classList.add('show'); };
-
-  // ---------- message text with emotes ----------
-  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const img = (u, alt) => `<img class="em" src="${esc(u)}" alt="${esc(alt || '')}" title="${esc(alt || '')}" onerror="this.replaceWith(document.createTextNode(this.alt))">`;
-  const emoteUrl = (e) => e && (e.imageUrl || e.ImageUrl || e.url || e.image || (e.images && (e.images.url || e.images[0])) ||
-                               (e.id && e.provider === 'twitch' ? `https://static-cdn.jtvnw.net/emoticons/v2/${e.id}/default/dark/2.0` : null));
-  function renderText(text, emotes, parts) {
-    if (Array.isArray(parts) && parts.length) {
-      return parts.map(p => { if (typeof p === 'string') return esc(p); const u = emoteUrl(p.emote || p); if (u && (p.emote || p.imageUrl || p.url)) return img(u, p.text || (p.emote && p.emote.name) || p.name);
-        return esc(p.text ?? ''); }).join('');
-    }
-    text = String(text || '');
-    const pos = (emotes || []).filter(e => e && Number.isInteger(e.startIndex) && Number.isInteger(e.endIndex) && emoteUrl(e)).sort((a, b) => a.startIndex - b.startIndex);
-    if (pos.length) {
-      const cp = Array.from(text); let out = '', i = 0;
-      for (const e of pos) { if (e.startIndex < i) continue; out += esc(cp.slice(i, e.startIndex).join('')); out += img(emoteUrl(e), e.name || e.code || cp.slice(e.startIndex, e.endIndex + 1).join('')); i = e.endIndex + 1; }
-      return out + esc(cp.slice(i).join(''));
-    }
-    let html = esc(text).replace(/\[emote:(\d+):([^\]\s]*)\]/g, (m, id, nm) => img(`https://files.kick.com/emotes/${id}/fullsize`, nm));
-    const named = (emotes || []).filter(e => e && (e.name || e.code) && emoteUrl(e));
-    if (named.length) { const map = new Map(named.map(e => [e.name || e.code, emoteUrl(e)]));
-      html = html.split(/(\s+)/).map(w => map.has(w) ? img(map.get(w), w) : w).join(''); }
-    return html;
-  }
-
-  // ---------- one chat line ----------
-  function add(m, old) {
-    if (!m.text && !m.html) return;
-    const el = document.createElement('div'); el.className = 'msg ' + m.platform + (old ? ' old' : '');
-    const av = document.createElement('div'); av.className = 'av';
-    if (SHOW_AV && m.avatar) { const im = new Image(); im.src = m.avatar; im.alt = ''; im.onerror = () => { im.remove(); av.prepend(document.createTextNode((m.name || '?')[0].toUpperCase())); }; av.appendChild(im); }
-    else av.textContent = (m.name || LETTER[m.platform] || '?')[0].toUpperCase();
-    const dot = document.createElement('i'); av.appendChild(dot);
-    const body = document.createElement('div'); body.className = 'body';
-    const badges = SHOW_BADGES ? (m.badges || []).map(b => `<img class="badge" src="${esc(b)}" alt="">`).join('') : '';
-    body.innerHTML = `<span class="tag">${TAG[m.platform] || ''}</span>${badges}<span class="name" style="--n:${esc(m.color || 'var(--p)')}">${esc(m.name || 'Viewer')}</span><span class="text">${m.html ?? esc(m.text)}</span>`;
-    el.dataset.p = m.platform; el.dataset.n = m.name || ''; if (m.id) el.dataset.id = m.id;
-    el.append(av, body); list.appendChild(el);
-    if (m.name) { USERS.delete(m.name.toLowerCase()); USERS.set(m.name.toLowerCase(), { name: m.name, platform: m.platform }); }
-    const msgs = list.querySelectorAll('.msg:not(.out)');
-    if (msgs.length > MAX) { const o = msgs[0]; if (DOCK) o.remove(); else remove(o); }
-    if (FADE > 0 && !old) setTimeout(() => remove(el), FADE); else if (FADE > 0 && old) el.remove();
-    toBottom();
-  }
-  function remove(el) { if (!el || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 480); }
-
-  // ---------- tolerant parsing of Streamer.bot payloads ----------
-  const pick = (...v) => v.find(x => typeof x === 'string' && x.trim() !== '');
-  const arr = (...v) => v.find(x => Array.isArray(x) && x.length) || [];
-  function parse(src, d) {
-    const m = (d && typeof d.message === 'object' && d.message) ? d.message : {};
-    const u = d.user || m.user || d.sender || {};
-    const name = pick(m.displayName, m.username, u.name, u.displayName, u.display_name, u.login, u.username, d.displayName, d.userName, d.username, d.user_name);
-    const text = pick(m.message, m.text, m.content, typeof d.message === 'string' ? d.message : null, d.text, d.messageText, d.content);
-    const color = pick(m.color, u.color, d.color, u.identity && u.identity.color);
-    const avatar = pick(u.profileImageUrl, u.profilePicture, u.profile_pic, u.profilePic, u.avatar, u.avatarUrl, u.avatar_url, u.profileImage, u.image,
-                        m.profileImageUrl, d.profileImageUrl, d.profilePicture, u.thumbnail, u.thumbnails && u.thumbnails[0] && u.thumbnails[0].url);
-    const emotes = arr(m.emotes, d.emotes, u.emotes);
-    const parts = arr(m.parts, d.parts);
-    const badges = arr(m.badges, u.badges, d.badges).map(b => typeof b === 'string' ? b : (b.imageUrl || b.image || b.url)).filter(x => typeof x === 'string' && /^https?:/.test(x));
-    const partsHtml = parts.length && parts.some(p => p && (p.emote || p.imageUrl)) ? renderText('', null, parts) : null;
-    const id = pick(m.msgId, m.messageId, m.id, d.messageId, d.msgId, d.eventId, d.id);
-    return { platform: src, id, name, text, color: src === 'twitch' ? color : null, avatar, badges, html: partsHtml ?? renderText(text, emotes, null) };
-  }
-
-  // ---------- viewer counter (?viewers=1) ----------
-  const VC = { twitch: null, kick: null, youtube: null };
-  if (q.get('viewers')) document.body.classList.add('viewers');
-  const head = document.getElementById('head');
-  const fitHead = () => { document.documentElement.style.setProperty('--vbar', (DOCK ? head.offsetHeight : 0) + 'px'); if (DOCK && follow) list.scrollTop = list.scrollHeight; };
-  if (window.ResizeObserver) { new ResizeObserver(fitHead).observe(head); new ResizeObserver(fitHead).observe(document.body); } else window.addEventListener('resize', fitHead);
-  requestAnimationFrame(fitHead);
-  function findCount(o, depth) { if (!o || typeof o !== 'object' || depth > 4) return null;
-    for (const [k, v] of Object.entries(o)) if (typeof v === 'number' && /viewer|concurrent|watching/i.test(k)) return v;
-    for (const v of Object.values(o)) { const r = findCount(v, depth + 1); if (r !== null) return r; } return null; }
-  function setVC(p, n) { VC[p] = n; const el = document.getElementById('vc-' + p); if (el) el.textContent = (n === null || n === undefined ? '-' : n);
-    document.getElementById('vc-total').textContent = Object.values(VC).reduce((a, b) => a + (b || 0), 0); }
-  function onViewers(src, type, data) {
-    if ((src === 'twitch' || src === 'kick') && type === 'ViewerCountUpdate') { const n = findCount(data, 0); if (n !== null) setVC(src, n); return true; }
-    if (src === 'youtube' && type === 'StatisticsUpdated') { const n = findCount(data, 0); if (n !== null) setVC('youtube', n); return true; }
-    if (type === 'StreamOffline' || type === 'BroadcastEnded') { setVC(src, null); return true; }
-    return false; }
-  function handleEvent(p, old) {
-    if (!p || !p.event || !p.data) return;
-    const src = String(p.event.source || '').toLowerCase(); if (!['twitch', 'youtube', 'kick'].includes(src)) return;
-    const type = String(p.event.type || '');
-    if (onViewers(src, type, p.data)) return;
-    if (/Deleted|Banned|TimedOut/.test(type)) { hideFrom(src, p.data); return; }
-    if (type !== 'ChatMessage' && type !== 'Message') return;
-    add(parse(src, p.data), old);
-  }
-  function hideFrom(src, d) {   // moderation: remove deleted messages / messages of banned users from the view
-    const id = pick(d.messageId, d.msgId, d.targetMessageId, d.message && d.message.id, d.id); const who = pick(d.user && (d.user.name || d.user.login), d.userName, d.username, d.targetUser && d.targetUser.name);
-    list.querySelectorAll('.msg').forEach(el => { if (el.dataset.p === src && ((id && el.dataset.id === id) || (!id && who && el.dataset.n.toLowerCase() === who.toLowerCase()))) el.remove(); }); }
-
-  // ---------- connection: IXC Core (one shared Streamer.bot connection, history on connect) ----------
-  let link = null, ttsState = null, voices = [];
-  if (q.get('demo')) {
-    const D = [['kick', { user: { name: 'ShadowSniper', profilePicture: '' }, text: 'that spray transfer was insane [emote:37226:KEKW]' }],
-               ['twitch', { message: { displayName: 'Rushkaa', color: '#ff6b6b', message: 'GG Kappa how many kills?', emotes: [{ name: 'Kappa', startIndex: 3, endIndex: 7, imageUrl: 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/2.0' }] } }],
-               ['youtube', { user: { name: 'Aman Verma' }, message: 'first time here, love the setup' }],
-               ['twitch', { message: { displayName: 'neonfox', color: '#4fc3f7', message: 'chicken dinner incoming' } }]];
-    let i = 0; const t = setInterval(() => { add(parse(...D[i++ % D.length])); if (i > 24) clearInterval(t); }, 700);
-  } else if (DIRECT) directConnect();
-  if (!DIRECT) {
-    link = IXC.connect({ role: 'chat', topics: DOCK ? ['chat', 'tts', 'reload'] : ['chat', 'reload'], onState: (up) => setStatus(up ? '' : 'IXC NOT RUNNING'), on: (m) => {
-      if (q.get('demo') && (m.type === 'chat' || m.type === 'chat.history')) return;
-      if (m.type === 'chat') handleEvent(m.e);
-      else if (m.type === 'chat.history') { if (!list.children.length) (m.events || []).forEach(e => handleEvent(e, true)); }
-      else if (m.type === 'chat.status') { setStatus(m.streamerbot ? '' : 'CHAT RECONNECTING'); if (m.viewers) for (const p in m.viewers) setVC(p, m.viewers[p]); }
-      else if (m.type === 'tts.state') { ttsState = m; paintTts(); }
-      else if (m.type === 'tts.voices') { voices = m.voices || []; fillVoices(); }
-      else if (m.type === 'chat.suggest') { CMDS = m.commands || []; VIEWERS = m.users || []; }
-      else if (m.type === 'error') say('✗ ' + m.error);
-    } });
-  }
-  function directConnect() {   // legacy: straight to Streamer.bot (overlay only, no TTS)
-    const HOST = q.get('host') || '127.0.0.1', PORT = q.get('port') || '8080'; let ws, retry = 1000;
-    const go = () => { try { ws = new WebSocket(`ws://${HOST}:${PORT}/`); } catch (e) { return setTimeout(go, retry); }
-      ws.onopen = () => { retry = 1000; setStatus(''); ws.send(JSON.stringify({ request: 'Subscribe', id: 'ixc-chat', events: { Twitch: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'], YouTube: ['Message', 'StatisticsUpdated', 'BroadcastEnded'], Kick: ['ChatMessage', 'ViewerCountUpdate', 'StreamOffline'] } })); };
-      ws.onmessage = (ev) => { let p; try { p = JSON.parse(ev.data); } catch { return; } handleEvent(p); };
-      ws.onclose = () => { setStatus('CHAT RECONNECTING'); setTimeout(go, retry); retry = Math.min(retry * 2, 15000); }; ws.onerror = () => { try { ws.close(); } catch {} }; };
-    go(); }
-
-  // ---------- toast ----------
-  const toast = document.getElementById('toast'); let toastT;
-  const say = (t) => { toast.textContent = t; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 3200); };
-
-  // ---------- TTS controls (settings live in IXC, so every dock / phone shows the same thing) ----------
-  const $ = (id) => document.getElementById(id);
-  const setTts = (patch) => link && link.send({ type: 'tts.set', patch });
-  function fillVoices() { const sv = $('ttsVoice'); const cur = ttsState && ttsState.settings.voice;
-    sv.innerHTML = voices.map(v => `<option value="${esc(v.key)}">${esc(v.label)}${v.isNew ? ' ★' : ''}</option>`).join(''); if (cur) sv.value = cur; }
-  const SLIDERS = { speed: v => (v > 0 ? '+' : '') + v + '%', pitch: v => (v > 0 ? '+' : '') + v + 'Hz', volume: v => v + '%', maxChars: v => v, queueMax: v => v, staleSec: v => v + 's', perMinute: v => v, userCooldownSec: v => v + 's' };
-  const CHECKS = { fallback: 'cFallback', ignoreOwn: 'cIgnoreOwn', ignoreBots: 'cIgnoreBots', readEmotes: 'cReadEmotes', readEmoji: 'cReadEmoji', readLinks: 'cReadLinks' };
-  const LISTS = { neverSpeak: 'tNever', blockedWords: 'tBlocked', botNames: 'tBots', ownNames: 'tOwn' };
+  const { $, esc, P, toast } = UI;
+  const q = new URLSearchParams(location.search), MAX = +(q.get('max') || 200);
+  if (q.get('size')) document.body.style.setProperty('--size', (+q.get('size')) + 'px');
+  const list = $('list'); let follow = true, plats = {}, viewers = null, settings = {}, voices = [], tts = null, hideP = new Set(), sendTargets = ['all'], tIdx = 0;
+  // ---------- scrolling: follow new messages unless you scrolled up ----------
+  const atBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.addEventListener('scroll', () => { follow = atBottom(); if (follow) $('newbtn').classList.remove('show'); });
+  $('newbtn').onclick = () => { follow = true; list.scrollTop = list.scrollHeight; $('newbtn').classList.remove('show'); };
+  const toBottom = () => { if (follow) requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; }); else $('newbtn').classList.add('show'); };
+  // ---------- messages ----------
+  function add(m) {
+    const el = document.createElement('div'); const alert = m.kind && m.kind !== 'chat';
+    el.className = 'msg ' + (P[m.platform] ? m.platform : 'test') + (alert ? ' alert' : '') + (m.hidden ? ' dim' : '') + (m.me ? ' me' : '');
+    el.dataset.p = m.platform; el.dataset.id = m.id || ''; el.dataset.login = (m.login || m.name || '').toLowerCase(); el.dataset.name = m.name || '';
+    const r = m.roles || {}; const role = (r.broadcaster ? '👑' : '') + (r.mod ? '🛡️' : '') + (r.vip ? '💎' : '') + (r.sub ? '⭐' : '');
+    const av = m.avatar && /^https:/.test(m.avatar) ? `<img src="${esc(m.avatar)}" alt="" loading="lazy" onerror="this.remove()">` : esc((m.name || '?')[0].toUpperCase());
+    const text = alert ? esc((m.text || m.kind) + (m.amount ? ' · ' + m.amount : '')) : UI.msgHtml(m);
+    const flags = (m.flags || []).filter(f => f !== 'action').map(f => `<span class="flag" title="${m.hidden ? 'Hidden from the on-stream overlay' : 'Not read out loud'}">${esc(f)}</span>`).join('');
+    el.innerHTML = `<div class="av">${av}</div><div class="body"><span class="tag ${esc(m.platform)}">${esc((P[m.platform] || P.test).tag)}</span> <span class="role">${role}</span><span class="name" ${m.color && /^#[0-9a-f]{3,8}$/i.test(m.color) ? `style="--n:${m.color}"` : ''}>${esc(m.name || 'someone')}</span>${alert ? '' : ''}<span class="text">${text}</span>${flags}</div>`;
+    if (hideP.has(m.platform)) el.style.display = 'none';
+    list.appendChild(el); while (list.children.length > MAX) list.firstChild.remove(); toBottom(); }
+  function sys(text, bad) { const el = document.createElement('div'); el.className = 'msg sys'; el.innerHTML = `<div class="body ${bad ? 'warn' : ''}">${esc(text)}</div>`; list.appendChild(el); toBottom(); }
+  function del(p, id, login) { list.querySelectorAll('.msg').forEach(el => { if (el.dataset.p === p && ((id && el.dataset.id === id) || (!id && login && el.dataset.login === String(login).toLowerCase()))) el.remove(); }); }
+  // ---------- platforms + viewers ----------
+  function paintChips() {
+    const order = ['twitch', 'kick', 'youtube', 'rumble'];
+    let h = order.filter(p => plats[p] && plats[p].configured).map(p => { const s = plats[p]; const v = viewers && viewers.platforms && viewers.platforms[p];
+      const n = v && v.state === 'live' ? `<b>${UI.num(v.count)}</b>` : v && v.state === 'offline' ? '<span class="tiny">offline</span>' : '';
+      return `<span class="chip st-${esc(s.state)} ${hideP.has(p) ? 'hide' : ''}" data-p="${p}" title="${esc(P[p].name + ': ' + (UI.STATE[s.state] || s.state) + (s.detail ? ' - ' + s.detail : '') + (s.canSend ? '' : '\n' + (s.sendNote || '')))} (click: show/hide here)"><i></i>${P[p].name} ${n}</span>`; }).join('');
+    if (!h) h = '<span class="muted small">No platform connected yet - <a href="#" id="setupLink">connect your accounts</a></span>';
+    const tot = viewers && viewers.total != null ? `<span class="chip total" title="Viewers on all platforms${viewers.partial ? ' (some platforms have no number right now)' : ''}">👁 <b>${UI.num(viewers.total)}</b>${viewers.partial ? '*' : ''}</span>` : '';
+    $('chips').innerHTML = h + tot;
+    const sl = $('setupLink'); if (sl) sl.onclick = (e) => { e.preventDefault(); openApp('#accounts'); };
+    sendTargets = ['all'].concat(order.filter(p => plats[p] && plats[p].canSend)); if (!sendTargets.includes(sendTargets[tIdx])) tIdx = 0; paintPlat(); }
+  $('chips').onclick = (e) => { const c = e.target.closest('.chip[data-p]'); if (!c) return; const p = c.dataset.p; if (hideP.has(p)) hideP.delete(p); else hideP.add(p);
+    list.querySelectorAll('.msg[data-p="' + p + '"]').forEach(el => el.style.display = hideP.has(p) ? 'none' : ''); paintChips();
+    link.send({ type: 'settings.set', patch: { 'chat.dockPlatforms': ['twitch', 'kick', 'youtube', 'rumble'].filter(x => !hideP.has(x)) } }); };
+  function paintPlat() { const t = sendTargets[tIdx] || 'all'; const b = $('plat'); b.textContent = t === 'all' ? 'ALL' : P[t].tag; b.className = t; b.title = t === 'all' ? 'Send to every platform IXC can reply on (click to change)' : 'Send to ' + P[t].name; }
+  $('plat').onclick = () => { tIdx = (tIdx + 1) % sendTargets.length; paintPlat(); };
+  // ---------- TTS ----------
   function paintTts() {
-    if (!DOCK || !ttsState) return; const s = ttsState.settings;
-    const b = $('ttsBtn'); b.textContent = s.enabled ? '\u{1F50A} TTS ON' : '\u{1F508} TTS OFF'; b.classList.toggle('on', s.enabled);
-    if (document.activeElement !== $('ttsVoice')) $('ttsVoice').value = s.voice; if (document.activeElement !== $('ttsRead')) $('ttsRead').value = s.readMode;
-    $('qn').textContent = ttsState.players === 0 ? '⚠ TTS source not in OBS' : (ttsState.queue.length ? ttsState.queue.length + ' waiting' : '');
-    $('qn').title = ttsState.players === 0 ? 'Add http://localhost:8767/chat/tts.html as a browser source in OBS - that is what plays the voice.' : '';
-    if (!$('ttsPanel').classList.contains('show')) return;
-    for (const k in SLIDERS) { const el = $('s' + k[0].toUpperCase() + k.slice(1)); if (document.activeElement !== el) el.value = s[k]; $('v' + k[0].toUpperCase() + k.slice(1)).textContent = SLIDERS[k](s[k]); }
-    for (const k in CHECKS) $(CHECKS[k]).checked = !!s[k];
-    for (const k in LISTS) if (document.activeElement !== $(LISTS[k]) && !$(LISTS[k]).dataset.dirty) $(LISTS[k]).value = (s[k] || []).join('\n');
-    $('tpState').textContent = s.enabled ? 'ON' : 'OFF';
-    $('tpEng').textContent = 'Engine: ' + ttsState.engine + ' · TTS sources in OBS: ' + ttsState.players; $('tpEng').className = 'eng' + (/offline|failed/.test(ttsState.engine) || !ttsState.players ? ' bad' : '');
-    const row = (h, btn) => `<div class="li ${h.status === 'playing' ? 'playing' : ''}"><small>${esc(h.at)}</small><span class="x" title="${esc(h.text)}">${esc(h.text)}</span><small>${esc(h.status)}</small>${btn || ''}</div>`;
-    const cur = ttsState.current ? [ttsState.current] : [];
-    $('tpQueue').innerHTML = cur.concat(ttsState.queue).map(h => row(h)).join('') || '<div class="hint">Nothing waiting.</div>';
-    $('tpHist').innerHTML = ttsState.history.map(h => row(h, `<button data-replay="${h.n}" title="Say it again">&#8635;</button>`)).join('') || '<div class="hint">Nothing read yet.</div>';
-    $('tpSkipped').innerHTML = (ttsState.skipped || []).map(h => `<div class="li"><small>${esc(h.at)}</small><span class="x" title="${esc(h.text)}">${esc(h.user ? h.user + ': ' : '')}${esc(h.text)}</span><small>${esc(h.reason)}</small></div>`).join('') || '<div class="hint">Nothing skipped yet.</div>';
-  }
-  if (DOCK && link) {
-    $('ttsBtn').onclick = () => { if (!ttsState) return say('✗ IXC is not running'); setTts({ enabled: !ttsState.settings.enabled }); };
-    $('ttsVoice').onchange = () => setTts({ voice: $('ttsVoice').value });
-    $('ttsRead').onchange = () => setTts({ readMode: $('ttsRead').value });
-    $('ttsTest').onclick = () => link.send({ type: 'tts.test', voice: $('ttsVoice').value });
-    $('ttsSkip').onclick = $('tpSkip').onclick = () => link.send({ type: 'tts.skip' });
-    $('tpClear').onclick = () => link.send({ type: 'tts.clear' });
-    $('ttsCfg').onclick = () => { $('ttsPanel').classList.add('show'); paintTts(); };
-    $('tpClose').onclick = () => $('ttsPanel').classList.remove('show');
-    $('tpHist').onclick = (e) => { const b = e.target.closest('[data-replay]'); if (b) link.send({ type: 'tts.replay', n: +b.dataset.replay }); };
-    for (const k in SLIDERS) { const id = k[0].toUpperCase() + k.slice(1); let t; $('s' + id).oninput = (e) => { $('v' + id).textContent = SLIDERS[k](+e.target.value); clearTimeout(t); t = setTimeout(() => setTts({ [k]: +e.target.value }), 250); }; }
-    for (const k in CHECKS) $(CHECKS[k]).onchange = (e) => setTts({ [k]: e.target.checked });
-    for (const k in LISTS) $(LISTS[k]).oninput = (e) => e.target.dataset.dirty = '1';
-    $('tpSaveLists').onclick = () => { const p = {}; for (const k in LISTS) { p[k] = $(LISTS[k]).value.split('\n').map(s => s.trim()).filter(Boolean); delete $(LISTS[k]).dataset.dirty; } setTts(p); say('✓ Lists saved'); };
-    // one-time move of v1 settings (they were kept inside this page) into IXC
-    try { if (!localStorage.getItem('ixc_tts_v2')) { const p = {}; const own = (q.get('own') || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (localStorage.getItem('ixc_tts_on') === '1') p.enabled = true; const v = localStorage.getItem('ixc_tts_voice'); if (v) p.voice = v; const r = localStorage.getItem('ixc_tts_read'); if (r) p.readMode = r; if (own.length) p.ownNames = own;
-        if (Object.keys(p).length) setTimeout(() => setTts(p), 800); localStorage.setItem('ixc_tts_v2', '1'); } } catch (e) {}
-  } else if (DOCK) { document.getElementById('tts').style.display = 'none'; }
-
-  // ---------- reply bar: send to All / Twitch / Kick / YouTube, ! = commands, @ = users ----------
-  let CMDS = [], VIEWERS = [];
-  if (DOCK) {
-    const comp = $('composer'), inp = $('msgIn'), plat = $('plat'), sendBtn = $('sendBtn'), sug = $('sug');
-    const fitComp = () => document.documentElement.style.setProperty('--comp', comp.offsetHeight + 'px');
-    if (window.ResizeObserver) new ResizeObserver(fitComp).observe(comp); fitComp();
-    const PL = ['all', 'twitch', 'kick', 'youtube'], PLN = { all: 'ALL', twitch: 'TWITCH', kick: 'KICK', youtube: 'YT' };
-    let target = 'all'; try { target = localStorage.getItem('ixc_target') || 'all'; } catch {}
-    const setTarget = (t) => { target = PL.includes(t) ? t : 'all'; plat.textContent = PLN[target]; plat.className = target === 'all' ? '' : target; try { localStorage.setItem('ixc_target', target); } catch {} };
-    setTarget(target);
-    plat.onclick = () => { setTarget(PL[(PL.indexOf(target) + 1) % PL.length]); inp.focus(); };
-    const loadSug = () => link && link.send({ type: 'chat.suggest' });
-    setTimeout(loadSug, 1500); setInterval(loadSug, 60000);
-    const allUsers = () => { const m = new Map(); for (const v of VIEWERS) m.set(v.name.toLowerCase(), v); for (const [k, v] of USERS) { m.delete(k); m.set(k, v); } return [...m.values()].reverse(); };
-    let items = [], sel = 0, tok = null;
-    function currentToken() { const pos = inp.selectionStart ?? inp.value.length; const before = inp.value.slice(0, pos); const m = before.match(/(^|\s)([!@][^\s]*)$/); return m ? { text: m[2], start: pos - m[2].length, end: pos } : null; }
-    function showSug() {
-      tok = currentToken(); if (!tok) return hideSug();
-      const s = tok.text.slice(1).toLowerCase(), isCmd = tok.text[0] === '!';
-      const cmds = isCmd ? CMDS.filter(c => c.slice(1).toLowerCase().startsWith(s)).map(c => ({ kind: 'cmd', value: c + ' ', label: c })) : [];
-      const users = allUsers().filter(u => u.name.toLowerCase().includes(s)).slice(0, isCmd ? 6 : 12).map(u => ({ kind: 'user', value: '@' + u.name + ' ', label: '@' + u.name, platform: u.platform }));
-      items = [...cmds.slice(0, 40), ...users]; if (!items.length) return hideSug(); sel = 0;
-      let html = ''; if (cmds.length) html += '<div class="h">BOT COMMANDS</div>';
-      items.forEach((it, i) => { if (it.kind === 'user' && (i === 0 || items[i - 1].kind !== 'user')) html += '<div class="h">USERS</div>';
-        html += `<div class="s ${it.platform || ''}" data-i="${i}">${it.kind === 'user' ? '<i></i>' : ''}${esc(it.label)}<small>${it.kind === 'user' ? (TAG[it.platform] || '') : ''}</small></div>`; });
-      sug.innerHTML = html; sug.classList.add('show'); paintSel();
-    }
-    function paintSel() { sug.querySelectorAll('.s').forEach(el => el.classList.toggle('sel', +el.dataset.i === sel)); const e = sug.querySelector('.s.sel'); if (e) e.scrollIntoView({ block: 'nearest' }); }
-    function hideSug() { sug.classList.remove('show'); items = []; }
-    function pickSug(i) { const it = items[i]; if (!it || !tok) return; inp.value = inp.value.slice(0, tok.start) + it.value + inp.value.slice(tok.end); const c = tok.start + it.value.length; inp.setSelectionRange(c, c); hideSug(); inp.focus(); }
-    sug.addEventListener('mousedown', (e) => { const s = e.target.closest('.s'); if (s) { e.preventDefault(); pickSug(+s.dataset.i); } });
-    inp.addEventListener('input', showSug); inp.addEventListener('click', showSug); inp.addEventListener('blur', () => setTimeout(hideSug, 150));
-    inp.addEventListener('keydown', (e) => {
-      if (sug.classList.contains('show') && items.length) {
-        if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; paintSel(); return e.preventDefault(); }
-        if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; paintSel(); return e.preventDefault(); }
-        if (e.key === 'Tab' || (e.key === 'Enter' && tok && tok.text.length >= 1 && items.length)) { pickSug(sel); return e.preventDefault(); }
-        if (e.key === 'Escape') { hideSug(); return e.preventDefault(); }
-      }
-      if (e.key === 'Enter') { e.preventDefault(); send(); }
-    });
-    async function send() {
-      const text = inp.value.trim(); if (!text) return; if (!link) return say('✗ reply needs IXC (remove direct=1)'); sendBtn.disabled = true;
-      const d = await link.ask({ type: 'chat.send', platform: target, message: text }, 'chat.sent', 15000);
-      const ok = (d.results || []).filter(x => x.ok).map(x => TAG[x.platform]), bad = (d.results || []).filter(x => !x.ok);
-      if (ok.length) { inp.value = ''; hideSug(); }
-      say(ok.length ? `✓ sent to ${ok.join(' + ')}${bad.length ? '  (not ' + bad.map(x => TAG[x.platform]).join(', ') + ': ' + (bad[0].error || 'offline?') + ')' : ''}` : `✗ not sent: ${(bad[0] && bad[0].error) || d.error || 'check Streamer.bot'}`);
-      sendBtn.disabled = false; inp.focus();
-    }
-    sendBtn.onclick = send;
-    list.addEventListener('click', (e) => { const m = e.target.closest('.msg'); if (!m || !m.dataset.n) return; setTarget(m.dataset.p); inp.value = '@' + m.dataset.n + ' '; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); });
-    $('phoneBtn').onclick = () => IXCPhone.open();
-  }
-  window.ixcChatTest = (src, data) => add(parse(src, data));
+    if (!tts) return; const s = tts.settings || {};
+    $('ttsBtn').textContent = s.enabled ? '🔊 Voice on' : '🔈 Voice off'; $('ttsBtn').classList.toggle('on', !!s.enabled);
+    $('pauseBtn').textContent = tts.paused ? '▶' : '⏸'; $('pauseBtn').title = tts.paused ? 'Resume the chat voice' : 'Pause the chat voice'; $('pauseBtn').classList.toggle('on', !!tts.paused);
+    if (document.activeElement !== $('ttsVoice')) $('ttsVoice').value = s.voice;
+    const n = (tts.queue || []).length; $('qn').textContent = (tts.current ? '🗣 ' + (tts.current.user || '') : '') + (n ? ' · ' + n + ' waiting' : '') + (tts.players === 0 && s.enabled ? ' · ⚠ voice source not in OBS' : ''); }
+  $('ttsBtn').onclick = () => link.send({ type: 'settings.set', patch: { 'tts.on': !(tts && tts.settings.enabled) } });
+  $('pauseBtn').onclick = () => link.send({ type: tts && tts.paused ? 'tts.resume' : 'tts.pause' });
+  $('skipBtn').onclick = () => link.send({ type: 'tts.skip' });
+  $('ttsVoice').onchange = () => link.send({ type: 'settings.set', patch: { 'tts.voice': $('ttsVoice').value } });
+  function fillVoices() { $('ttsVoice').innerHTML = voices.map(v => `<option value="${esc(v.key)}">${esc(v.label)}</option>`).join(''); paintTts(); }
+  const openApp = (hash) => window.open('/app/' + (hash || ''), 'ixc-app', 'width=1240,height=860');
+  $('appBtn').onclick = () => openApp('');
+  // ---------- click a message: reply / voice / never read / hide ----------
+  const menu = $('menu'); let menuFor = null;
+  list.addEventListener('click', (e) => { const el = e.target.closest('.msg'); if (!el || el.classList.contains('sys') || el.classList.contains('alert')) return;
+    menuFor = { p: el.dataset.p, name: el.dataset.name, login: el.dataset.login, text: el.querySelector('.text') ? el.querySelector('.text').textContent : '' };
+    menu.innerHTML = `<div class="h">${esc(P[menuFor.p] ? P[menuFor.p].name : '')} · <b>${esc(menuFor.name)}</b></div>
+      <button data-a="reply">↩ Reply to ${esc(menuFor.name)}</button><button data-a="voice">🎙 Choose a voice for ${esc(menuFor.name)}…</button>
+      <button data-a="never">🔇 Never read ${esc(menuFor.name)} out loud</button><button data-a="hide">🚫 Hide ${esc(menuFor.name)} everywhere</button><button data-a="copy">📋 Copy message</button>`;
+    const r = el.getBoundingClientRect(); menu.style.left = Math.min(window.innerWidth - 240, Math.max(6, e.clientX - 20)) + 'px'; menu.style.top = Math.min(window.innerHeight - 230, r.bottom + 4) + 'px'; menu.classList.add('show'); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#menu') && !e.target.closest('.msg')) menu.classList.remove('show'); });
+  menu.onclick = async (e) => { const a = e.target.closest('button') && e.target.closest('button').dataset.a; if (!a || !menuFor) return; menu.classList.remove('show'); const f = menuFor;
+    if (a === 'reply') { const i = sendTargets.indexOf(f.p); tIdx = i >= 0 ? i : 0; paintPlat(); $('msgIn').value = '@' + f.name + ' ' + $('msgIn').value.replace(/^@\S+\s*/, ''); $('msgIn').focus(); }
+    else if (a === 'voice') openApp('#voices?user=' + encodeURIComponent(f.name) + '&p=' + f.p);
+    else if (a === 'never') { const l = (settings['tts.neverSpeak'] || []).concat([f.name]); const r = await IXC.api('/api/settings', { patch: { 'tts.neverSpeak': l } }); toast(r.ok ? f.name + ' will never be read out' : r.error, !r.ok); if (r.ok) settings = r.values; }
+    else if (a === 'hide') { if (!await UI.confirmBox('Hide ' + f.name + ' from this panel, the overlay and the voice?', 'Hide')) return; const l = (settings['chat.filters.blacklist'] || []).concat([f.name]); const r = await IXC.api('/api/settings', { patch: { 'chat.filters.blacklist': l } }); toast(r.ok ? f.name + ' is hidden (undo in IXC > Chat filters)' : r.error, !r.ok); if (r.ok) settings = r.values; }
+    else if (a === 'copy') { try { await navigator.clipboard.writeText(f.text); toast('Copied'); } catch { toast('Copy is not allowed here', true); } } };
+  // ---------- reply box with ! and @ suggestions ----------
+  let CMDS = [], USERS = [], sugItems = [], sel = 0; const input = $('msgIn'), sug = $('sug');
+  async function send() { const text = input.value.trim(); if (!text) return; const to = sendTargets[tIdx] || 'all'; input.value = ''; hideSug();
+    const r = await link.ask({ type: 'chat.send', platform: to, message: text }, 'chat.sent', 15000); const res = r.results || [];
+    const bad = res.filter(x => !x.ok); if (!res.length) toast('Not sent: ' + (r.error || 'IXC is not running'), true); else if (bad.length) toast('Not sent to ' + bad.map(x => (P[x.platform] ? P[x.platform].name : x.platform) + ': ' + x.error).join('; '), true); }
+  $('sendBtn').onclick = send;
+  function hideSug() { sug.classList.remove('show'); sugItems = []; }
+  function showSug() {
+    const v = input.value, at = v.lastIndexOf(' ') + 1, word = v.slice(at);
+    if (/^!/.test(v) && at === 0) sugItems = CMDS.filter(c => c.toLowerCase().startsWith(word.toLowerCase())).slice(0, 30).map(c => ({ t: c, s: 'command' }));
+    else if (/^@/.test(word)) sugItems = USERS.filter(u => u.name.toLowerCase().startsWith(word.slice(1).toLowerCase())).slice(0, 30).map(u => ({ t: '@' + u.name, s: P[u.platform] ? P[u.platform].name : '' }));
+    else sugItems = [];
+    if (!sugItems.length) return hideSug(); sel = 0;
+    sug.innerHTML = sugItems.map((x, i) => `<div class="s ${i === sel ? 'sel' : ''}" data-i="${i}">${esc(x.t)}<small>${esc(x.s)}</small></div>`).join(''); sug.classList.add('show'); }
+  function pick(i) { const v = input.value, at = v.lastIndexOf(' ') + 1; input.value = v.slice(0, at) + sugItems[i].t + ' '; hideSug(); input.focus(); }
+  sug.onclick = (e) => { const s = e.target.closest('.s'); if (s) pick(+s.dataset.i); };
+  input.addEventListener('input', () => { if (/^!|(^|\s)@/.test(input.value) && !CMDS.length) link.send({ type: 'chat.suggest' }); showSug(); });
+  input.addEventListener('keydown', (e) => {
+    if (sug.classList.contains('show')) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length; sug.querySelectorAll('.s').forEach((s, i) => s.classList.toggle('sel', i === sel)); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && sugItems.length)) { e.preventDefault(); pick(sel); return; } if (e.key === 'Escape') { hideSug(); return; } }
+    if (e.key === 'Enter') { e.preventDefault(); send(); } });
+  // ---------- connection ----------
+  const link = IXC.connect({ role: 'chat', topics: ['chat', 'tts', 'viewers', 'settings', 'reload'], onState: (up) => { $('conn').classList.toggle('show', !up); if (up) link.send({ type: 'chat.suggest' }); }, on: (m) => {
+    switch (m.type) {
+      case 'chat.history': list.innerHTML = ''; (m.messages || []).forEach(add); follow = true; toBottom(); break;
+      case 'chat.msg': add(m.m); break;
+      case 'chat.del': del(m.platform, m.id, m.login); break;
+      case 'chat.clear': list.querySelectorAll('.msg[data-p="' + m.platform + '"]').forEach(el => el.remove()); break;
+      case 'chat.reply': if (m.error) sys((P[m.platform] ? P[m.platform].name : '') + ': ' + (m.text ? '"' + m.text + '" was not sent - ' : '') + m.error, true); else if (m.text) sys('IXC: ' + m.text); break;
+      case 'chat.status': plats = m.platforms || {}; paintChips(); break;
+      case 'viewers': viewers = m; paintChips(); break;
+      case 'tts.state': tts = m; paintTts(); break;
+      case 'tts.voices': voices = m.voices || []; fillVoices(); break;
+      case 'chat.suggest': CMDS = m.commands || []; USERS = m.users || []; break;
+      case 'settings.all': settings = m.values || {}; hideP = new Set(['twitch', 'kick', 'youtube', 'rumble'].filter(p => !(settings['chat.dockPlatforms'] || []).includes(p))); paintChips(); break;
+      case 'settings': settings[m.key] = m.value; break;
+      case 'error': toast(m.error, true); break;
+    } } });
 })();
 </script>
 </body>

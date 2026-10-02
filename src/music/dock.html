@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!-- Part of IXC - https://github.com/infernoxc/ixc-chatbox  Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IXC Music</title>
+<!-- OBS panel (dock): http://localhost:8767/music/dock.html  (IXC adds it to OBS by itself). Controls the "IXC Music Player" source. -->
+<link rel="stylesheet" href="/core/ui.css">
+<style>
+  html, body { height: 100%; } body { display: flex; flex-direction: column; font-size: 13px; }
+  header { padding: 8px 10px; border-bottom: 2px solid var(--red); background: var(--bg2); display: flex; flex-direction: column; gap: 7px; }
+  #now { display: flex; gap: 9px; align-items: center; } #now img { width: 72px; height: 40px; object-fit: cover; border-radius: 6px; background: #000; flex: none; }
+  #nowT { font-weight: 700; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; } #nowS { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  #bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; cursor: pointer; } #bar i { display: block; height: 100%; width: 0; background: var(--red); }
+  #times { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: -4px; }
+  .ctrl button { padding: 6px 9px; } .ctrl input[type=range] { flex: 1; min-width: 60px; }
+  #route { display: grid; grid-template-columns: .7fr 1fr 1fr 1.15fr .6fr; gap: 4px; } #route button { padding: 5px 2px; font-size: 11px; justify-content: center; }
+  #route button.sel[data-m=all] { background: var(--red); border-color: var(--red); color: #fff; } #route button.sel[data-m=twitch] { background: var(--tw); border-color: var(--tw); color: #fff; }
+  #route button.sel[data-m=kick] { background: var(--kick); border-color: var(--kick); color: #0a0a0a; } #route button.sel[data-m=youtube] { background: var(--yt); border-color: var(--yt); color: #fff; } #route button.sel[data-m=off] { background: #555; color: #fff; }
+  #routeS { font-size: 11px; color: var(--dim); } #routeS.bad { color: var(--warn); }
+  #msg { display: none; font-size: 12px; padding: 7px 9px; border-radius: 8px; background: #2a2113; color: #ffe2a6; border: 1px solid #574420; white-space: pre-line; } #msg.ok { background: #102419; color: #bff3d2; border-color: #1f5434; } #msg.show { display: block; }
+  #tabs { display: flex; gap: 4px; padding: 6px 10px 0; } #tabs button { flex: 1; justify-content: center; } #tabs button.sel { background: #2c2a36; border-color: #55525f; }
+  main { flex: 1; overflow-y: auto; padding: 6px 8px 12px; }
+  .item { padding: 6px; } .item button { padding: 3px 7px; } .req { font-size: 10px; color: #ffd9a0; }
+  #status { display: none; padding: 6px 10px; font-size: 12px; background: #2b1416; color: #ffc2c4; } #status.show { display: block; }
+  .duck { color: var(--info); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row"><input id="q" type="search" placeholder="Search a song, or paste a YouTube / Spotify link" aria-label="Search or paste a link"><button id="go" class="primary">Go</button></div>
+  <div id="msg" role="status"></div>
+  <div id="now"><img id="nowI" alt=""><div class="grow"><div id="nowT">Nothing playing</div><div id="nowS"></div></div></div>
+  <div id="bar" title="Click to jump"><i></i></div><div id="times"><span id="tPos">0:00</span><span id="duck" class="duck"></span><span id="tDur">0:00</span></div>
+  <div class="row ctrl"><button id="prev" title="Previous" aria-label="Previous">⏮</button><button id="toggle" title="Play / pause" aria-label="Play or pause">▶</button><button id="next" title="Next" aria-label="Next">⏭</button>
+    <button id="shuf" title="Shuffle" aria-label="Shuffle">🔀</button><button id="rep" title="Repeat the queue" aria-label="Repeat">🔁</button><button id="auto" title="Autoplay: when the queue ends, keep playing similar songs">Auto</button>
+    <span aria-hidden="true">🔊</span><input id="vol" type="range" min="0" max="100" aria-label="Music volume"></div>
+  <div class="small muted">Music goes to</div>
+  <div id="route"><button data-m="all" title="All your stream outputs">ALL</button><button data-m="twitch" title="Only viewers on Twitch hear the music">TWITCH</button><button data-m="kick" title="Only viewers on Kick hear the music">KICK</button><button data-m="youtube" title="Only viewers on YouTube hear the music">YOUTUBE</button><button data-m="off" title="Nobody hears the music on stream">OFF</button></div>
+  <div id="routeS">checking OBS…</div>
+</header>
+<div id="status"></div>
+<div id="tabs"><button id="tQueue" class="sel">Queue</button><button id="tResults">Results</button><button id="tApp" title="Song requests, local music, ducking and more">⚙ More</button></div>
+<main id="list" class="scroll"></main>
+<script src="/core/ixc.js"></script>
+<script src="/core/ui.js"></script>
+<script>
+(() => {
+  const { $, esc, toast } = UI;
+  let S = {}, route = {}, results = [], tab = 'queue', stateAt = 0, up = false, lastQ = '';
+  const link = IXC.connect({ role: 'musicdock', topics: ['music.state', 'reload'], on, onState: (u) => { up = u; paint(); } });
+  const cmd = (c, extra) => link.send({ type: 'music.cmd', c: Object.assign({ cmd: c }, extra || {}) });
+  const isLink = (s) => /^(https?:\/\/|www\.)|youtu\.?be|spotify[.:]|[?&]list=/i.test(s) || /^[\w-]{11}$/.test(s) && /[0-9_-]|[A-Z].*[a-z]/.test(s);
+  function on(m) {
+    if (m.type === 'music.state') { S = m.s || {}; route = m.route || route; stateAt = Date.now(); paint(); renderQueue(); }
+    else if (m.type === 'music.request') { if (m.ok) say('🎵 ' + m.user + ' requested "' + m.title + '"', true); }
+    else if (m.type === 'error') say('✗ ' + m.error);
+  }
+  function say(t, ok, action) { const b = $('msg'); b.className = 'show' + (ok ? ' ok' : ''); b.innerHTML = esc(t) + (action ? ` <button class="small" id="msgAct">${esc(action.label)}</button>` : '');
+    if (action) $('msgAct').onclick = action.run; clearTimeout(say.t); say.t = setTimeout(() => b.classList.remove('show'), action ? 15000 : 6000); }
+  async function go(mode) {
+    const s = $('q').value.trim(); if (!s) return;
+    if (!isLink(s)) { $('list').innerHTML = '<div class="hint">Searching…</div>'; setTab('results');
+      const r = await link.ask({ type: 'music.search', q: s }, 'music.results'); results = r.results || []; renderResults(r.error); return; }
+    add(s, mode || 'add', false); }
+  async function add(url, mode, force) {
+    say('Checking the link…', true); const r = await link.ask({ type: 'music.add', url, mode, force }, 'music.added', 60000);
+    if (r.ok) { say('✓ ' + (mode === 'playnow' ? 'Playing' : mode === 'playnext' ? 'Plays next' : 'Added') + ': ' + r.title + (r.subtitle ? '\n' + r.subtitle : '') + (r.note ? '\n' + r.note : ''), true); $('q').value = ''; }
+    else if (r.code === 'duplicate') say(r.error, false, { label: 'Add again', run: () => add(url, mode, true) });
+    else say('✗ ' + (r.error || 'Could not add that')); }
+  $('go').onclick = () => go(); $('q').onkeydown = (e) => { if (e.key === 'Enter') go(e.shiftKey ? 'playnow' : 'add'); };
+  $('toggle').onclick = () => cmd('toggle'); $('next').onclick = () => cmd('next'); $('prev').onclick = () => cmd('prev');
+  $('shuf').onclick = () => cmd('shuffle', { on: !S.shuffle }); $('rep').onclick = () => cmd('repeat', { on: !S.repeat }); $('auto').onclick = () => cmd('autoplay', { on: !S.autoplay });
+  let volT; $('vol').oninput = () => { clearTimeout(volT); volT = setTimeout(() => cmd('volume', { v: +$('vol').value }), 120); };
+  $('bar').onclick = (e) => { if (!S.dur) return; const r = $('bar').getBoundingClientRect(); cmd('seek', { t: Math.max(0, (e.clientX - r.left) / r.width * S.dur) }); };
+  document.querySelectorAll('#route button').forEach(b => b.onclick = async () => { $('routeS').textContent = 'Switching…'; const r = await link.ask({ type: 'music.route', mode: b.dataset.m }, 'music.routed'); if (!r.result || !r.result.ok) toast((r.result && (r.result.error || r.result.status)) || 'Could not switch', true); });
+  function setTab(t) { tab = t; $('tQueue').classList.toggle('sel', t === 'queue'); $('tResults').classList.toggle('sel', t === 'results'); if (t === 'queue') renderQueue(true); else renderResults(); }
+  $('tQueue').onclick = () => setTab('queue'); $('tResults').onclick = () => setTab('results'); $('tApp').onclick = () => window.open('/app/#music', 'ixc-app', 'width=1240,height=860');
+  function renderResults(err) {
+    if (tab !== 'results') return;
+    $('list').innerHTML = results.length ? results.map((r, i) => `<div class="item"><img class="th" src="${UI.thumb(r)}" alt=""><div class="t"><b title="${esc(r.title)}">${esc(r.title)}</b><small>${esc(r.channel || '')} ${r.length ? '· ' + esc(r.length) : ''}</small></div>
+      <button data-p="${i}" title="Play now" aria-label="Play now">▶</button><button data-n="${i}" title="Play next" aria-label="Play next">⤴</button><button data-a="${i}" title="Add to queue" aria-label="Add to queue">+</button></div>`).join('') : `<div class="hint">${esc(err || 'Search above, or paste a link.')}</div>`; }
+  function renderQueue(force) {
+    if (tab !== 'queue') return; const q = S.queue || []; const j = JSON.stringify([q, S.index]); if (!force && j === lastQ) return; lastQ = j;
+    $('list').innerHTML = q.length ? q.map((it, i) => `<div class="item ${i === S.index ? 'cur' : ''}" style="${it.bad ? 'opacity:.55' : ''}"><img class="th" src="${UI.thumb(it)}" alt="">
+      <div class="t"><b title="${esc(it.title || it.q || '')}">${it.from === 'spotify' ? '<span class="tag" style="background:#1db954;color:#000">SPOTIFY</span> ' : it.kind === 'local' ? '<span class="tag test">LOCAL</span> ' : ''}${esc(it.title || (it.list ? 'YouTube playlist' : it.q || it.id))}</b>
+      <small>${it.bad ? '⚠ ' + esc(it.why || "can't play") + ' - ▶ to retry' : (it.list ? 'playlist' : i === S.index ? 'now playing' : '#' + (i + 1)) + (it.artist ? ' · ' + esc(it.artist) : '') + (it.auto ? ' · autoplay' : '')}</small>
+      ${it.by ? `<div class="req">requested by ${esc(it.by)}${it.platform ? ' on ' + esc(UI.P[it.platform] ? UI.P[it.platform].name : it.platform) : ''}</div>` : ''}</div>
+      <button data-j="${i}" title="Play" aria-label="Play">▶</button><button data-u="${i}" title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button><button data-x="${i}" title="Remove" aria-label="Remove">✕</button></div>`).join('')
+      + `<div class="row" style="margin-top:8px"><button class="small" id="clrPlayed">Remove played</button><button class="small" id="clrAll">Clear queue</button></div>`
+      : '<div class="hint">The queue is empty. Search for a song or paste a YouTube / Spotify link above.<br><br>Chat can request songs with !sr when song requests are on (⚙ More).</div>';
+    const cp = $('clrPlayed'); if (cp) cp.onclick = () => cmd('clearPlayed'); const ca = $('clrAll'); if (ca) ca.onclick = async () => { if (await UI.confirmBox('Remove every song from the queue?', 'Clear')) cmd('clear'); }; }
+  $('list').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+    if (d.p) addItem(results[+d.p], 'playnow'); else if (d.n) addItem(results[+d.n], 'playnext'); else if (d.a) addItem(results[+d.a], 'add');
+    else if (d.j) cmd('jump', { i: +d.j }); else if (d.x) cmd('remove', { i: +d.x, uid: (S.queue[+d.x] || {}).uid }); else if (d.u) cmd('move', { from: +d.u, to: +d.u - 1 }); };
+  function addItem(r, mode) { if (!r) return; add(r.kind === 'local' ? 'local:' + r.local : 'https://youtu.be/' + r.id, mode, true); }
+  function paint() {
+    const cur = (S.queue || [])[S.index]; $('nowT').textContent = S.title || (cur ? cur.title || cur.q : '') || 'Nothing playing';
+    $('nowS').textContent = !up ? 'IXC is not running' : !S.playerConnected ? 'The music player source is not open in OBS' : S.note || (cur && cur.by ? 'requested by ' + cur.by : S.playing ? 'playing' : cur ? 'paused' : '');
+    $('nowI').src = UI.thumb(cur) || ''; $('nowI').style.visibility = UI.thumb(cur) ? 'visible' : 'hidden';
+    $('toggle').textContent = S.playing ? '⏸' : '▶'; $('shuf').classList.toggle('on', !!S.shuffle); $('rep').classList.toggle('on', !!S.repeat); $('auto').classList.toggle('on', !!S.autoplay);
+    if (document.activeElement !== $('vol') && S.volume != null) $('vol').value = S.volume;
+    $('duck').textContent = S.ducked ? '🔉 lowered while the chat voice speaks' : '';
+    document.querySelectorAll('#route button').forEach(b => b.classList.toggle('sel', b.dataset.m === route.mode));
+    $('routeS').textContent = route.status || ''; $('routeS').className = route.ok ? '' : 'bad';
+    $('status').classList.toggle('show', up && S.playerConnected === false); $('status').textContent = 'The music player isn\'t running in OBS. Open OBS - IXC adds the player by itself (IXC > System check).'; }
+  setInterval(() => { const p = S.playing ? (S.pos || 0) + (Date.now() - stateAt) / 1000 : S.pos || 0; const d = S.dur || 0;
+    $('bar').firstChild.style.width = d ? Math.min(100, p / d * 100) + '%' : '0'; $('tPos').textContent = UI.time(Math.min(p, d || p)); $('tDur').textContent = d ? UI.time(d) : ''; }, 500);
+})();
+</script>
+</body>
+</html>

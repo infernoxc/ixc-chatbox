@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- IXC overlay: Chat on stream. http://localhost:8767/overlay/chat.html   Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License
+     Old links (/chat/chat.html?max=6&fade=45) still work: their options are read here. -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Chat Overlay</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  #list { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: .4em .6em; overflow: hidden; box-sizing: border-box; }
+  .msg { display: flex; gap: .5em; align-items: flex-start; background: var(--bg); border-left: .18em solid var(--p); border-radius: calc(var(--radius) * .6); padding: .4em .55em; margin-top: .35em; flex: none; }
+  .av { flex: none; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--p); display: grid; place-items: center; font-weight: 700; font-size: .8em; color: #fff; overflow: hidden; text-shadow: none; } .av img { width: 100%; height: 100%; object-fit: cover; }
+  .kick .av, .rumble .av { color: #0a0a0a; }
+  .body { min-width: 0; line-height: 1.3; overflow-wrap: anywhere; } .name { font-weight: 700; color: var(--n, var(--p)); margin-right: .35em; } .tag { margin-right: .4em; }
+  .msg.alert { border-left-color: #ffb547; } .msg.alert .text { color: #ffd9a0; }
+  body.noav .av, body.notag .tag { display: none; }
+</style></head>
+<body class="anim-slide"><div id="list"></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+const list = document.getElementById('list'); let st = {}; const P = { twitch: 'TWITCH', kick: 'KICK', youtube: 'YT', rumble: 'RUMBLE' };
+const q = Overlay.q; const legacy = { max: q.get('max'), fade: q.get('fade'), size: q.get('size') };   // v2 overlay links
+Overlay.start({ name: 'chat', topics: ['chat'],
+  defaults: { max: 8, fade: 60, platforms: ['twitch', 'kick', 'youtube', 'rumble'], showAvatars: true, showPlatform: true, showRoles: true, showAlerts: true, animation: 'slide', font: 'Bahnschrift', size: 20, color: '#ffffff', accent: '#e3141e', bg: '#0e0e12', bgOpacity: 55, radius: 12 },
+  apply: (s) => { st = s; document.body.classList.toggle('noav', !s.showAvatars); document.body.classList.toggle('notag', !s.showPlatform); },
+  on: (m) => { if (m.type === 'chat.msg') add(m.m, false); else if (m.type === 'chat.history') { list.innerHTML = ''; } else if (m.type === 'chat.del') del(m.platform, m.id, m.login); else if (m.type === 'chat.clear') list.querySelectorAll('.' + m.platform).forEach(e => e.remove()); },
+  demo: () => { const D = [['kick', 'ShadowSniper', 'that spray transfer was insane'], ['twitch', 'Rushkaa', 'GG how many kills?'], ['youtube', 'Aman Verma', 'first time here, love the setup'], ['twitch', 'neonfox', 'chicken dinner incoming']]; let i = 0; setInterval(() => { const d = D[i++ % D.length]; add({ platform: d[0], name: d[1], text: d[2], kind: 'chat', roles: {} }); }, 1600); } });
+function add(m) {
+  if (!m || m.hidden || m.old) return; if (!st.platforms.includes(m.platform)) return; const alert = m.kind && m.kind !== 'chat'; if (alert && !st.showAlerts) return;
+  const el = document.createElement('div'); el.className = 'msg in ' + m.platform + (alert ? ' alert' : ''); el.dataset.p = m.platform; el.dataset.id = m.id || ''; el.dataset.login = (m.login || '').toLowerCase();
+  const r = m.roles || {}; const role = st.showRoles ? (r.broadcaster ? '👑' : '') + (r.mod ? '🛡️' : '') + (r.vip ? '💎' : '') : '';
+  const text = alert ? Overlay.esc((m.text || '') + (m.amount ? ' · ' + m.amount : '')) : (m.parts && m.parts.length ? m.parts : [{ t: 'text', v: m.text }]).map(p => p.t === 'emote' && /^https:\/\//.test(p.url || '') ? `<img class="em" src="${Overlay.esc(p.url)}" alt="${Overlay.esc(p.name)}">` : Overlay.esc(p.v ?? '')).join('');
+  const av = m.avatar && /^https:/.test(m.avatar) ? `<img src="${Overlay.esc(m.avatar)}" alt="" onerror="this.remove()">` : Overlay.esc((m.name || '?')[0].toUpperCase());
+  el.innerHTML = `<div class="av">${av}</div><div class="body"><span class="tag">${P[m.platform] || ''}</span>${role}<span class="name" ${m.color && /^#[0-9a-f]{3,8}$/i.test(m.color) ? `style="--n:${m.color}"` : ''}>${Overlay.esc(m.name)}</span><span class="text">${text}</span></div>`;
+  list.appendChild(el);
+  const max = +(legacy.max || st.max); while (list.children.length > max) list.firstChild.remove();
+  const fade = +(legacy.fade ?? st.fade); if (fade > 0) setTimeout(() => { el.classList.remove('in'); el.classList.add('out'); setTimeout(() => el.remove(), 500); }, fade * 1000); }
+function del(p, id, login) { list.querySelectorAll('.msg').forEach(el => { if (el.dataset.p === p && ((id && el.dataset.id === id) || (!id && login && el.dataset.login === String(login).toLowerCase()))) el.remove(); }); }
+if (legacy.size) document.documentElement.style.setProperty('--size', (+legacy.size) + 'px');
+</script></body></html>

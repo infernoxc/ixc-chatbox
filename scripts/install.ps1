@@ -1,84 +1,105 @@
-# Installer for IXC Music / IXC ChatBox (per user, NO admin rights needed).
-# Both projects share one small background program, IXC Core; installing both simply adds each app next to it.
+# IXC Suite installer (IXC Music + IXC ChatBox). Per user - NO admin rights needed. Used by IXC-Setup.exe and Install.bat.
+#   detect system -> stop old IXC -> back up your settings -> install the new version next to the old one -> switch over ->
+#   start IXC -> turn on OBS's WebSocket + add IXC's panels (when OBS is closed) -> health check -> roll back if IXC won't start.
 # Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
-#   .\scripts\install.ps1                         install/update, start it, add to Windows login, add/refresh its OBS dock (skipped silently if OBS is open)
-#   .\scripts\install.ps1 -NoObsDocks             skip touching OBS docks entirely
-#   .\scripts\install.ps1 -ChannelNames "a,b"     (ChatBox) extra names of your own accounts - TTS never reads them
-param([switch]$NoObsDocks, [string]$ChannelNames = '', [switch]$NoStart, [switch]$AddObsDocks)
+#   .\scripts\install.ps1                 install / update / repair
+#   .\scripts\install.ps1 -NoObs          don't touch OBS's settings          -NoStartup   don't start IXC with Windows
+#   .\scripts\install.ps1 -NoStart        install only                         -Report <file>  write the result as JSON (for the setup program)
+param([switch]$NoObs, [switch]$NoStartup, [switch]$NoStart, [switch]$Desktop, [string]$Report = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $MyInvocation.MyCommand.Path)
-$apps = @('music', 'chat') | ? { Test-Path "$repo\src\$_" }
-$title = @{ music = 'IXC Music'; chat = 'IXC ChatBox' }
-$dest = Join-Path $env:LOCALAPPDATA 'IXC-OBS'; $app = Join-Path $dest 'app'
-$version = if (Test-Path "$repo\VERSION") { (Get-Content "$repo\VERSION" -TotalCount 1).Trim() } else { '2.0.0' }
-Write-Host ("Installing " + (($apps | % { $title[$_] }) -join ' + ') + " v$version to $dest") -ForegroundColor Red
-if ($PSVersionTable.PSVersion.Major -lt 5) { throw 'Windows PowerShell 5.1 or newer is required (built into Windows 10/11).' }
+$dest = Join-Path $env:LOCALAPPDATA 'IXC-OBS'; $app = Join-Path $dest 'app'; $new = "$app.new"; $prev = "$app.prev"
+$version = if (Test-Path "$repo\VERSION") { (Get-Content "$repo\VERSION" -TotalCount 1).Trim() } else { '0.0.0' }
+$steps = New-Object System.Collections.ArrayList; $warnings = New-Object System.Collections.ArrayList
+function Step($t) { [void]$steps.Add($t); Write-Host "  $t" }
+function Warn($t) { [void]$warnings.Add($t); Write-Host "  ! $t" -ForegroundColor Yellow }
+function Finish($ok, $msg) {
+  if ($Report) { [IO.File]::WriteAllText($Report, (@{ ok = $ok; message = $msg; version = $version; steps = @($steps); warnings = @($warnings) } | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding $false)) }
+  if ($ok) { Write-Host "`n  $msg" -ForegroundColor Green; exit 0 } else { Write-Host "`n  $msg" -ForegroundColor Red; exit 1 } }
+trap { Finish $false ("Installation failed: " + $_.Exception.Message) }
+Write-Host "Installing IXC $version into $dest" -ForegroundColor Red
 
-# 1. stop running parts, copy files (the shared core is replaced by the newest copy)
+# 1. this PC
+if ($PSVersionTable.PSVersion.Major -lt 5) { throw 'Windows PowerShell 5.1 is required (built into Windows 10 and 11).' }
+$net = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -EA SilentlyContinue).Release
+if (-not $net -or $net -lt 528040) { throw '.NET Framework 4.8 is missing. Run Windows Update (it is part of Windows 10 version 1903 and newer, and Windows 11), then install again.' }
+Step ("Windows " + [Environment]::OSVersion.Version + ", .NET Framework 4.8 ok")
+$obsRunning = [bool](Get-Process obs64, obs -EA SilentlyContinue)
+$obsUsed = Test-Path (Join-Path $env:APPDATA 'obs-studio')
+Step ("OBS Studio: " + $(if ($obsRunning) { 'open' } elseif ($obsUsed) { 'found' } else { 'not found (install it from obsproject.com - IXC sets itself up when OBS is there)' }))
+if (Get-Process 'Streamer.bot' -EA SilentlyContinue) { Step 'Streamer.bot: running (optional - IXC uses it when it is there)' }
+
+# 2. stop the running IXC (it saves your settings and queue first) and older versions' helpers
+New-Item -ItemType Directory -Force $dest | Out-Null
 if (Test-Path "$app\stop.ps1") { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\stop.ps1" | Out-Null }
-Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($app, [StringComparison]::OrdinalIgnoreCase) } | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }   # also when an older stop.ps1 missed it
-foreach ($old in "$app\helper", "$app\chat\relay", "$app\scripts\enable-phone-access.ps1") { if (Test-Path $old) { Remove-Item -LiteralPath $old -Recurse -Force } }   # v1.x parts
-New-Item -ItemType Directory -Force "$app\core", "$app\scripts" | Out-Null
-Get-ChildItem "$app\core" -Exclude 'ixc-core.exe' -EA SilentlyContinue | Remove-Item -Recurse -Force
-Copy-Item "$repo\src\core\*" "$app\core\" -Recurse -Force
-$coreVer = if (Test-Path "$app\core\VERSION") { [version](Get-Content "$app\core\VERSION" -TotalCount 1).Trim() } else { [version]'0.0' }
-if ([version]$version -ge $coreVer) { Set-Content "$app\core\VERSION" $version }
-foreach ($a in $apps) { if (Test-Path "$app\$a") { Remove-Item -LiteralPath "$app\$a" -Recurse -Force }; New-Item -ItemType Directory -Force "$app\$a" | Out-Null; Copy-Item "$repo\src\$a\*" "$app\$a\" -Recurse -Force; Set-Content "$app\$a\VERSION" $version }
-Copy-Item "$repo\src\start.ps1", "$repo\src\stop.ps1" $app -Force
-Get-ChildItem "$repo\scripts" -Filter *.ps1 | ? Name -ne 'install.ps1' | Copy-Item -Destination "$app\scripts\" -Force
-Get-ChildItem $app -Recurse -File | Unblock-File -EA SilentlyContinue   # files from a downloaded zip are marked "from the internet"
+Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe' OR Name='cloudflared.exe'" | ? { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) } | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
+Start-Sleep -Milliseconds 500
 
-# 2. build IXC Core on this PC (C# compiler built into Windows; nothing is downloaded)
-for ($i = 0; $i -lt 20 -and (Test-Path "$app\core\ixc-core.exe"); $i++) { try { Remove-Item -LiteralPath "$app\core\ixc-core.exe" -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 500 } }
-if (Test-Path "$app\core\ixc-core.exe") { throw "IXC Core is still running and couldn't be replaced. Start menu > IXC for OBS > Stop IXC, then install again." }
-& powershell -NoProfile -ExecutionPolicy Bypass -File "$app\core\build-core.ps1" -Out "$app\core\ixc-core.exe"
-if ($LASTEXITCODE -or -not (Test-Path "$app\core\ixc-core.exe")) { throw 'IXC Core could not be built - see docs/TROUBLESHOOTING.md' }
+# 3. back up your settings, sign-ins, phones and queue
+$bk = Join-Path $dest 'backups'; New-Item -ItemType Directory -Force $bk | Out-Null
+$have = @('config.json', 'secrets.dat', 'music.json') | % { Join-Path $dest $_ } | ? { Test-Path $_ }
+if ($have) { Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = Join-Path $bk ("{0}_before-install-{1}.zip" -f (Get-Date -f 'yyyy-MM-dd_HH-mm-ss'), $version)
+  $z = [IO.Compression.ZipFile]::Open($zip, 'Create'); foreach ($f in $have) { [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, $f, (Split-Path $f -Leaf)) }; $z.Dispose(); Step "backed up your settings ($(Split-Path $zip -Leaf))" }
 
-# 3. settings: create config.json once, then only add what's missing (your changes are kept); v1 settings are moved to their v2 places
-$cfgFile = Join-Path $dest 'config.json'; $example = Get-Content -Raw -Encoding UTF8 "$repo\config\config.example.json" | ConvertFrom-Json
-Copy-Item "$repo\config\config.example.json" (Join-Path $dest "config.example.$(($apps -join '+')).json") -Force
-function Merge($into, $from) { foreach ($p in $from.PSObject.Properties) {
-    $have = $into.PSObject.Properties[$p.Name]
-    if (-not $have) { $into | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value }
-    elseif ($p.Value -is [pscustomobject] -and $have.Value -is [pscustomobject] -and $p.Name -ne 'voices') { Merge $have.Value $p.Value } } }
-if (-not (Test-Path $cfgFile)) { $cfg = $example; Write-Host '  created config.json (your settings)' }
-else {
-  Copy-Item $cfgFile "$cfgFile.before-v$version.bak" -Force
-  $cfg = Get-Content -Raw -Encoding UTF8 $cfgFile | ConvertFrom-Json
-  if ($cfg.PSObject.Properties['chatRelay']) {   # v1 -> v2: the relay is part of IXC Core now
-    if (-not $cfg.PSObject.Properties['chat']) { $cfg | Add-Member -NotePropertyName chat -NotePropertyValue ([pscustomobject]@{}) }
-    foreach ($k in 'hiddenCommands', 'extraCommandsFile') { if ($cfg.chatRelay.PSObject.Properties[$k] -and -not $cfg.chat.PSObject.Properties[$k]) { $cfg.chat | Add-Member -NotePropertyName $k -NotePropertyValue $cfg.chatRelay.$k } }
-    if ($cfg.chatRelay.phoneAccess) { Write-Host '  v1 phone access (Wi-Fi only) was ON. v2 no longer needs it: run "scripts\enable-phone-access.ps1 -Disable" from the v1 download as administrator, or delete the firewall rule "IXC ChatBox - phone chat".' -ForegroundColor Yellow }
-    $cfg.PSObject.Properties.Remove('chatRelay') }
-  if ($cfg.tts -and $cfg.tts.PSObject.Properties['enabled'] -and -not $cfg.tts.PSObject.Properties['on']) { $cfg.tts.PSObject.Properties.Remove('enabled') }   # v1 "enabled" meant "service available"; v2 "on" is the TTS switch
-  Merge $cfg $example; $cfg.version = $version
-  Write-Host "  kept your existing config.json (backup: config.json.before-v$version.bak)" }
-if ($ChannelNames -and $cfg.PSObject.Properties['tts']) { $names = @($ChannelNames.Split(',') | % { $_.Trim() } | ? { $_ }); $cfg.tts | Add-Member -Force -NotePropertyName ownNames -NotePropertyValue $names }
-[IO.File]::WriteAllText($cfgFile, ($cfg | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+# 4. install the new files next to the old ones, then switch over (the old version stays until the new one starts)
+if (Test-Path $new) { Remove-Item -LiteralPath $new -Recurse -Force }
+New-Item -ItemType Directory -Force "$new\core", "$new\scripts" | Out-Null
+foreach ($d in 'chat', 'music', 'app', 'overlay') { if (Test-Path "$repo\src\$d") { Copy-Item "$repo\src\$d" "$new\$d" -Recurse } }
+Copy-Item "$repo\src\core\*" "$new\core\" -Recurse
+Set-Content "$new\core\VERSION" $version
+Copy-Item "$repo\src\start.ps1", "$repo\src\stop.ps1" $new
+Get-ChildItem "$repo\scripts" -Filter *.ps1 | Copy-Item -Destination "$new\scripts\"
+Get-ChildItem $new -Recurse -File | Unblock-File -EA SilentlyContinue   # files from a downloaded zip are marked "from the internet"
+if (-not (Test-Path "$new\core\ixc-core.exe")) {   # installing from source: build it with the compiler that ships with Windows
+  & powershell -NoProfile -ExecutionPolicy Bypass -File "$new\core\build-core.ps1" -Out "$new\core\ixc-core.exe" | Out-Null
+  if ($LASTEXITCODE -or -not (Test-Path "$new\core\ixc-core.exe")) { throw 'IXC could not be built on this PC - see docs/TROUBLESHOOTING.md' } }
+Get-ChildItem "$new\core" -Filter *.cs | Remove-Item -Force -EA SilentlyContinue   # sources are not needed to run
+if (Test-Path $prev) { Remove-Item -LiteralPath $prev -Recurse -Force -EA SilentlyContinue }
+if (Test-Path $app) { for ($i = 0; $i -lt 20; $i++) { try { Rename-Item -LiteralPath $app -NewName (Split-Path $prev -Leaf) -ErrorAction Stop; break } catch { Start-Sleep -Milliseconds 500 } }; if (Test-Path $app) { throw 'the old IXC is still running and could not be replaced. Restart the PC and install again.' } }
+Rename-Item -LiteralPath $new -NewName (Split-Path $app -Leaf)
+foreach ($old in "$dest\bin") { if (Test-Path $old) { Remove-Item -LiteralPath $old -Recurse -Force -EA SilentlyContinue } }   # v2's downloaded cloudflared is no longer used
+Step "installed IXC $version"
 
-# 4. start at Windows login (Task Scheduler, current user only) + Start menu shortcuts
-$act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$app\start.ps1`""
-$trg = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"; $trg.Delay = 'PT15S'
-$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-try { Register-ScheduledTask -TaskName 'IXC for OBS' -Action $act -Trigger $trg -Settings $set -Principal (New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited) -Force | Out-Null; Write-Host '  starts automatically when you log in' }
-catch { $sc = (New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Startup'))\IXC for OBS.lnk"); $sc.TargetPath = 'powershell.exe'; $sc.Arguments = $act.Arguments; $sc.WindowStyle = 7; $sc.Save(); Write-Host '  starts automatically when you log in (Startup folder)' }
-$port = if ($cfg.helper.port) { [int]$cfg.helper.port } else { 8767 }
-$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'IXC for OBS'; New-Item -ItemType Directory -Force $menu | Out-Null
+# 5. start with Windows (Task Scheduler, this user only; no PowerShell window) + Start menu
+$exe = Join-Path $app 'core\ixc-core.exe'
+Unregister-ScheduledTask -TaskName 'IXC for OBS' -Confirm:$false -EA SilentlyContinue
+$startupLnk = "$([Environment]::GetFolderPath('Startup'))\IXC for OBS.lnk"; if (Test-Path $startupLnk) { Remove-Item -LiteralPath $startupLnk -Force }
 $ws = New-Object -ComObject WScript.Shell
-function Link($name, $target, $arguments, $icon) { $s = $ws.CreateShortcut("$menu\$name.lnk"); $s.TargetPath = $target; $s.Arguments = $arguments; $s.WorkingDirectory = $app; if ($icon) { $s.IconLocation = $icon }; $s.WindowStyle = 7; $s.Save() }
-Link 'Start IXC' 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$app\start.ps1`"" 'imageres.dll,101'
-Link 'Stop IXC' 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$app\stop.ps1`"" 'imageres.dll,100'
-Link 'IXC settings (config.json)' 'notepad.exe' "`"$cfgFile`"" ''
-$u = $ws.CreateShortcut("$menu\IXC diagnostics.url"); $u.TargetPath = "http://localhost:$port/diag"; $u.Save()
-foreach ($a in $apps) { Link "Uninstall $($title[$a])" 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$app\scripts\uninstall.ps1`" -App $a" 'imageres.dll,89' }
+if (-not $NoStartup) {
+  $act = New-ScheduledTaskAction -Execute $exe -WorkingDirectory (Split-Path $exe)
+  $trg = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"; $trg.Delay = 'PT10S'
+  $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+  try { Register-ScheduledTask -TaskName 'IXC for OBS' -Action $act -Trigger $trg -Settings $set -Principal (New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited) -Force | Out-Null; Step 'starts with Windows' }
+  catch { $sc = $ws.CreateShortcut($startupLnk); $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Save(); Step 'starts with Windows (Startup folder)' } }
+$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'IXC for OBS'
+if (Test-Path $menu) { Remove-Item -LiteralPath $menu -Recurse -Force }
+New-Item -ItemType Directory -Force $menu | Out-Null
+function Link($path, $target, $arguments, $icon) { $s = $ws.CreateShortcut($path); $s.TargetPath = $target; if ($arguments) { $s.Arguments = $arguments }; $s.WorkingDirectory = (Split-Path $exe); $s.IconLocation = $(if ($icon) { $icon } else { "$exe,0" }); $s.Save() }
+Link "$menu\IXC.lnk" $exe '' ''
+Link "$menu\Uninstall IXC.lnk" 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$app\scripts\uninstall.ps1`"" 'imageres.dll,89'
+if ($Desktop) { Link "$([Environment]::GetFolderPath('Desktop'))\IXC.lnk" $exe '' '' }
+Step 'Start menu: IXC'
 
-# 5. start now, optional OBS dock
-if (-not $NoStart) { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\start.ps1"; for ($i = 0; $i -lt 20; $i++) { try { Invoke-RestMethod "http://localhost:$port/api/ping" -TimeoutSec 1 | Out-Null; break } catch { Start-Sleep -Milliseconds 400 } } }
-if (-not $NoObsDocks) { foreach ($a in $apps) { & powershell -NoProfile -ExecutionPolicy Bypass -File "$app\scripts\add-obs-docks.ps1" -App $a } }
-$ok = try { (Invoke-RestMethod "http://localhost:$port/api/ping" -TimeoutSec 5).app -eq 'ixc-core' } catch { $false }
-Write-Host ''
-Write-Host ('  IXC Core running: ' + $(if ($NoStart) { 'not started (-NoStart)' } elseif ($ok) { 'YES' } else { "NO - is another program using port $port? See docs/TROUBLESHOOTING.md" }))
-if ($apps -contains 'music') { Write-Host "  IXC Music    source: http://localhost:$port/music/player.html     dock: http://localhost:$port/music/dock.html" }
-if ($apps -contains 'chat')  { Write-Host "  IXC ChatBox  dock:   http://localhost:$port/chat/chat.html?dock=1&viewers=1   TTS source: http://localhost:$port/chat/tts.html   overlay: http://localhost:$port/chat/chat.html?max=6&fade=45" }
-Write-Host "  Diagnostics: http://localhost:$port/diag"
-Write-Host '  Next: docs/INSTALL.md, step "Add it to OBS".' -ForegroundColor Yellow
+# 6. start IXC and check that it answers; if it doesn't, go back to the previous version
+$cfgFile = Join-Path $dest 'config.json'
+$port = try { (Get-Content -Raw $cfgFile | ConvertFrom-Json).helper.port } catch { $null }; if (-not $port) { $port = 8767 }
+function Ping { try { $r = Invoke-RestMethod "http://127.0.0.1:$port/api/ping" -TimeoutSec 2; return $r.app -eq 'ixc-core' } catch { return $false } }
+if (-not $NoStart) {
+  Start-Process $exe -WorkingDirectory (Split-Path $exe)
+  $ok = $false; for ($i = 0; $i -lt 40 -and -not $ok; $i++) { Start-Sleep -Milliseconds 500; $ok = Ping; if (-not $ok) { try { $port = (Get-Content -Raw $cfgFile | ConvertFrom-Json).helper.port } catch { } } }
+  if (-not $ok) {
+    if (Test-Path $prev) {
+      Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) } | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
+      Start-Sleep -Milliseconds 800; Rename-Item -LiteralPath $app -NewName 'app.failed'; Rename-Item -LiteralPath $prev -NewName (Split-Path $app -Leaf); Start-Process (Join-Path $app 'core\ixc-core.exe')
+      Remove-Item -LiteralPath "$dest\app.failed" -Recurse -Force -EA SilentlyContinue
+      throw "the new version didn't start, so the previous version was put back. Please send IXC > System check > Export diagnostics to support." }
+    throw "IXC didn't start. See $dest\logs\app.log" }
+  Step "IXC is running (http://localhost:$port)"
+  # 7. OBS: turn on its WebSocket server and add IXC's panels - only while OBS is closed (OBS rewrites its settings when it exits)
+  if (-not $NoObs) {
+    if ($obsRunning) { Warn 'OBS is open: IXC finishes the OBS setup by itself - or close OBS and run IXC > System check.' }
+    elseif (-not $obsUsed) { Warn 'Open OBS once after installing it - IXC then sets itself up (IXC > System check).' }
+    else { foreach ($a in 'obs.websocket', 'obs.docks') { try { $r = Invoke-RestMethod -Method Post "http://127.0.0.1:$port/api/repair" -Body (@{ action = $a } | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 15; if ($r.ok) { Step $r.message } else { Warn $r.error } } catch { Warn "OBS step ${a}: $($_.Exception.Message)" } } } }
+}
+if (Test-Path $prev) { Remove-Item -LiteralPath $prev -Recurse -Force -EA SilentlyContinue }
+Finish $true "IXC $version is installed. Open it from the tray (bottom right) or the Start menu."

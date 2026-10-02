@@ -19,7 +19,17 @@ jobs:
         run: choco install innosetup -y --no-progress
       - name: Test + build ZIP and installer
         shell: powershell
+        env:
+          IXC_RELAY_URL: ${{ vars.IXC_RELAY_URL }}
+          IXC_TWITCH_CLIENT_ID: ${{ vars.IXC_TWITCH_CLIENT_ID }}
+          IXC_GOOGLE_CLIENT_ID: ${{ vars.IXC_GOOGLE_CLIENT_ID }}
+          IXC_KICK_CLIENT_ID: ${{ vars.IXC_KICK_CLIENT_ID }}
         run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -Installer
+      - name: Clean-machine test of the installer before publishing
+        shell: powershell
+        run: |
+          $setup = Get-ChildItem dist -Filter 'IXC-Setup-v*.exe' | Select -First 1
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke.ps1 -Setup $setup.FullName
       - name: Create GitHub Release
         shell: powershell
         env:
@@ -29,5 +39,5 @@ jobs:
           $files = Get-ChildItem dist -File | % FullName
           gh release view $t *> $null
           if ($LASTEXITCODE -eq 0) { gh release upload $t $files --clobber; exit 0 }   # release already made by hand: refresh its files
-          if (Test-Path $notes) { gh release create $t $files --title "IXC ChatBox $t" --notes-file $notes }
-          else { gh release create $t $files --title "IXC ChatBox $t" --generate-notes }
+          if (Test-Path $notes) { gh release create $t $files --title "IXC $t" --notes-file $notes }
+          else { gh release create $t $files --title "IXC $t" --generate-notes }

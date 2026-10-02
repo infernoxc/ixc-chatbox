@@ -1,4 +1,5 @@
-# Compiles IXC Core (ixc-core.exe) from the .cs files next to this script, using the C# compiler that ships with Windows (.NET Framework 4.8).
+# Compiles IXC Core (ixc-core.exe) from the .cs files next to this script, using the C# compiler that ships with Windows
+# (.NET Framework 4.8). Release builds ship a ready-made ixc-core.exe; this script is for building from source.
 # Nothing is downloaded. Part of IXC - Copyright (c) 2026 Ishan (InFerNoxC) - MIT License.
 param([string]$Out = (Join-Path $PSScriptRoot 'ixc-core.exe'))
 $ErrorActionPreference = 'Stop'
@@ -7,9 +8,10 @@ $csc = Join-Path $fw 'csc.exe'; if (-not (Test-Path $csc)) { throw '.NET Framewo
 $speech = @((Join-Path $fw 'WPF\System.Speech.dll'), (Get-ChildItem "$env:WINDIR\Microsoft.NET\assembly\GAC_MSIL\System.Speech" -Recurse -Filter System.Speech.dll -EA SilentlyContinue | Select -First 1 -Expand FullName)) | ? { $_ -and (Test-Path $_) } | Select -First 1
 $src = Get-ChildItem $PSScriptRoot -Filter *.cs | % FullName
 New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
-$tmp = "$Out.new"
-$arguments = @('/nologo', '/optimize+', '/target:exe', '/platform:anycpu', "/out:$tmp", '/r:System.Web.Extensions.dll', '/r:System.Net.Http.dll', "/r:$speech") + $src
+$tmp = "$Out.new"; $icon = Join-Path $PSScriptRoot 'ixc.ico'
+$arguments = @('/nologo', '/optimize+', '/target:winexe', '/platform:anycpu', "/out:$tmp", '/r:System.Web.Extensions.dll', '/r:System.Net.Http.dll', '/r:System.Security.dll', '/r:System.Drawing.dll',
+  '/r:System.Windows.Forms.dll', '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', "/r:$speech") + $(if (Test-Path $icon) { @("/win32icon:$icon") } else { @() }) + $src
 $o = & $csc @arguments; if ($LASTEXITCODE -ne 0) { $o | ? { $_ -match 'error' } | Select -First 30 | % { Write-Host $_ }; throw "IXC Core did not compile ($LASTEXITCODE)" }
-$o | ? { $_ -match 'warning' } | Select -First 10 | % { Write-Host $_ }
+$o | ? { $_ -match 'warning' -and $_ -notmatch 'CS0219|CS0414|CS0168' } | Select -First 10 | % { Write-Host $_ }
 Move-Item -Force $tmp $Out
 Write-Host "built $Out ($([math]::Round((Get-Item $Out).Length / 1KB)) KB)"
