@@ -1,23 +1,26 @@
-# Contributing to IXC ChatBox
+# Contributing to IXC
 
 Thanks for helping! Bug reports, ideas and pull requests are welcome.
 
-**Bugs:** use the *Bug report* issue form and include your Windows and OBS versions, the steps, `%LOCALAPPDATA%\IXC-OBS\ixc-core.log` and the *Recent events* from http://localhost:8767/diag. Never post passwords, keys or your config.json.
+**Bugs:** use the *Bug report* issue form. Attach the ZIP from **IXC > System check > Export diagnostics**: it has the logs and system details, and no passwords or keys. Never post your `config.json` or `secrets.dat`.
 
-**Development**
+## Development
 ```powershell
 git clone https://github.com/infernoxc/ixc-chatbox.git; cd ixc-chatbox
-powershell -ExecutionPolicy Bypass -File tests\smoke.ps1          # offline checks (~20 s)
-powershell -ExecutionPolicy Bypass -File src\core\build-core.ps1   # builds src\core\ixc-core.exe (C# compiler built into Windows)
-src\core\ixc-core.exe --test                                     # run from source on port 8767 (stop an installed copy first); --test enables /api/chat/inject
+powershell -ExecutionPolicy Bypass -File src\core\build-core.ps1    # builds src\core\ixc-core.exe (C# compiler built into Windows)
+powershell -ExecutionPolicy Bypass -File tests\smoke.ps1 -Install   # Windows tests: build, run, install/update/uninstall
 ```
-Pages in `src/chat` are plain HTML/JS. Open `http://localhost:8767/chat/chat.html?dock=1&demo=1` to work without Streamer.bot. `src/core/*.cs` must stay **C# 5** (they are compiled by the .NET Framework compiler built into Windows).
+Behaviour and UI tests (Linux, WSL or CI; needs Mono and Node 20+):
+```sh
+cd tests && npm install && npx playwright install chromium && npm test
+```
+They run IXC against fake Twitch / Kick / YouTube / Rumble / OBS / Streamer.bot / GitHub servers, and run the real phone relay in Cloudflare's local runtime.
 
-**Pull request rules**
-- Windows PowerShell **5.1** compatible (no PowerShell 7-only syntax); no new runtime dependencies or downloads (the only download is the optional, signature-checked cloudflared for the phone remote).
+## Rules
+- `src/core/*.cs` must stay **C# 5**. It is compiled by the .NET Framework compiler built into Windows, and the Linux build uses `-langversion:5` to check that.
+- Windows PowerShell **5.1** compatible scripts. No new runtime dependencies for users.
+- Every setting goes through `Settings.cs` (type, default, limits). Secrets go through `Secrets`, never into `config.json` or logs.
 - No personal paths, names, keys or tokens (the smoke test checks common cases).
-- Keep it light on CPU. Run `tests\smoke.ps1`, and add a check for new behaviour where possible.
-- Add a line under **[Unreleased]** in `CHANGELOG.md`.
-- IXC Core is shared with [IXC Music](https://github.com/infernoxc/ixc-music): keep `src/core`, `scripts` and `tests/smoke.ps1` identical in both repos.
+- Add or extend a test for new behaviour, and a line under **[Unreleased]** in `CHANGELOG.md`.
 
 By contributing you agree that your contribution is licensed under the MIT License.

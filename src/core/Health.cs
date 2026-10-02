@@ -152,8 +152,11 @@ namespace IXC {
       Log.Info("app", "diagnostics exported: " + Path.GetFileName(path));
       return J.D("ok", true, "path", path, "folder", dir, "name", Path.GetFileName(path)); }
     static Dictionary<string, object> SafeSettings() { var s = Settings.Snapshot(true); foreach (var k in s.Keys.ToList()) if (Regex.IsMatch(k, "key|secret|password|token|relayUrl", RegexOptions.IgnoreCase)) s[k] = (Convert.ToString(s[k]) ?? "").Length > 0 ? "(set)" : ""; return s; }
-    // the Windows user name in paths is personal information
-    static string Anon(string s) { var u = Environment.UserName; if (u.Length > 1) s = Regex.Replace(s, "(?i)(Users[\\\\/]+)" + Regex.Escape(u), "$1<user>"); return s; }
+    // personal information: the Windows user name in paths and IP addresses (phones); loopback stays readable
+    static string Anon(string s) { var u = Environment.UserName; if (u.Length > 1) s = Regex.Replace(s, "(?i)(Users[\\\\/]+)" + Regex.Escape(u), "$1<user>");
+      s = Regex.Replace(s, "(?<![\\d.])(?!127\\.|0\\.0\\.0\\.0(?![\\d.]))\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(?![\\d.])", "<ip>");
+      s = Regex.Replace(s, "(?i)(?<![0-9a-f:])(?:[0-9a-f]{1,4}:){2,7}(?::|[0-9a-f]{1,4})(?:[0-9a-f]{0,4}:){0,5}[0-9a-f]{0,4}(?![0-9a-f:])", m => m.Value == "::1" || m.Value.Count(ch => ch == ':') < 3 ? m.Value : "<ip>");
+      return s; }
   }
 
   // ---------- updates: check -> backup -> download -> verify -> install (installer keeps the old version for rollback) ----------

@@ -1,59 +1,57 @@
-# Install IXC ChatBox
+# Install IXC
 
-About 10 minutes. No programming and no admin rights needed.
+## The normal way
 
-## 1. Before you start
-- Windows 10 or 11, and **OBS Studio 30+** ([obsproject.com](https://obsproject.com)).
-- **[Streamer.bot](https://streamer.bot)** (free), with your accounts connected under **Platforms** (Twitch / Kick / YouTube).
-  Streamer.bot does the logging in to each platform; ChatBox only talks to Streamer.bot.
+1. Install **OBS Studio** if you don't have it yet ([obsproject.com](https://obsproject.com)), and **open it once**.
+2. Download **`IXC-Setup.exe`** from [Releases](https://github.com/infernoxc/ixc-chatbox/releases/latest) and run it.
+   - **"Windows protected your PC"**: click **More info**, then **Run anyway**. This appears because IXC is a free project without a paid code-signing certificate. The download's checksum is listed in `SHA256SUMS.txt` next to it.
+3. Choose **Express (recommended)**.
+   - If OBS is open, the setup asks you to close it (**File > Exit**). OBS saves its settings when it closes, so IXC can only add its panels while it's closed.
+4. Click **Finish**. IXC opens a setup assistant:
 
-## 2. Download
-From the [latest release](https://github.com/infernoxc/ixc-chatbox/releases/latest):
-- **`IXC-ChatBox-Setup-vX.Y.Z.exe`** (installer), or
-- **`IXC-ChatBox-vX.Y.Z.zip`** (portable package; unzip it anywhere).
+| Step | What happens |
+|---|---|
+| **OBS** | IXC turns on OBS's WebSocket server and adds a scene called **IXC Audio** (music player + chat voice) to all your scenes. It's invisible on stream; it only carries the sound. |
+| **Platforms** | Click **Connect** for Twitch, Kick and YouTube, and sign in in your browser. Or just type your channel name: reading chat needs no sign-in. |
+| **Sound check** | Play a test voice. Turn the chat voice and music ducking on or off. |
+| **Phone** *(optional)* | Scan the QR code with your phone's camera. |
+| **Overlays** | Add Now Playing, Chat, Viewers or Alerts to the scene that's on air. |
+| **System test** | Checks everything. Anything wrong has a **Fix** button. |
 
-> The files aren't code-signed yet, so Windows SmartScreen may warn you. Click **More info › Run anyway**, but only for files from
-> the official Releases page. Verify with `Get-FileHash <file> -Algorithm SHA256` against `SHA256SUMS.txt`.
+Done. IXC starts with Windows and lives in the tray (bottom right). **Double-click the tray icon** to open IXC.
+In OBS you'll find the **IXC Chat**, **IXC Music** and **IXC** panels under **Docks**.
 
-## 3. Install
-Close OBS, then run the Setup `.exe` or double-click **`Install.bat`**. You should see `IXC Core running: YES`.
+## Advanced setup
+Choose **Advanced** in the setup to decide:
+- whether IXC starts with Windows,
+- whether it changes OBS's settings,
+- whether it adds a desktop icon.
 
-The installer:
-- builds **IXC Core** on your PC with the C# compiler built into Windows (a few seconds; the release contains source code, not a program file);
-- installs to `%LOCALAPPDATA%\IXC-OBS`;
-- starts it at Windows login;
-- adds **Start menu › IXC for OBS**.
+## Without the setup program (ZIP)
+Unzip `IXC-Suite-vX.Y.Z.zip` and double-click **`Install.bat`**. It does the same as the setup program.
 
-Optional, to add the dock to OBS automatically (OBS closed):
+## From source
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -AddObsDocks
+git clone https://github.com/infernoxc/ixc-chatbox.git
+cd ixc-chatbox
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
+This builds IXC with the C# compiler that ships with Windows. Nothing is downloaded.
 
-## 4. Turn on Streamer.bot's WebSocket server
-Streamer.bot › **Servers/Clients › WebSocket Server**:
-1. ✅ **Auto Start**. Address `127.0.0.1`, Port `8080`. Click **Start Server**.
-2. For the **reply box**: ✅ **Enable Authentication** and set a password. IXC finds the password in Streamer.bot's own settings by itself.
+## What the setup changes on your PC
+| Where | What |
+|---|---|
+| `%LOCALAPPDATA%\IXC-OBS\` | The program (`app\`), your settings, encrypted sign-ins, the music queue, logs, backups |
+| Task Scheduler | "IXC for OBS": starts IXC when you log in (only for you) |
+| Start menu | IXC, Uninstall IXC |
+| OBS | Turns on the WebSocket server; adds the panels and the scene "IXC Audio" (a backup of OBS's settings file is made first) |
 
-## 5. Add it to OBS
-### The dock
-**Docks › Custom Browser Docks...**, Dock Name `IXC ChatBox`, URL:
-```
-http://localhost:8767/chat/chat.html?dock=1&viewers=1
-```
+Nothing needs administrator rights, and no firewall rules or open ports are created.
 
-### TTS source (so viewers hear text-to-speech)
-1. **Sources › + › Browser**, name **IXC ChatBox TTS**, URL `http://localhost:8767/chat/tts.html`, 64 × 64, custom FPS `1`, ✅ **Control audio via OBS**.
-2. Drag it off the canvas. In Audio Mixer › ⚙ › **Advanced Audio Properties**, choose **Monitor and Output** and the **tracks** of the platforms that should hear it.
-3. Add it to every scene with *Paste (Reference)*.
+## Updating
+IXC tells you when a new version is out (**Home** or **System check > Updates**). Click **Update now**. IXC then:
+1. backs up your settings,
+2. downloads the update and checks its fingerprint,
+3. installs it and restarts.
 
-### On-stream chat (optional)
-**Browser** source, URL `http://localhost:8767/chat/chat.html?max=6&fade=45`, 400 × 460, placed where you want chat on screen.
-
-## 6. First test
-- Open `http://localhost:8767/diag`. Streamer.bot should show **connected** and "TTS sources in OBS" should show **1**.
-- Type in your own Twitch or Kick chat. It appears in the dock with a platform tag. It is **not** read aloud, because it's your own account (you can change that in ⚙).
-- Click **TTS OFF** (it turns red and shows ON), then **Test**. You and your stream hear the voice.
-- Type a reply, pick **ALL** or a platform, and press Enter. A small "✓ sent to ..." note confirms it.
-- Press **📱** and scan the code with your phone on mobile data. The phone shows your chat live.
-
-Next: [Usage](USAGE.md) · [Troubleshooting](TROUBLESHOOTING.md)
+If the new version doesn't start, the previous one is put back automatically.

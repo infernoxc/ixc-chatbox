@@ -33,13 +33,16 @@ test('backups: create, restore (restarts IXC), reset settings (backup first)', a
   assert.ok((await api(c, '/api/backups')).body.backups.some(x => /before-reset/.test(x.name)));
 });
 
-test('diagnostics export: logs + system info, but no keys, tokens or the Windows user name', async () => {
+test('diagnostics export: logs + system info, but no keys, tokens, IP addresses or the Windows user name', async () => {
   const c = await startCore(); cleanup.push(() => c.stop());
   await settings(c, { 'music.youtubeApiKey': 'AIzaSECRETKEY0001' });
   await api(c, '/api/accounts/rumble/rumble', { url: 'https://rumble.com/-livestream-api/get-data?key=RUMBLESECRET42' });
   await api(c, '/api/music/spotify-secret', { secret: 'abcdefabcdefabcdefabcdefabcdef12' });
+  fs.writeFileSync(path.join(c.dir, 'logs', 'phone-sample.log'), 'phone paired: Pixel (203.0.113.77)\nphone connecting from 2001:db8:85a3::8a2e:370:7334\nlistening on 127.0.0.1 and ::1, OS 10.0.19045.0, at 12:34:56\n');
   const r = (await api(c, '/api/diagnostics/export', {})).body; assert.equal(r.ok, true); assert.ok(fs.existsSync(r.path));
-  const t = zipText(r.path); assert.match(t, /system\.json/); assert.match(t, /logs\/app\.log/);
+  const t = zipText(r.path);
+  for (const s of ['203.0.113.77', '2001:db8:85a3::8a2e:370:7334']) assert.ok(!t.includes(s), 'leaked IP ' + s);
+  for (const s of ['phone paired: Pixel (<ip>)', 'from <ip>', '127.0.0.1 and ::1', '10.0.19045.0', '12:34:56']) assert.ok(t.includes(s), 'kept / masked: ' + s); assert.match(t, /system\.json/); assert.match(t, /logs\/app\.log/);
   for (const s of ['AIzaSECRETKEY0001', 'RUMBLESECRET42', 'abcdefabcdefabcdefabcdefabcdef12']) assert.ok(!t.includes(s), 'leaked ' + s);
   assert.match(t, /"music\.youtubeApiKey": "\(set\)"/);
 });

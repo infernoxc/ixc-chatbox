@@ -1,25 +1,27 @@
-# Troubleshooting
+# Something's not right?
 
-**First check:** open **http://localhost:8767/diag**. It shows what's connected, what's failing and the recent events.
-If it doesn't open, IXC isn't running: Start menu › IXC for OBS › **Start IXC**. Log: `%LOCALAPPDATA%\IXC-OBS\ixc-core.log`.
+**First:** open IXC (tray icon) and go to **System check > Run check**. Most problems have a **Fix automatically** button.
+If that doesn't help, click **Export diagnostics** and attach the ZIP when you ask for help. It contains no passwords, keys or sign-ins.
 
-| Problem | Fix |
+| Problem | What to do |
 |---|---|
-| Diagnostics don't open / `IXC Core running: NO` | Another program uses port 8767. If you used the v1 scripts from an old download, stop them. Or change `helper.port`, restart IXC and change the OBS URLs. |
-| "IXC Core could not be built" | Needs .NET Framework 4.8 (built into Windows 10 1903+ and 11). Run Windows Update, then install again. |
-| Dock shows **CHAT RECONNECTING** | Streamer.bot isn't running, or its WebSocket server isn't started on `127.0.0.1:8080` (Servers/Clients › WebSocket Server › Start Server, Auto Start on). |
-| Twitch works, Kick or YouTube doesn't | Connect that platform in Streamer.bot › Platforms. YouTube chat only exists while you're live. |
-| **"✗ not sent: Authentication required"** | Enable Authentication in Streamer.bot's WebSocket server and set a password. Diagnostics › Chat › Authentication should say `ok`. |
-| TTS doesn't speak | Diagnostics › Text-to-speech: TTS must be **ON** and "TTS sources in OBS" at least **1**. If it's 0, add `/chat/tts.html` as a browser source. The dock's ⚙ › *Not read (and why)* shows why a message was skipped. |
-| TTS doesn't read my own messages | That's intended (*Ignore my own account*). Turn it off in ⚙ if you want. |
-| TTS: viewers don't hear it | The *IXC ChatBox TTS* source needs **Control audio via OBS** and the right tracks (Advanced Audio Properties). |
-| TTS says "offline Windows voice (neural voice failed …)" | The Microsoft service didn't answer (internet, or the service changed). IXC retries it after 60 s. Test with the **Test** button. |
-| TTS in a normal browser tab doesn't play | Browsers block sound until you click the page once; the TTS tab shows a button for it. OBS doesn't need this. |
-| Phone: QR window says it couldn't download cloudflared | Check your internet or firewall. Or download `cloudflared-windows-amd64.exe` from Cloudflare's GitHub yourself and set `remote.cloudflaredPath`. |
-| Phone: "This QR code has expired or was already used" | Codes work once, for 5 minutes. Press **New code**. |
-| Phone: "signed out" | IXC restarted, the tunnel stopped after 30 idle minutes, or phones were signed out. Scan a new QR code. |
-| Phone: "too many wrong codes" | 5 wrong tries lock pairing from that network for 10 minutes. Wait, then scan a fresh code. |
-| "running scripts is disabled on this system" | Use `Install.bat`, or `powershell -ExecutionPolicy Bypass -File scripts\install.ps1`. |
+| **IXC isn't in the tray** | Start menu > **IXC**. If it closes again, it restarts by itself up to 3 times. After that, the tray shows "IXC stopped unexpectedly". Click it to restart. |
+| **"OBS's WebSocket server is turned off"** | Close OBS (File > Exit), then **System check > Fix automatically**, then open OBS. |
+| **"OBS refused the WebSocket password"** | **System check > Repair OBS connection** (with OBS closed). |
+| **No music sound on stream** | **System check > Repair OBS sources**. In OBS, the scene **IXC Audio** must be inside your scenes. IXC adds it to every scene. |
+| **Music only on some platforms / wrong platform** | Check **Music goes to** and, under **Music**, which track each platform uses. That has to match your OBS output or multistream plugin. |
+| **No chat voice on stream** | Is the voice on (🔊)? Is it paused (⏸)? **System check** shows whether the chat voice source is running in OBS. |
+| **Voice sounds robotic / "offline Windows voice"** | The online voice wasn't reachable. IXC uses the offline voice for a minute and then tries again by itself. |
+| **A platform says "Reconnecting…"** | IXC retries by itself, faster when your internet comes back. **Platforms & accounts** shows the reason. Kick sometimes blocks lookups for a while; once IXC has found your chat room it keeps working. |
+| **YouTube says "not live right now"** | IXC finds your live stream by itself every 30 seconds. Check the channel (`@yourhandle`), or paste the link of the live video. |
+| **"Sign-in expired"** | **Platforms & accounts > Sign in again.** |
+| **Can't reply on a platform** | Connect that account (**Platforms & accounts**). Rumble doesn't allow replies from apps. |
+| **Phone shows "Waiting for your PC"** | IXC on the PC is closed, asleep or offline. The phone reconnects by itself when it's back. |
+| **Phone says "This phone was signed out"** | It was removed on the PC, or not used for a long time (Settings: "Forget phones not used for"). Scan a new QR code. |
+| **QR code "expired or already used"** | Codes work once, for 5 minutes. Press **New code**. |
+| **IXC moved to another port** | Another program uses port 8767. IXC picks the next free port and updates its OBS sources by itself. Close OBS and use **System check > Add IXC panels** to update the panels. |
+| **Settings look reset** | If the settings file got damaged, IXC restores the last good copy and tells you. **System check > Backups** lets you restore any backup. |
+| **An overlay is empty** | It only shows something when there's something to show (for example, music playing). Use **Overlays** to preview it with example data. |
+| **Update failed** | Nothing was changed: IXC checks downloads before installing, and puts the old version back if the new one doesn't start. Try again later, or download `IXC-Setup.exe` again. |
 
-Still stuck? [Open an issue](https://github.com/infernoxc/ixc-chatbox/issues/new/choose) and paste the **Recent events** from the diagnostics page.
-Never include your config.json or passwords.
+**Logs:** `%LOCALAPPDATA%\IXC-OBS\logs\`, one file per area (app, obs, chat, tts, music, phone, auth…). You can also open them from **System check > Open logs folder**.
