@@ -93,7 +93,7 @@ namespace IXC {
       var res = new List<Dictionary<string, object>>(); message = Regex.Replace((message ?? "").Trim(), "[\\r\\n]+", " "); if (message.Length == 0) return res; if (message.Length > 480) message = message.Substring(0, 480);
       platform = (platform ?? "all").ToLowerInvariant();
       var targets = platform == "all" ? Platforms.SendTargets() : new List<string> { platform };
-      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", "No chat is connected that IXC can send to. Sign in to a platform under Accounts.")); return res; }
+      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", Accounts.Available("twitch") || Accounts.Available("kick") || Accounts.Available("youtube") ? "IXC can't reply anywhere yet: open Streamer.bot (IXC replies through it), or connect your account under Platforms & accounts." : "IXC can't reply anywhere yet: open Streamer.bot with its WebSocket server on - IXC replies through it.")); return res; }
       var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } return J.D("platform", p, "ok", err == null, "error", err ?? ""); }).ToList();
       foreach (var t in tasks) res.Add(await t);
       Log.Info("chat", "sent to " + string.Join("+", res.Where(r => (bool)r["ok"]).Select(r => r["platform"])) + (res.Any(r => !(bool)r["ok"]) ? " (failed: " + string.Join(", ", res.Where(r => !(bool)r["ok"]).Select(r => r["platform"] + " - " + r["error"])) + ")" : ""));

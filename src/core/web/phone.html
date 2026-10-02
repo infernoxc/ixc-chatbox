@@ -157,7 +157,7 @@
     const can = Object.keys(P).filter(p => st.plats[p] && st.plats[p].canSend);
     $('main').innerHTML = `<div class="card"><div class="vbar" id="vbar"></div><div class="chips" id="chips"></div><div id="chatList"></div></div>
       <div class="card"><div class="seg" style="margin-bottom:8px">${['all'].concat(can).map(p => `<button class="b ${sendTo === p ? 'sel' : ''}" data-to="${p}">${p === 'all' ? 'ALL' : P[p][1]}</button>`).join('')}</div>
-      <div class="sugs" id="sugs"></div><div class="row"><input type="text" id="cIn" autocomplete="off" placeholder="${can.length ? 'Reply, or type ! for commands' : 'Connect a platform account on the PC to reply'}" ${can.length ? '' : 'disabled'} maxlength="480"><button class="b red" id="cSend" ${can.length ? '' : 'disabled'}>Send</button></div></div>`;
+      <div class="sugs" id="sugs"></div><div class="row"><input type="text" id="cIn" autocomplete="off" placeholder="${can.length ? 'Reply, or type ! for commands' : 'To reply, open Streamer.bot on the PC (or connect an account in IXC)'}" ${can.length ? '' : 'disabled'} maxlength="480"><button class="b red" id="cSend" ${can.length ? '' : 'disabled'}>Send</button></div></div>`;
     paintChips(); const l = $('chatList'); l.innerHTML = st.chat.filter(m => !st.hide.has(m.platform)).map(msgHtml).join(''); l.scrollTop = l.scrollHeight;
     $('chips').onclick = (e) => { const p = e.target.dataset.p; if (!p) return; if (st.hide.has(p)) st.hide.delete(p); else st.hide.add(p); paintChat(); };
     document.querySelectorAll('[data-to]').forEach(b => b.onclick = () => { sendTo = b.dataset.to; paintChat(); });

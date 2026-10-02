@@ -9,7 +9,7 @@ window.Wizard = (() => {
   function close() { $('wizard').classList.remove('show'); clearInterval(timer); }
   // redraws every 2 s to show live states - but never while a channel name is being typed (that would wipe it)
   function typing() { const a = document.activeElement; return !!a && $('wzCard').contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio|range|button)$/i.test(a.type))); }
-  async function refresh() { if (typing()) return; if (STEPS[step] === 'obs') { obs = await IXC.api('/api/obs/detect'); render(); } else if (STEPS[step] === 'platforms' || STEPS[step] === 'sound' || STEPS[step] === 'phone') render(); }
+  async function refresh() { if (typing()) return; if (STEPS[step] === 'obs') { obs = await IXC.api('/api/obs/detect'); render(); } else if (STEPS[step] === 'phone' && wantQr) await wzPair(); else if (STEPS[step] === 'platforms' || STEPS[step] === 'sound' || STEPS[step] === 'phone') render(); }
   const line = (ok, title, sub, action) => `<div class="stepline"><span style="font-size:20px">${ok === true ? '✅' : ok === false ? '⚠️' : '⏳'}</span><div class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</div>${action || ''}</div>`;
   function render() {
     const id = STEPS[step]; let h = `<div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'done' : ''}"></i>`).join('')}</div>`;
@@ -38,8 +38,8 @@ window.Wizard = (() => {
         <div class="stepline"><span style="font-size:20px">🎚</span><div class="grow"><b>Lower music while the voice speaks</b><small>Music fades down and back up smoothly.</small></div><label class="switch"><input type="checkbox" id="wzDuck" ${S.values['music.ducking.enabled'] ? 'checked' : ''}><i></i></label></div>`; }
     if (id === 'phone') { const ph = st.phone || {};
       h += `<h2 id="wzTitle">4. Your phone <span class="tiny muted">(optional)</span></h2><p class="muted">Control music, the chat voice and chat from your phone - on mobile data or any Wi-Fi.</p>` +
-        (ph.relay === 'not-configured' ? line(null, 'Not available in this build', 'The phone relay hasn\'t been set up by the developer yet.') : ph.connected ? line(true, 'Phone connected', ph.connected + ' phone(s)') :
-          `<div style="text-align:center"><div class="qr" id="wzQr"></div><div class="hint" style="margin-top:8px" id="wzQrNote">${ph.relay === 'connected' ? 'Press "Show QR code", then scan it with your phone\'s camera.' : 'Connecting to the phone relay…'}</div><div class="actions" style="justify-content:center"><button class="primary" id="wzPair" ${ph.relay === 'connected' ? '' : 'disabled'}>Show QR code</button></div></div>`); }
+        (ph.connected ? line(true, 'Phone connected', ph.connected + ' phone(s)') :
+          `<div style="text-align:center"><div class="qr" id="wzQr"></div><div class="hint" style="margin-top:8px" id="wzQrNote">${pairUrl ? 'Scan with your phone\'s camera (works once, 5 minutes).' : wantQr ? '<span class="spin"></span> ' + esc(quickMsg || 'Starting Quick connect…') : 'Press "Show QR code", then scan it with your phone\'s camera. No app or account needed.'}</div><div class="actions" style="justify-content:center"><button class="primary" id="wzPair" ${wantQr ? 'disabled' : ''}>${pairUrl ? 'New QR code' : 'Show QR code'}</button></div></div>`); }
     if (id === 'overlays') h += `<h2 id="wzTitle">5. Overlays</h2><p class="muted">Ready-made overlays for your stream. Add the ones you like to the scene that's on air - you can style them later under Overlays.</p>` +
       [['nowplaying', 'Now Playing', 600, 140], ['chat', 'Chat', 500, 600], ['viewers', 'Viewer counter', 700, 80], ['alerts', 'Alerts', 600, 300]].map(([k, n, w, hh]) => line(null, n, '', `<button data-ov="${k}" data-n="${esc(n)}" data-w="${w}" data-h="${hh}">Add to OBS</button>`)).join('');
     if (id === 'test') { h += `<h2 id="wzTitle">6. System test</h2><p class="muted">IXC checks everything once.</p><div id="wzCheck">${check ? '' : '<div class="hint"><span class="spin"></span> Checking…</div>'}</div>`; }
@@ -49,7 +49,11 @@ window.Wizard = (() => {
     if (keepFocus) return; $('wzCard').innerHTML = h;
     if (id === 'test') { if (!check) runCheck(); else paintCheck(); }
     if (id === 'phone' && pairUrl && $('wzQr')) UI.qr($('wzQr'), pairUrl); }
-  let pairUrl = null;
+  let pairUrl = null, wantQr = false, quickMsg = '';
+  // the QR uses the permanent relay when one is set up, else Quick connect (a temporary Cloudflare link that IXC opens by itself)
+  async function wzPair() { const r = await IXC.api('/api/remote/pair', {});
+    if (r.starting) { wantQr = true; quickMsg = r.error; render(); return; }
+    wantQr = false; if (!r.ok) { render(); return toast(r.error, true); } pairUrl = r.url; render(); }
   async function runCheck() { const r = await IXC.api('/api/health'); check = r; paintCheck(); }
   function paintCheck() { const el = $('wzCheck'); if (!el || !check) return; const bad = (check.items || []).filter(i => i.level === 'error' || i.level === 'warn');
     el.innerHTML = (bad.length ? '' : '<div class="banner ok">✓ Everything works</div>') + bad.map(i => line(false, esc(i.name), esc(i.message), i.fix ? `<button class="small" data-fix="${esc(i.fix)}">${esc(i.fixLabel || 'Fix')}</button>` : '')).join('') +
@@ -61,7 +65,7 @@ window.Wizard = (() => {
     if (d.fix) { const r = await App.repair(d.fix, b); if (STEPS[step] === 'obs') { obs = await IXC.api('/api/obs/detect'); render(); } if (STEPS[step] === 'test' && r && r.ok) { check = null; render(); } }
     if (d.connect) { const r = await IXC.api('/api/accounts/' + d.connect + '/connect', {}); if (!r.ok) toast(r.error, true); else toast('Finish signing in in your browser'); }
     if (d.test) App.link.send({ type: 'tts.test' });
-    if (b.id === 'wzPair') { const r = await IXC.api('/api/remote/pair', {}); if (!r.ok) return toast(r.error, true); pairUrl = r.url; UI.qr($('wzQr'), r.url); $('wzQrNote').textContent = 'Scan with your phone\'s camera (works once, 5 minutes).'; }
+    if (b.id === 'wzPair') { pairUrl = null; await wzPair(); }
     if (d.ov) { const r = await IXC.api('/api/obs/overlay', { name: d.n, path: '/overlay/' + d.ov + '.html', width: +d.w, height: +d.h }); toast(r.ok ? 'Added to "' + r.scene + '"' : r.error || 'Open OBS first', !r.ok); if (r.ok) b.textContent = '✓ Added'; } });
   $('wzCard').addEventListener('change', async (e) => { const t = e.target;
     if (t.id === 'wzTts') App.save({ 'tts.on': t.checked }); if (t.id === 'wzDuck') App.save({ 'music.ducking.enabled': t.checked });

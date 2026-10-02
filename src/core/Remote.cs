@@ -41,7 +41,7 @@ namespace IXC {
         case "ready": ready.Set(); break;
         case "error": relayError = J.Str(m, "error", "error"); ready.Set(); break;
         case "pong": break;
-        case "open": Remote.Open(c, J.Str(m, "ip", ""), J.Str(m, "ua", "")); break;
+        case "open": { var cc = c; Remote.Open(cc, J.Str(m, "ip", ""), J.Str(m, "ua", ""), s => SendTo(cc, s), () => CloseConn(cc, "closed by IXC")); break; }
         case "msg": Remote.Incoming(c, J.Str(m, "d", "")); break;
         case "close": Remote.Closed(c); break; } }
     public Task SendTo(string conn, string text) { return Tx(J.Ser(J.D("t", "msg", "c", conn, "d", text))); }
@@ -51,7 +51,7 @@ namespace IXC {
   public static class Remote {
     public static readonly RelayLink Link = new RelayLink();
     static readonly Dictionary<string, Client> conns = new Dictionary<string, Client>();
-    static string pairHash; static DateTime pairUntil = DateTime.MinValue; static string pairUrl;
+    static string pairHash; static DateTime pairUntil = DateTime.MinValue; static string pairUrl, pairMode = "";
     static readonly Dictionary<string, List<DateTime>> fails = new Dictionary<string, List<DateTime>>();
     static int pairOk, pairRefused; static readonly object L = new object();
 
@@ -60,7 +60,10 @@ namespace IXC {
     public static string PcSecret { get { var s = Secrets.Str("remote.pcSecret"); if (s == null) { NewIdentity(); s = Secrets.Str("remote.pcSecret"); } return s; } }
     public static void NewIdentity() { Secrets.Set("remote.pcId", U.Token(16)); Secrets.Set("remote.pcSecret", U.Token(32)); Secrets.Set("remote.devices", null); Log.Warn("phone", "new phone address created - phones need to scan a new QR code"); }
 
-    public static void Init() { Link.Start(); Settings.Changed += k => { if (k.StartsWith("remote.")) Link.Restart(); }; }
+    public static void Init() {
+      lock (L) { var l = Devices(); if (l.RemoveAll(d => J.Bool(d, "temp", false)) > 0) SaveDevices(l); }   // Quick connect keys never outlive IXC
+      Link.Start(); Quick.Init();
+      Settings.Changed += k => { if (!k.StartsWith("remote.")) return; Link.Restart(); if (!Settings.Bool("remote.enabled")) Quick.Stop("phone remote turned off"); }; }
     // ---------- what phones may do ----------
     static readonly HashSet<string> Topics = new HashSet<string> { "chat", "tts", "music.state", "status", "viewers", "alerts", "reload" };
     static readonly HashSet<string> Messages = new HashSet<string> { "hello", "ping", "rtt", "chat.send", "chat.suggest", "chat.reconnect", "tts.set", "tts.say", "tts.test", "tts.skip", "tts.clear", "tts.replay", "tts.pause", "tts.resume",
@@ -71,19 +74,32 @@ namespace IXC {
       "music.volume", "music.shuffle", "music.repeat", "music.autoplay", "music.ducking.enabled", "music.routing.mode" };
 
     // ---------- connections through the relay ----------
-    public static void Open(string conn, string ip, string ua) {
+    // a phone connection, through the relay or through Quick connect (connection ids starting with "q:")
+    public static bool Open(string conn, string ip, string ua, Func<string, Task> transport, Action close) {
       var c = new Client { Remote = true, Authed = false, Ip = ip, Device = U.Trunc(ua, 120), Role = "mobile" };
-      c.Transport = s => Link.SendTo(conn, s); c.Kill = () => { Link.CloseConn(conn, "closed by IXC"); Closed(conn); };
-      lock (conns) { if (conns.Count >= 12) { Link.CloseConn(conn, "too many phones"); return; } conns[conn] = c; }
-      Hub.Add(c); Log.Debug("phone", "phone connecting from " + ip); }
+      c.Transport = transport; c.Kill = () => { close(); Closed(conn); };
+      lock (conns) { if (conns.Count >= 12) { close(); return false; } conns[conn] = c; }
+      Hub.Add(c); Log.Debug("phone", "phone connecting (" + (IsQuick(conn) ? "Quick connect" : "relay") + ")"); return true; }
+    public static bool IsQuick(string conn) { return conn.StartsWith("q:"); }
+    // tell the phone it was signed out, and close its connection only after that message went out
+    // (closing at once could overtake the message, and the phone would only see "disconnected")
+    static void SignOut(Client c) {
+      Task t; try { t = c.Transport(J.Ser(J.D("type", "auth", "ok", false, "reason", "revoked"))) ?? Task.FromResult(0); } catch { t = Task.FromResult(0); }
+      Task.WhenAny(t, Task.Delay(3000)).ContinueWith(_ => { try { c.Kill(); } catch { } }); }
+    public static int QuickPhones() { lock (conns) { int n = 0; foreach (var kv in conns) if (IsQuick(kv.Key) && kv.Value.Authed) n++; return n; } }
     public static void Closed(string conn) { Client c; lock (conns) { if (!conns.TryGetValue(conn, out c)) return; conns.Remove(conn); } Hub.Remove(c); if (c.Authed) { Log.Info("phone", "phone disconnected (" + DeviceName(c.DeviceId) + ")"); Publish(); } }
-    public static void DropAll() { List<Client> l; lock (conns) { l = conns.Values.ToList(); conns.Clear(); } foreach (var c in l) Hub.Remove(c); if (l.Count > 0) Publish(); }
+    // the relay connection dropped: its phones are gone (Quick connect phones are not affected)
+    public static void DropAll() { Drop(k => !IsQuick(k)); }
+    // Quick connect stopped: its phones are gone, and their temporary keys are forgotten
+    public static void DropQuick() { Drop(IsQuick); lock (L) { var l = Devices(); if (l.RemoveAll(d => J.Bool(d, "temp", false)) > 0) SaveDevices(l); } lock (L) if (pairMode == "quick") { pairHash = null; pairUrl = null; } Publish(); }
+    static void Drop(Func<string, bool> which) { List<Client> l; lock (conns) { var keys = conns.Keys.Where(which).ToList(); l = keys.Select(k => conns[k]).ToList(); foreach (var k in keys) conns.Remove(k); }
+      foreach (var c in l) { Hub.Remove(c); try { c.Kill(); } catch { } } if (l.Count > 0) Publish(); }
     public static void Incoming(string conn, string text) {
       Client c; lock (conns) conns.TryGetValue(conn, out c); if (c == null) return;
       if (text.Length > 65536) return;
       if (!c.Authed) { PreAuth(c, conn, text); return; }
       Dictionary<string, object> m; if (J.TryParse(text, out m) && J.Str(m, "type", "") == "rtt") { c.Rtt = J.Int(m, "ms", 0); Touch(c.DeviceId, c.Ip); return; }
-      if (!CheckDevice(c.DeviceId)) { Hub.Send(c, J.D("type", "auth", "ok", false, "reason", "revoked")); c.Kill(); return; }
+      if (!CheckDevice(c.DeviceId)) { SignOut(c); return; }
       Hub.Handle(c, text); }
     static void PreAuth(Client c, string conn, string text) {
       Dictionary<string, object> m; if (!J.TryParse(text, out m)) return; var type = J.Str(m, "type", "");
@@ -92,7 +108,7 @@ namespace IXC {
         bool good; lock (L) { good = pairHash != null && DateTime.Now < pairUntil && U.SlowEq(U.Sha(J.Str(m, "code", "")), pairHash); if (good) { pairHash = null; pairUrl = null; } }   // single use
         if (!good) { Fail(c.Ip); Fail("*all*"); pairRefused++; Log.Info("phone", "pairing refused (wrong, used or expired code) from " + c.Ip); Hub.Send(c, J.D("type", "paired", "ok", false, "error", "This QR code has expired or was already used. Make a new one on the PC.")); return; }
         var token = U.Token(32); var id = U.Token(9); var name = DefaultName(J.Str(m, "device", c.Device));
-        var dev = J.D("id", id, "name", name, "hash", U.Sha(token), "created", DateTime.Now.ToString("o"), "lastSeen", DateTime.Now.ToString("o"), "ip", c.Ip, "ua", U.Trunc(c.Device, 120));
+        var dev = J.D("id", id, "name", name, "hash", U.Sha(token), "created", DateTime.Now.ToString("o"), "lastSeen", DateTime.Now.ToString("o"), "ip", c.Ip, "ua", U.Trunc(c.Device, 120), "temp", IsQuick(conn));
         lock (L) { var list = Devices(); list.Add(dev); while (list.Count > 10) list.RemoveAt(0); SaveDevices(list); }
         c.Authed = true; c.DeviceId = id; pairOk++;
         Hub.Send(c, J.D("type", "paired", "ok", true, "deviceId", id, "token", token, "name", name, "version", Program.Version));
@@ -124,19 +140,28 @@ namespace IXC {
       lock (L) { var l = Devices(); var d = l.FirstOrDefault(x => J.Str(x, "id", "") == id); if (d == null) return "That device isn't paired any more"; d["name"] = name; SaveDevices(l); } Publish(); return null; }
     public static void RemoveDevice(string id) {
       lock (L) { var l = Devices(); l.RemoveAll(x => J.Str(x, "id", "") == id); SaveDevices(l); }
-      List<Client> kick; lock (conns) kick = conns.Values.Where(x => x.DeviceId == id).ToList(); foreach (var c in kick) { Hub.Send(c, J.D("type", "auth", "ok", false, "reason", "revoked")); c.Kill(); }
+      List<Client> kick; lock (conns) kick = conns.Values.Where(x => x.DeviceId == id).ToList(); foreach (var c in kick) { SignOut(c); }
       Log.Info("phone", "phone removed"); Publish(); }
-    public static void RemoveAll() { lock (L) SaveDevices(new List<Dictionary<string, object>>()); lock (L) { pairHash = null; pairUrl = null; } List<Client> kick; lock (conns) kick = conns.Values.ToList(); foreach (var c in kick) { Hub.Send(c, J.D("type", "auth", "ok", false, "reason", "revoked")); c.Kill(); } Log.Info("phone", "all phones removed"); Publish(); }
+    public static void RemoveAll() { lock (L) SaveDevices(new List<Dictionary<string, object>>()); lock (L) { pairHash = null; pairUrl = null; } List<Client> kick; lock (conns) kick = conns.Values.ToList(); foreach (var c in kick) { SignOut(c); } Log.Info("phone", "all phones removed"); Publish(); }
     public static void Disconnect(string id) { List<Client> kick; lock (conns) kick = conns.Values.Where(x => x.DeviceId == id).ToList(); foreach (var c in kick) c.Kill(); }
-    public static Dictionary<string, object> Pair() {
+    // mode: "relay" (permanent, needs the IXC relay), "quick" (temporary Cloudflare link, no setup) or "" (relay when it's ready, else quick)
+    public static Dictionary<string, object> Pair(string mode) {
       if (!Settings.Bool("remote.enabled")) return J.D("ok", false, "error", "The phone remote is turned off (Settings > Phone).");
-      if (RelayUrl.Length == 0) return J.D("ok", false, "error", "This copy of IXC has no phone relay address yet (developer setup, see docs/DEVELOPER-SETUP.md).");
+      if (mode == "quick" || (mode != "relay" && !(RelayUrl.Length > 0 && Link.Ready))) return PairQuick();
+      if (RelayUrl.Length == 0) return J.D("ok", false, "error", "No permanent phone relay is set up - use Quick connect.");
       if (!Link.Ready) { Link.Kick(); for (int i = 0; i < 40 && !Link.Ready; i++) Thread.Sleep(250); }
-      if (!Link.Ready) return J.D("ok", false, "error", "Can't reach the phone relay right now (" + (Link.Detail.Length > 0 ? Link.Detail : "no internet?") + "). IXC keeps trying.");
+      if (!Link.Ready) return J.D("ok", false, "error", "Can't reach the phone relay right now (" + (Link.Detail.Length > 0 ? Link.Detail : "no internet?") + "). Use Quick connect instead.");
+      return NewCode("relay", RelayUrl.TrimEnd('/') + "/p/" + PcId); }
+    static Dictionary<string, object> PairQuick() {
+      if (!Quick.Supported) return J.D("ok", false, "error", "Quick connect works on Windows.");
+      if (Quick.State != "online") { Quick.Start(); return J.D("ok", false, "starting", true, "state", Quick.State, "error", Quick.Message); }
+      return NewCode("quick", Quick.Url + "/p/" + Quick.Id); }
+    static Dictionary<string, object> NewCode(string mode, string page) {
       var code = U.Token(18);
-      lock (L) { pairHash = U.Sha(code); pairUntil = DateTime.Now.AddMinutes(5); pairUrl = RelayUrl.TrimEnd('/') + "/p/" + PcId + "#c=" + code; }
-      Log.Info("phone", "phone QR code created (valid 5 minutes, one use)"); Publish();
-      return J.D("ok", true, "url", pairUrl, "expiresIn", 300); }
+      lock (L) { pairHash = U.Sha(code); pairUntil = DateTime.Now.AddMinutes(5); pairMode = mode; pairUrl = page + "#c=" + code; }
+      Log.Info("phone", "phone QR code created (" + (mode == "quick" ? "Quick connect" : "relay") + ", valid 5 minutes, one use)"); Publish();
+      return J.D("ok", true, "url", pairUrl, "mode", mode, "expiresIn", 300); }
+    public static bool QuickPairing { get { lock (L) return pairMode == "quick" && pairHash != null && DateTime.Now < pairUntil; } }
     public static void CancelPair() { lock (L) { pairHash = null; pairUrl = null; } Publish(); }
 
     // ---------- state ----------
@@ -147,10 +172,12 @@ namespace IXC {
       List<Dictionary<string, object>> devs; lock (L) devs = Devices();
       var online = Hub.Remotes();
       var list = devs.Select(d => { var cs = online.Where(c => c.DeviceId == J.Str(d, "id", "")).ToList();
-        return (object)J.D("id", J.Str(d, "id", ""), "name", J.Str(d, "name", ""), "created", J.Str(d, "created", ""), "lastSeen", J.Str(d, "lastSeen", ""), "online", cs.Count > 0, "latencyMs", cs.Count > 0 ? cs.Max(c => c.Rtt) : 0, "connection", cs.Count > 0 ? "Remote (relay)" : ""); }).ToList();
+        return (object)J.D("id", J.Str(d, "id", ""), "name", J.Str(d, "name", ""), "created", J.Str(d, "created", ""), "lastSeen", J.Str(d, "lastSeen", ""), "online", cs.Count > 0, "latencyMs", cs.Count > 0 ? cs.Max(c => c.Rtt) : 0,
+          "temp", J.Bool(d, "temp", false), "connection", cs.Count == 0 ? "" : J.Bool(d, "temp", false) ? "Quick connect" : "relay"); }).ToList();
       bool pairing; lock (L) pairing = pairHash != null && DateTime.Now < pairUntil;
       return J.D("type", "remote.state", "enabled", Settings.Bool("remote.enabled"), "configured", RelayUrl.Length > 0, "relay", Link.State, "detail", Link.Detail, "devices", list,
-        "pairing", pairing, "pairExpiresIn", pairing ? (int)(pairUntil - DateTime.Now).TotalSeconds : 0, "pairings", pairOk, "refused", pairRefused); }
+        "pairing", pairing, "pairMode", pairMode, "pairExpiresIn", pairing ? (int)(pairUntil - DateTime.Now).TotalSeconds : 0, "pairings", pairOk, "refused", pairRefused,
+        "quick", J.D("state", Quick.State, "message", Quick.Message, "url", Quick.Url, "supported", Quick.Supported)); }
     static Timer pubT;
     public static void Publish() { if (pubT == null) pubT = new Timer(_ => { Hub.Publish("remote", StateMsg()); Hub.Publish("status", Status.Msg()); }); pubT.Change(100, Timeout.Infinite); }
     public static Dictionary<string, object> DiagInfo() { var d = StateMsg(); d.Remove("type"); d["relayUrl"] = RelayUrl; return d; }
@@ -162,13 +189,14 @@ namespace IXC {
       if (m != "POST") { Http.Json(ctx, 405, J.D("error", "POST only")); return true; }
       var b = Http.BodyJson(ctx);
       switch (path) {
-        case "/api/remote/pair": { var r = Pair(); Http.Json(ctx, J.Bool(r, "ok", false) ? 200 : 503, r); return true; }
+        case "/api/remote/pair": { var r = Pair(J.Str(b, "mode", "")); Http.Json(ctx, J.Bool(r, "ok", false) || J.Bool(r, "starting", false) ? 200 : 503, r); return true; }
+        case "/api/remote/quick/stop": Quick.Stop("stopped by you"); Http.Json(ctx, StateMsg()); return true;
         case "/api/remote/cancel": CancelPair(); Http.Json(ctx, StateMsg()); return true;
         case "/api/remote/rename": { var err = RenameDevice(J.Str(b, "id", ""), J.Str(b, "name", "")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return true; }
         case "/api/remote/revoke": if (J.Str(b, "id", "").Length > 0) RemoveDevice(J.Str(b, "id", "")); else RemoveAll(); Http.Json(ctx, StateMsg()); return true;
         case "/api/remote/disconnect": Disconnect(J.Str(b, "id", "")); Http.Json(ctx, StateMsg()); return true;
         case "/api/remote/reconnect": Link.Restart(); Http.Json(ctx, StateMsg()); return true;
-        case "/api/remote/stop": RemoveAll(); Http.Json(ctx, StateMsg()); return true; }
+        case "/api/remote/stop": RemoveAll(); Quick.Stop("phone access turned off"); Http.Json(ctx, StateMsg()); return true; }
       Http.Json(ctx, 404, J.D("error", "unknown")); return true; }
     public static void OnWs(Client c, string type, Dictionary<string, object> msg) {
       if (type == "remote.logout" && c.Remote) { RemoveDevice(c.DeviceId); }

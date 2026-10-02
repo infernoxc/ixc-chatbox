@@ -30,7 +30,21 @@ You'll get a reply within 7 days.
 - It still contains your channel names and the names of viewers who used commands or triggered alerts (needed to understand a
   problem). With **detailed logs** on (Advanced), chat lines are logged too. You can open the zip and check it before sharing it.
 
-**Phone remote (IXC relay)**
+**Phone remote: Quick connect (the default, no setup)**
+- **Show QR code** starts Cloudflare's free quick tunnel: `cloudflared.exe`, Cloudflare's official program, makes an **outgoing**
+  connection, and Cloudflare gives it a temporary `https://<random>.trycloudflare.com` address. No ports are opened on your router or PC.
+- `cloudflared.exe` is downloaded once from Cloudflare's GitHub releases and kept only if Windows confirms a **valid Authenticode
+  signature from Cloudflare, Inc.** Windows ends it together with IXC, even after a crash (job object).
+- Requests that arrive through the tunnel are recognised by their host name, and only two things exist for them: the phone page
+  (`/p/<random id>`) and the phone WebSocket (`/phone/<random id>`, `Origin` must be the tunnel address). Every other path, including
+  the whole local API, the dashboard and the docks, returns 404.
+- Pairing, device keys, rate limits and the phone allow-list are the same as with the relay (below). Phones paired through Quick
+  connect get **temporary** keys: they are forgotten when the tunnel stops, when IXC starts, and when you press **Stop Quick connect**.
+- The tunnel stops after **30 minutes without a phone**, when the phone remote is turned off, and when IXC stops. Each start gets a
+  new address, so an old QR code or link never works again.
+- Cloudflare carries the encrypted traffic between the phone and your PC, as it does for the relay.
+
+**Phone remote: permanent relay (optional, IXC relay)**
 - IXC makes an **outgoing** WSS connection to the IXC relay (a Cloudflare Worker, `relay/`). Nothing on your PC is reachable from the
   internet, and the phone works on 4G/5G or any Wi-Fi.
 - The PC owns a random relay address (`pcId`, 128 bits) and a secret (256 bits). The relay stores only `sha256(secret)`. Only the PC
@@ -62,7 +76,9 @@ You'll get a reply within 7 days.
 - the platforms you turned on (Twitch, Kick, YouTube, Rumble) and their emote/avatar image servers;
 - `speech.platform.bing.com` (neural voices; unofficial endpoint);
 - YouTube / Spotify (song names, search, the player);
-- the IXC relay (only when the phone remote is set up);
+- Cloudflare's quick tunnel (only while Quick connect is on) and `github.com` (its one-time download);
+- the IXC relay (only when one is set up);
+- `gql.twitch.tv` (Twitch viewer numbers when you're not signed in to Twitch; unofficial endpoint);
 - `api.github.com` / `github.com` (update check and download).
 
 No stream keys are stored, and no accounts are created.
@@ -71,4 +87,6 @@ No stream keys are stored, and no accounts are created.
 - The installer and `ixc-core.exe` are **not code-signed**, so Windows SmartScreen may warn on first download.
 - DPAPI protects secrets from other Windows users and from copying the file to another PC. It doesn't protect them from programs running
   as your own Windows user.
-- Kick chat reading, YouTube chat reading and the Edge neural voices use public but **undocumented** endpoints, which may change.
+- Kick chat reading, YouTube chat reading, Twitch viewer numbers without sign-in and the Edge neural voices use public but
+  **undocumented** endpoints, which may change.
+- Quick connect depends on Cloudflare's free quick tunnels, which have no uptime guarantee and can be rate-limited by Cloudflare.

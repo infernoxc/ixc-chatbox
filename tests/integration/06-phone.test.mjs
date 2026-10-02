@@ -29,20 +29,20 @@ test('pair a phone with the QR code, control IXC, reconnect with the device key'
   const ph2 = await phone(pcId); await ph2.wait((x) => x.relay === 'pc-online'); ph2.send({ type: 'pair', code, device: 'x' }); assert.equal((await ph2.wait('paired')).ok, false); await ph2.close();
   // reconnect with the device key (phone slept / changed network)
   await ph.close(); const ph3 = await phone(pcId); await ph3.wait((x) => x.relay === 'pc-online');
-  ph3.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); assert.equal((await ph3.wait('auth', 8000)).ok, true);
+  ph3.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); assert.equal((await ph3.wait('auth', 8000, 'auth with the device key')).ok, true);
   ph3.send({ type: 'auth', deviceId: paired.deviceId, token: 'wrong' }); await sleep(200);
   await ph3.close();
   // IXC restarts: the phone gets "PC offline", then reconnects with the same key (devices are kept)
-  const ph4 = await phone(pcId); await ph4.wait((x) => x.relay === 'pc-online'); ph4.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); await ph4.wait('auth');
+  const ph4 = await phone(pcId); await ph4.wait((x) => x.relay === 'pc-online'); ph4.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); await ph4.wait('auth', 8000, 'auth before the restart');
   await c.stop(); await ph4.wait((x) => x.relay === 'pc-offline', 10000, 'phone told the PC is offline');
   c = await c.restart(); cleanup.push(() => c.stop()); await ph4.wait((x) => x.relay === 'pc-online', 30000, 'PC back');
-  ph4.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); assert.equal((await ph4.wait('auth', 8000)).ok, true, 'the same key works after a restart');
+  ph4.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); assert.equal((await ph4.wait('auth', 8000, 'auth after the restart')).ok, true, 'the same key works after a restart');
   ph4.send({ type: 'hello', role: 'mobile', topics: ['music.state'] }); await ph4.wait('music.state');
   // rename + revoke from the PC: the phone is signed out at once and can't come back with its old key
   const st = (await api(c, '/api/remote/status')).body; assert.equal(st.devices.length, 1); assert.equal(st.devices[0].online, true);
   assert.equal((await api(c, '/api/remote/rename', { id: paired.deviceId, name: 'Ishan\'s Phone' })).body.ok, true);
   assert.equal((await api(c, '/api/remote/status')).body.devices[0].name, 'Ishan\'s Phone');
-  await api(c, '/api/remote/revoke', { id: paired.deviceId }); const rv = await ph4.wait('auth', 5000); assert.equal(rv.ok, false); assert.equal(rv.reason, 'revoked');
+  await api(c, '/api/remote/revoke', { id: paired.deviceId }); const rv = await ph4.wait('auth', 5000, 'signed out after revoke'); assert.equal(rv.ok, false); assert.equal(rv.reason, 'revoked');
   const ph5 = await phone(pcId); await ph5.wait((x) => x.relay === 'pc-online'); ph5.send({ type: 'auth', deviceId: paired.deviceId, token: paired.token }); assert.equal((await ph5.wait('auth')).ok, false); await ph5.close();
 });
 

@@ -149,19 +149,31 @@
 
   // ======================= PHONE =======================
   page('phone', 'Phone remote', (main) => {
-    main.innerHTML = `<div class="grid2"><div class="card"><h3>📱 Connect a phone</h3><p class="muted" style="margin-top:0">Control music, chat voice and chat from your phone - on mobile data or any Wi-Fi, from anywhere. No apps, no router or firewall setup.</p>
-      <div id="phState"></div><div class="actions"><button class="primary" id="phPair">Show QR code</button></div>
-      <div id="phQr" style="display:none;text-align:center;margin-top:16px"><div class="qr" id="qrBox"></div><div id="phWait" style="margin-top:10px"></div><div class="hint">Scan with the phone's camera. The code works once and expires in <b id="phLeft">5:00</b>. Only scan it yourself - whoever scans it can control IXC.</div><div class="actions" style="justify-content:center"><button id="phNew">New code</button><button id="phCancel">Cancel</button></div></div></div>
+    main.innerHTML = `<div class="grid2"><div class="card"><h3>📱 Connect a phone</h3><p class="muted" style="margin-top:0">Control music, chat voice and chat from your phone - on mobile data or any Wi-Fi. No app, no account, no router or firewall setup.</p>
+      <div id="phState"></div><div class="actions"><button class="primary" id="phPair">Show QR code</button><button id="phQuick" style="display:none">Use Quick connect instead</button><button id="phStop" style="display:none">Stop Quick connect</button></div>
+      <div id="phQr" style="display:none;text-align:center;margin-top:16px"><div class="qr" id="qrBox"></div><div id="phWait" style="margin-top:10px"></div><div class="hint">Scan with the phone's camera. The code works once and expires in <b id="phLeft">5:00</b>. Only scan it yourself - whoever scans it can control IXC.</div><div class="actions" style="justify-content:center"><button id="phNew">New code</button><button id="phCancel">Close</button></div></div></div>
       <div class="card"><h3>Paired phones</h3><div id="phList" class="list"></div><div class="actions"><button id="phAll">Remove all phones</button></div></div></div>`;
-    let timer;
-    const paint = () => { const r = S.remote || {}; const st = r.configured === false ? '<div class="banner">This build of IXC has no phone relay address yet (developer setup - see docs).</div>' : r.relay === 'connected' ? '<div class="banner ok">✓ Ready - works on mobile data and any Wi-Fi</div>' : `<div class="banner">Connecting to the phone relay… ${esc(r.detail || '')}</div>`;
-      $('phState').innerHTML = st; $('phPair').disabled = r.relay !== 'connected';
-      $('phList').innerHTML = (r.devices || []).length ? r.devices.map(d => `<div class="item"><span class="dot" style="background:${d.online ? 'var(--ok)' : 'var(--dim2)'}"></span><div class="t"><b>${esc(d.name)}</b><small>${d.online ? 'Connected · ' + esc(d.connection) + (d.latencyMs ? ' · ' + d.latencyMs + ' ms' : '') : 'Last seen ' + esc((d.lastSeen || '').replace('T', ' ').slice(0, 16))}</small></div>
-        <button class="small" data-rn="${d.id}">Rename</button>${d.online ? `<button class="small" data-dc="${d.id}">Disconnect</button>` : ''}<button class="small" data-rm="${d.id}">Remove</button></div>`).join('') : '<div class="hint">No phones yet.</div>'; };
-    async function pair() { const b = $('phPair'); b.disabled = true; const r = await IXC.api('/api/remote/pair', {}); b.disabled = false;
+    let timer, want = null;   // want: the QR the user asked for, shown as soon as Quick connect is ready
+    const relayOk = () => { const r = S.remote || {}; return r.configured && r.relay === 'connected'; };
+    const paint = () => { const r = S.remote || {}, q = r.quick || {};
+      let st;
+      if (r.enabled === false) st = '<div class="banner">The phone remote is turned off (Settings).</div>';
+      else if (relayOk()) st = '<div class="banner ok">✓ Ready - your phone stays paired (permanent link)</div>';
+      else if (q.state === 'online') st = '<div class="banner ok">✓ Quick connect is on - works on mobile data and any Wi-Fi. It\'s a temporary link: it closes when IXC closes or after 30 minutes without a phone, then you just scan a new code.</div>';
+      else if (q.state === 'starting' || q.state === 'downloading') st = `<div class="banner info"><span class="spin"></span> ${esc(q.message || 'Starting Quick connect…')}</div>`;
+      else if (q.state === 'error') st = `<div class="banner err">${esc(q.message)}</div>`;
+      else st = '<div class="hint">Press <b>Show QR code</b> and scan it with your phone\'s camera. That\'s all.</div>';
+      $('phState').innerHTML = st; $('phPair').disabled = r.enabled === false || q.state === 'starting' || q.state === 'downloading';
+      $('phQuick').style.display = relayOk() ? '' : 'none'; $('phStop').style.display = q.state === 'online' ? '' : 'none';
+      $('phList').innerHTML = (r.devices || []).length ? r.devices.map(d => `<div class="item"><span class="dot" style="background:${d.online ? 'var(--ok)' : 'var(--dim2)'}"></span><div class="t"><b>${esc(d.name)}</b><small>${d.online ? 'Connected · ' + esc(d.connection) + (d.latencyMs ? ' · ' + d.latencyMs + ' ms' : '') : 'Last seen ' + esc((d.lastSeen || '').replace('T', ' ').slice(0, 16))}${d.temp ? ' · until Quick connect closes' : ''}</small></div>
+        <button class="small" data-rn="${d.id}">Rename</button>${d.online ? `<button class="small" data-dc="${d.id}">Disconnect</button>` : ''}<button class="small" data-rm="${d.id}">Remove</button></div>`).join('') : '<div class="hint">No phones yet.</div>';
+      if (want && q.state === 'online') pair(want); else if (want && q.state === 'error') want = null; };
+    async function pair(mode) { want = null; const b = $('phPair'); b.disabled = true; const r = await IXC.api('/api/remote/pair', { mode: mode || '' }); b.disabled = false;
+      if (r.starting) { want = 'quick'; S.remote = Object.assign({}, S.remote, { quick: Object.assign({}, (S.remote || {}).quick, { state: r.state, message: r.error }) }); paint(); return; }   // the QR appears by itself when the link is ready
       if (!r.ok) { toast(r.error, true); return; } $('phQr').style.display = ''; UI.qr($('qrBox'), r.url); $('phWait').innerHTML = '<span class="spin"></span> Waiting for the phone…';
       let left = r.expiresIn || 300; clearInterval(timer); timer = setInterval(() => { if (!$('phLeft')) return clearInterval(timer); left--; $('phLeft').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); if (left <= 0) { clearInterval(timer); $('qrBox').innerHTML = ''; $('phWait').textContent = 'Code expired - press New code.'; } }, 1000); }
-    $('phPair').onclick = pair; $('phNew').onclick = pair; $('phCancel').onclick = async () => { clearInterval(timer); $('phQr').style.display = 'none'; await IXC.api('/api/remote/cancel', {}); };
+    $('phPair').onclick = () => pair(''); $('phQuick').onclick = () => pair('quick'); $('phNew').onclick = () => pair(''); $('phCancel').onclick = async () => { want = null; clearInterval(timer); $('phQr').style.display = 'none'; await IXC.api('/api/remote/cancel', {}); };
+    $('phStop').onclick = async () => { clearInterval(timer); $('phQr').style.display = 'none'; await IXC.api('/api/remote/quick/stop', {}); };
     $('phAll').onclick = async () => { if (await UI.confirmBox('Remove all paired phones? They will need a new QR code.', 'Remove all')) await IXC.api('/api/remote/revoke', {}); };
     $('phList').onclick = async (e) => { const d = e.target.dataset;
       if (d.rn) { const n = prompt('New name for this phone:'); if (n) { const r = await IXC.api('/api/remote/rename', { id: d.rn, name: n }); if (!r.ok) toast(r.error, true); } }

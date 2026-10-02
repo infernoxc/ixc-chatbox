@@ -69,7 +69,9 @@ namespace IXC {
           return ok == null ? Item("tts", "Chat voice", "ok", "Voice works (" + it.Engine + ")" + (Tts.On ? "" : " - chat voice is switched off"), null, null) : Item("tts", "Chat voice", "warn", "The voice couldn't speak: " + ok, "tts.repair", "Repair"); }); }
       // phone
       add(() => !Settings.Bool("remote.enabled") ? Item("phone", "Phone", "off", "Phone remote is turned off", null, null)
-        : Remote.RelayUrl.Length == 0 ? Item("phone", "Phone", "off", "This build has no phone relay address yet (developer setup)", null, null)
+        : Remote.RelayUrl.Length == 0 ? (Quick.State == "online" ? Item("phone", "Phone", "ok", "Quick connect is on - " + Remote.QuickPhones() + " phone(s) connected", null, null)
+          : Quick.State == "error" ? Item("phone", "Phone", "warn", Quick.Message, "open:#phone", "Open Phone remote")
+          : Item("phone", "Phone", "ok", "Ready - Phone remote > Show QR code connects a phone (Quick connect, no setup)", null, null))
         : Remote.Link.Ready ? Item("phone", "Phone", "ok", "Phone relay connected - " + J.Int(Remote.Summary(), "devices", 0) + " phone(s) paired", null, null)
         : Item("phone", "Phone", "warn", "Can't reach the phone relay: " + Remote.Link.Detail, "phone.reconnect", "Reconnect"));
       add(() => { var u = Updates.Summary(); return J.Bool(u, "available", false) ? Item("update", "Updates", "warn", "IXC " + J.Str(u, "latest", "") + " is available (you have " + Program.Version + ")", "update.install", "Update now") : Item("update", "Updates", "ok", "IXC is up to date" + (J.Str(u, "checked", "").Length > 0 ? "" : " (not checked yet)"), null, null); });

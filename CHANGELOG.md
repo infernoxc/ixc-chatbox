@@ -18,7 +18,9 @@ IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`)
 - Viewer counter per platform and total (stale numbers are never shown), Now Playing JSON/text outputs.
 - Overlays: Now Playing (full/compact/minimal), Up Next, Chat, Viewers, Alerts, chat-voice indicator, Live status badge, styled live from the dashboard and added to OBS with one click.
 - OBS auto-setup: WebSocket server, panels, and the "IXC Audio" scene with the music player and voice in every scene.
-- Phone remote through a stable relay: pairing survives restarts and network changes; devices can be renamed/removed; latency shown.
+- Phone remote with **Quick connect**: Show QR code works with no setup (Cloudflare's free quick tunnel, temporary link, signature-checked download, only the phone page reachable). An optional permanent relay keeps phones paired across restarts; devices can be renamed/removed; latency shown.
+- Replies go through Streamer.bot for platforms IXC reads but isn't signed in to. The "!" list shows every IXC and Streamer.bot command, labelled, in the chat panel and on the phone.
+- The chat panel and the phone show viewers watching and people chatting. Twitch viewer numbers work without signing in.
 - Tray supervisor: IXC restarts itself after a crash (with a crash-loop guard).
 ### Changed
 - The music queue lives in IXC (`music.json`), so OBS restarts, cache clears or source reloads never lose it. The v2 queue is taken over automatically.
@@ -38,7 +40,7 @@ IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`)
 - Song requests with a playlist link now play just that video.
 - Local songs are still found when YouTube search is unreachable.
 ### Removed
-- The cloudflared quick tunnel (replaced by the relay), the separate diagnostics and phone pages (now in the dashboard and the relay), `config.example.json` (IXC creates its settings).
+- The 2.x tunnel code (Quick connect replaces it), the separate diagnostics and phone pages (now in the dashboard and the relay), `config.example.json` (IXC creates its settings).
 
 ## [2.0.1] - 2026-09-26
 ### Fixed
