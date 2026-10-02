@@ -26,7 +26,7 @@ test('Twitch: sign in with a code, reply in chat, follower alerts, viewer counts
   const p = await page(c, 'app', ['chat', 'accounts', 'alerts']);
   let acc = (await api(c, '/api/accounts')).body; assert.equal(acc.twitch.available, true); assert.equal(acc.youtube.available, false, 'YouTube sign-in needs the relay');
   const b = (await api(c, '/api/accounts/twitch/connect', {})).body; assert.equal(b.ok, true); assert.equal(b.userCode, 'ABCD-EFGH');
-  await until(async () => (await api(c, '/api/accounts')).body.twitch.account?.login === 'streamer', 10000, 'signed in');
+  await until(async () => { const t = (await api(c, '/api/accounts')).body.twitch; return t.flow?.state === 'connected' && t.account?.login === 'streamer'; }, 10000, 'signed in');
   // first sign-in also fills in the channel and turns Twitch on
   const v = (await api(c, '/api/settings')).body.values; assert.equal(v['platforms.twitch.channel'], 'streamer'); assert.equal(v['platforms.twitch.enabled'], true);
   const sec = fs.readFileSync(path.join(c.dir, 'secrets.dat')).toString('latin1'); assert.doesNotMatch(sec, /tok1|ref1/, 'tokens are stored encrypted');

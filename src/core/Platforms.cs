@@ -189,8 +189,9 @@ namespace IXC {
     protected override bool Wanted() { var a = Accounts.Info("twitch"); return src.Configured && a != null && J.List(a, "scopes").Contains("moderator:read:followers") && !J.Bool(a, "invalid", false) && string.Equals(J.Str(a, "login", ""), src.Login, StringComparison.OrdinalIgnoreCase); }
     protected override string WhyNotWanted() { return "follower alerts need you signed in to Twitch as the channel owner"; }
     protected override string Url() { var u = nextUrl ?? Ep.Get("twitch_eventsub", "wss://eventsub.wss.twitch.tv/ws"); nextUrl = null; return u; }
+    protected override void BeforeConnect() { welcomed.Reset(); }
     protected override async Task Handshake() {
-      welcomed.Reset(); if (!await Task.Run(() => welcomed.Wait(10000))) throw new Exception("no welcome from Twitch events");
+      if (!await Task.Run(() => welcomed.Wait(10000))) throw new Exception("no welcome from Twitch events");
       var uid = J.Str(Accounts.Info("twitch"), "userId", "");
       var body = J.Ser(J.D("type", "channel.follow", "version", "2", "condition", J.D("broadcaster_user_id", uid, "moderator_user_id", uid), "transport", J.D("method", "websocket", "session_id", session)));
       var r = await Task.Run(() => Accounts.Helix("POST", "eventsub/subscriptions", body));
@@ -260,8 +261,9 @@ namespace IXC {
       if (src.ChatroomId.Length == 0 && !src.Resolve()) { var e = src.ResolveError; if (e.StartsWith("Kick has no channel")) SetState("unavailable", e); throw new Exception(e); }
       var key = J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); var cluster = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2");
       return Ep.Get("kick_pusher", "wss://ws-" + cluster + ".pusher.com/app/" + key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
+    protected override void BeforeConnect() { established.Reset(); }
     protected override async Task Handshake() {
-      established.Reset(); if (!await Task.Run(() => established.Wait(10000))) throw new Exception("Kick chat did not answer");
+      if (!await Task.Run(() => established.Wait(10000))) throw new Exception("Kick chat did not answer");
       foreach (var ch in new[] { "chatrooms." + src.ChatroomId + ".v2", "chatroom_" + src.ChatroomId, "channel." + src.ChannelId, "channel_" + src.ChannelId })
         if (!ch.EndsWith(".") && !ch.EndsWith("_")) await Tx(J.Ser(J.D("event", "pusher:subscribe", "data", J.D("auth", "", "channel", ch)))); }
     protected override void OnText(string raw) {
