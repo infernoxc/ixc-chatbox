@@ -10,6 +10,7 @@ jobs:
   behaviour-tests:
     # IXC Core on Mono + fake Twitch/Kick/YouTube/Rumble/OBS/GitHub servers + the phone relay in Cloudflare's local runtime
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -30,6 +31,7 @@ jobs:
   windows:
     # a clean Windows that has never had IXC: real compiler, real installer, update, crash recovery, uninstall
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Smoke tests + install/update/uninstall (script)

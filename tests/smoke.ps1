@@ -78,18 +78,21 @@ if ($Install) {
 
 if ($Setup) {
   Write-Host '4) The real setup program, silently, on this (clean) Windows user'
+  # Start-Process -Wait would also wait for IXC itself (it waits for every child process), so wait for the setup process only
+  function RunSetup($exe, $argList) { $p = Start-Process $exe -ArgumentList $argList -PassThru; if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "$([IO.Path]::GetFileName($exe)) did not finish within 5 minutes" }; $p.ExitCode }
   $dest = Join-Path $env:LOCALAPPDATA 'IXC-OBS'
-  Check 'IXC-Setup.exe installs and IXC starts' { $s = Start-Process $Setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="' + "$env:TEMP\ixc-setup.log" + '"' -PassThru -Wait; if ($s.ExitCode) { throw "setup exit $($s.ExitCode)" }
+  Check 'IXC-Setup.exe installs and IXC starts' { $code = RunSetup $Setup ('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="' + "$env:TEMP\ixc-setup.log" + '"'); if ($code) { throw "setup exit $code" }
     for ($i = 0; $i -lt 60; $i++) { if ((Status 'http://127.0.0.1:8767/api/ping') -eq 200) { return $true }; Start-Sleep -Milliseconds 500 }; Get-Content "$dest\logs\app.log" -EA SilentlyContinue | Select -Last 20 | Out-Host; $false }
   Check 'tray supervisor + worker are running' { @(Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'").Count -ge 2 }
   Check 'starts with Windows (scheduled task)' { [bool](Get-ScheduledTask -TaskName 'IXC for OBS' -EA SilentlyContinue) }
   Check 'Start menu shortcut' { Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'IXC for OBS\IXC.lnk') }
   Check 'worker crash -> the tray restarts it' { $w = Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.CommandLine -match '--worker' } | Select -First 1; Stop-Process -Id $w.ProcessId -Force
     Start-Sleep 2; for ($i = 0; $i -lt 30; $i++) { if ((Status 'http://127.0.0.1:8767/api/ping') -eq 200) { return $true }; Start-Sleep -Milliseconds 500 }; $false }
-  Check 'running the setup again (update/repair) keeps IXC working' { $s = Start-Process $Setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait; if ($s.ExitCode) { throw "exit $($s.ExitCode)" }
+  Check 'running the setup again (update/repair) keeps IXC working' { $code = RunSetup $Setup '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'; if ($code) { throw "exit $code" }
     for ($i = 0; $i -lt 60; $i++) { if ((Status 'http://127.0.0.1:8767/api/ping') -eq 200) { return $true }; Start-Sleep -Milliseconds 500 }; $false }
-  Check 'uninstall from Windows removes IXC' { $u = Get-ChildItem "$dest\setup" -Filter 'unins*.exe' | Select -First 1; $s = Start-Process $u.FullName -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
-    Start-Sleep 3; -not (Test-Path "$dest\app") -and -not (Get-ScheduledTask -TaskName 'IXC for OBS' -EA SilentlyContinue) -and (Status 'http://127.0.0.1:8767/api/ping') -ne 200 }
+  Check 'uninstall from Windows removes IXC' { $u = Get-ChildItem "$dest\setup" -Filter 'unins*.exe' | Select -First 1; [void](RunSetup $u.FullName '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART')
+    # the uninstaller hands over to a copy of itself in %TEMP% and exits at once, so wait for the result instead
+    for ($i = 0; $i -lt 120 -and (Test-Path "$dest\app"); $i++) { Start-Sleep -Milliseconds 500 }; Start-Sleep 2; -not (Test-Path "$dest\app") -and -not (Get-ScheduledTask -TaskName 'IXC for OBS' -EA SilentlyContinue) -and (Status 'http://127.0.0.1:8767/api/ping') -ne 200 }
 }
 
 Write-Host ''; Write-Host "  $script:pass passed, $script:fail failed" -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
