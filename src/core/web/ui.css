@@ -13,7 +13,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.
 a { color: var(--info); }
 h1, h2, h3, h4 { font-family: var(--head); margin: 0; letter-spacing: .2px; }
 :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 6px; }
-button, .btn { font: 600 13px var(--font); color: var(--text); background: var(--card2); border: 1px solid var(--line2); border-radius: var(--r2); padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .15s, border-color .15s, transform .05s; }
+button, .btn { text-decoration: none; font: 600 13px var(--font); color: var(--text); background: var(--card2); border: 1px solid var(--line2); border-radius: var(--r2); padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .15s, border-color .15s, transform .05s; }
 button:hover { border-color: #55525f; background: #29273349; } button:active { transform: translateY(1px); }
 button.primary { background: var(--red); border-color: var(--red); color: #fff; } button.primary:hover { background: var(--red2); border-color: var(--red2); }
 button.ghost { background: transparent; } button.small { padding: 4px 9px; font-size: 12px; } button.icon { padding: 6px 8px; }
@@ -51,7 +51,9 @@ input[type=range] { accent-color: var(--red); width: 100%; } input[type=checkbox
 .field { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 10px 16px; align-items: center; margin: 10px 0; }
 .field > label:first-child, .field > .lbl { color: var(--dim); font-size: 13px; }
 .field .val { display: flex; gap: 10px; align-items: center; } .field .val output { min-width: 48px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
-@media (max-width: 640px) { .field { grid-template-columns: 1fr; gap: 4px; } }
+.field.tog { grid-template-columns: 1fr auto; } .field.tog .val { justify-content: flex-end; }
+.grid .field:not(.tog), .narrow .field:not(.tog) { grid-template-columns: 1fr; gap: 4px; }
+@media (max-width: 640px) { .field:not(.tog) { grid-template-columns: 1fr; gap: 4px; } }
 .banner { padding: 10px 14px; border-radius: var(--r2); background: #2a2113; border: 1px solid #574420; color: #ffe2a6; display: flex; gap: 10px; align-items: center; }
 .banner.ok { background: #102419; border-color: #1f5434; color: #bff3d2; } .banner.err { background: #2b1416; border-color: #5f2327; color: #ffc2c4; } .banner.info { background: #121d2d; border-color: #234466; color: #cfe3ff; }
 #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); background: #24222c; color: #fff; padding: 9px 16px; border-radius: 10px; box-shadow: var(--shadow); font-weight: 600; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 1000; max-width: 92vw; text-align: center; }

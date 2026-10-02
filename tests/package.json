@@ -3,6 +3,12 @@
   "private": true,
   "description": "Automated tests for IXC (core on Mono + mock platform servers + the phone relay in Cloudflare's local runtime)",
   "type": "module",
-  "scripts": { "test": "node --test --test-concurrency=1 integration/*.test.mjs" },
-  "devDependencies": { "ws": "^8.18.0", "wrangler": "^4.40.0" }
+  "scripts": {
+    "test": "node --test --test-concurrency=1 integration/*.test.mjs ui/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "wrangler": "^4.40.0",
+    "ws": "^8.18.0"
+  }
 }

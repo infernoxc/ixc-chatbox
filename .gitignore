@@ -25,3 +25,4 @@ node_modules/
 relay/.wrangler/
 secrets.dat
 src/core/ixc.defaults.json
+tests/ui/shots/

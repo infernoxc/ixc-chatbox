@@ -18,10 +18,15 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q mono-devel
       - name: Install test tools
         working-directory: tests
-        run: npm install --no-audit --no-fund
-      - name: Behaviour tests
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Behaviour + browser UI tests
         working-directory: tests
         run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: tests/ui/shots/
   windows:
     # a clean Windows that has never had IXC: real compiler, real installer, update, crash recovery, uninstall
     runs-on: windows-latest
@@ -53,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ixc-release
+          name: ixc-windows
           path: |
             dist/*
             ${{ runner.temp }}/ixc-setup.log

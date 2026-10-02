@@ -16,7 +16,7 @@
   body.layout-minimal .wrap { padding: .35em .6em; } body.layout-minimal .title::before { content: "🎵 "; } body.layout-minimal .title .sep { display: inline; } .title .sep { display: none; opacity: .8; font-weight: 400; }
 </style></head>
 <body class="layout-full anim-slide">
-<div class="wrap box hidden" id="w"><img class="art" id="art" alt=""><div class="txt"><div class="label" id="label">NOW PLAYING</div><div class="title" id="title"></div><div class="artist" id="artist"></div>
+<div class="wrap box hidden" id="w"><img class="art" id="art" alt="" onerror="this.style.visibility='hidden'" onload="this.style.visibility='visible'"><div class="txt"><div class="label" id="label">NOW PLAYING</div><div class="title" id="title"></div><div class="artist" id="artist"></div>
   <div class="bar" id="bar"><i id="fill"></i></div><div class="time" id="time"></div><div class="by" id="by"></div></div></div>
 <script src="/core/ixc.js"></script><script src="overlay.js"></script>
 <script>

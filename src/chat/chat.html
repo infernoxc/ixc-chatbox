@@ -39,7 +39,8 @@
   #plat { flex: none; } #plat.twitch { background: var(--tw); border-color: var(--tw); color: #fff; } #plat.kick { background: var(--kick); border-color: var(--kick); color: #0a0a0a; } #plat.youtube { background: var(--yt); border-color: var(--yt); color: #fff; } #plat.all { background: var(--red); border-color: var(--red); color: #fff; }
   #sug { display: none; position: absolute; left: 8px; right: 8px; bottom: 54px; z-index: 9; max-height: 46vh; overflow-y: auto; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: var(--shadow); }
   #sug.show { display: block; } #sug .s { padding: 7px 10px; display: flex; gap: 8px; align-items: center; cursor: pointer; } #sug .s.sel, #sug .s:hover { background: #2a2833; } #sug .s small { margin-left: auto; color: var(--dim); }
-  #menu { position: fixed; z-index: 20; display: none; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 220px; }
+  #menu { position: fixed; z-index: 20; display: none; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 200px; max-width: calc(100vw - 12px); }
+  #menu button { white-space: normal; text-align: left; }
   #menu.show { display: block; } #menu button { width: 100%; justify-content: flex-start; background: transparent; border-color: transparent; } #menu button:hover { background: #2a2833; }
   #menu .h { padding: 4px 10px 6px; color: var(--dim); font-size: 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
   #conn { position: absolute; top: 8px; right: 10px; z-index: 6; display: none; } #conn.show { display: inline-flex; }
@@ -134,7 +135,8 @@
     menu.innerHTML = `<div class="h">${esc(P[menuFor.p] ? P[menuFor.p].name : '')} · <b>${esc(menuFor.name)}</b></div>
       <button data-a="reply">↩ Reply to ${esc(menuFor.name)}</button><button data-a="voice">🎙 Choose a voice for ${esc(menuFor.name)}…</button>
       <button data-a="never">🔇 Never read ${esc(menuFor.name)} out loud</button><button data-a="hide">🚫 Hide ${esc(menuFor.name)} everywhere</button><button data-a="copy">📋 Copy message</button>`;
-    const r = el.getBoundingClientRect(); menu.style.left = Math.min(window.innerWidth - 240, Math.max(6, e.clientX - 20)) + 'px'; menu.style.top = Math.min(window.innerHeight - 230, r.bottom + 4) + 'px'; menu.classList.add('show'); });
+    const r = el.getBoundingClientRect(); menu.classList.add('show'); const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    menu.style.left = Math.max(6, Math.min(window.innerWidth - mw - 6, e.clientX - 20)) + 'px'; menu.style.top = Math.max(6, Math.min(window.innerHeight - mh - 6, r.bottom + 4)) + 'px'; });
   document.addEventListener('click', (e) => { if (!e.target.closest('#menu') && !e.target.closest('.msg')) menu.classList.remove('show'); });
   menu.onclick = async (e) => { const a = e.target.closest('button') && e.target.closest('button').dataset.a; if (!a || !menuFor) return; menu.classList.remove('show'); const f = menuFor;
     if (a === 'reply') { const i = sendTargets.indexOf(f.p); tIdx = i >= 0 ? i : 0; paintPlat(); $('msgIn').value = '@' + f.name + ' ' + $('msgIn').value.replace(/^@\S+\s*/, ''); $('msgIn').focus(); }

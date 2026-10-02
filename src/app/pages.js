@@ -123,7 +123,7 @@
     const sel = qs.get('o') || 'nowplaying';
     main.innerHTML = `<p class="muted" style="margin-top:0">Pick an overlay, style it, then press <b>Add to OBS</b> - IXC puts it into the scene that's on air. Changes apply live, even after it's in OBS.</p>
       <div class="row wrap section">${Object.entries(OV).map(([k, o]) => `<a class="btn ${k === sel ? 'primary' : ''}" href="#overlays?o=${k}">${esc(o.name)}</a>`).join('')}</div>
-      <div class="grid2"><div class="card" id="ovForm"></div><div><div class="preview" style="height:${Math.min(460, OV[sel].h + 60)}px;overflow:hidden"><iframe id="ovPrev" src="/overlay/${sel}.html?preview=1" title="Preview" style="width:100%;height:100%;border:0;background:transparent" allowtransparency="true"></iframe></div>
+      <div class="grid2"><div class="card" id="ovForm"></div><div><div class="preview" style="height:${Math.min(460, OV[sel].h + 60)}px;overflow:hidden"><iframe id="ovPrev" src="/overlay/${sel}.html?preview=1" title="Preview" style="width:100%;height:100%;border:0;background:transparent;color-scheme:normal" allowtransparency="true"></iframe></div>
       <div class="card" style="margin-top:14px"><h3>Use it in OBS</h3><div class="row"><input type="text" readonly id="ovUrl" value="${location.origin}/overlay/${sel}.html" aria-label="Overlay address"><button id="ovCopy">Copy</button></div>
       <div class="actions"><button class="primary" id="ovAdd">➕ Add to OBS (current scene)</button><button id="ovReset">Reset style</button></div><div class="hint" style="margin-top:8px">Size in OBS: ${OV[sel].w}×${OV[sel].h} (drag the edges in OBS to resize). Text files for OBS "Text" sources: <code>${esc(S.outputFolder)}</code></div></div></div></div>`;
     const o = OV[sel]; let cur = Object.assign({}, S.values['overlays.' + sel] || {});
@@ -160,7 +160,7 @@
         <button class="small" data-rn="${d.id}">Rename</button>${d.online ? `<button class="small" data-dc="${d.id}">Disconnect</button>` : ''}<button class="small" data-rm="${d.id}">Remove</button></div>`).join('') : '<div class="hint">No phones yet.</div>'; };
     async function pair() { const b = $('phPair'); b.disabled = true; const r = await IXC.api('/api/remote/pair', {}); b.disabled = false;
       if (!r.ok) { toast(r.error, true); return; } $('phQr').style.display = ''; UI.qr($('qrBox'), r.url); $('phWait').innerHTML = '<span class="spin"></span> Waiting for the phone…';
-      let left = r.expiresIn || 300; clearInterval(timer); timer = setInterval(() => { left--; $('phLeft').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); if (left <= 0) { clearInterval(timer); $('qrBox').innerHTML = ''; $('phWait').textContent = 'Code expired - press New code.'; } }, 1000); }
+      let left = r.expiresIn || 300; clearInterval(timer); timer = setInterval(() => { if (!$('phLeft')) return clearInterval(timer); left--; $('phLeft').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); if (left <= 0) { clearInterval(timer); $('qrBox').innerHTML = ''; $('phWait').textContent = 'Code expired - press New code.'; } }, 1000); }
     $('phPair').onclick = pair; $('phNew').onclick = pair; $('phCancel').onclick = async () => { clearInterval(timer); $('phQr').style.display = 'none'; await IXC.api('/api/remote/cancel', {}); };
     $('phAll').onclick = async () => { if (await UI.confirmBox('Remove all paired phones? They will need a new QR code.', 'Remove all')) await IXC.api('/api/remote/revoke', {}); };
     $('phList').onclick = async (e) => { const d = e.target.dataset;

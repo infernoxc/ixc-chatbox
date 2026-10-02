@@ -84,7 +84,7 @@ namespace IXC {
         if (exe == null) { var steam = Path.Combine(Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? "C:\\Program Files (x86)", "Steam", "steamapps", "common", "OBS Studio", "bin", "64bit", "obs64.exe"); if (File.Exists(steam)) exe = steam; } }
       if (exe != null) { try { ver = FileVersionInfo.GetVersionInfo(exe).ProductVersion ?? ""; } catch { } }
       var ws = WsConfig(); bool configured = Directory.Exists(ConfigDir);
-      return J.D("installed", exe != null || configured, "path", exe, "version", ver.Length > 0 ? ver : Link.ObsVersion, "running", Running(), "usedBefore", configured,
+      return J.D("installed", exe != null || configured || Link.Ready, "path", exe, "version", ver.Length > 0 ? ver : Link.ObsVersion, "running", Running(), "usedBefore", configured,
         "websocketEnabled", J.Bool(ws, "server_enabled", false), "websocketPort", J.Int(ws, "server_port", 4455), "connected", Link.Ready, "state", Link.State, "detail", Link.Detail); }
 
     // ---------- turn on obs-websocket (OBS must be closed: it rewrites the file when it exits) ----------
