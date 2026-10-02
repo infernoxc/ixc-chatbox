@@ -2,6 +2,13 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # "Run workflow" on the Actions page: (re)build and attach the files of a release, e.g. after a failed run.
+  # It builds the default branch, whose VERSION must match the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v3.0.1"
+        required: true
 permissions:
   contents: write
 jobs:
@@ -14,7 +21,8 @@ jobs:
         shell: powershell
         run: |
           $v = (Get-Content VERSION -TotalCount 1).Trim()
-          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match VERSION $v" }
+          $t = "${{ inputs.tag || github.ref_name }}"
+          if ("v$v" -ne $t) { throw "Tag $t does not match VERSION $v - set VERSION to $($t.TrimStart('v')) first" }
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y --no-progress
@@ -36,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $t = "${{ github.ref_name }}"; $notes = "docs\release-notes\$t.md"
+          $t = "${{ inputs.tag || github.ref_name }}"; $notes = "docs\release-notes\$t.md"
           $files = Get-ChildItem dist -File | % FullName
           gh release view $t *> $null
           if ($LASTEXITCODE -eq 0) { gh release upload $t $files --clobber; exit 0 }   # release already made by hand: refresh its files
