@@ -56,7 +56,9 @@ test('Kick + YouTube + Rumble together; one platform failing never stops the oth
   pusher.live()[0].send({ event: 'App\\Events\\ChatMessageEvent', channel: 'chatrooms.999.v2', data: JSON.stringify({ id: 'k1', content: 'insane [emote:37226:KEKW]', sender: { id: 5, username: 'ShadowSniper', slug: 'shadowsniper', identity: { color: '#00FF00', badges: [{ type: 'vip' }] } } }) });
   const km = (await p.wait((x) => x.type === 'chat.msg' && x.m.id === 'k1', 6000)).m; assert.equal(km.roles.vip, true); assert.equal(km.parts[1].name, 'KEKW'); assert.match(km.parts[1].url, /files\.kick\.com\/emotes\/37226/);
   const ym = (await p.wait((x) => x.type === 'chat.msg' && x.m.id === 'y1', 10000)).m; assert.equal(ym.platform, 'youtube'); assert.equal(ym.roles.mod, true); assert.ok(ym.parts.some(x => x.t === 'emote' && x.name === ':wave:'));
-  const old = p.msgs.find(x => x.type === 'chat.msg' && x.m.id === 'old1'); assert.ok(old && old.m.old, 'messages already in chat are marked old (not read out)');
+  // Rumble's first poll may run before this page connected: then the message comes with the history instead of live
+  const old = await until(async () => p.msgs.find(x => x.type === 'chat.msg' && x.m.id === 'old1')?.m || (await api(c, '/api/chat/history')).body.messages.find(m => m.id === 'old1'), 8000, 'rumble message that was already there');
+  assert.ok(old.old, 'messages already in chat are marked old (not read out)');
   const sc = (await p.wait((x) => x.type === 'chat.msg' && x.m.id === 'p1', 6000)).m; assert.equal(sc.kind, 'superchat'); assert.equal(sc.amount, '₹200.00');
   await p.wait((x) => x.type === 'chat.del' && x.id === 'y1', 8000);
   const rm = (await p.wait((x) => x.type === 'chat.msg' && x.m.text === 'new rumble msg', 15000)).m; assert.equal(rm.platform, 'rumble');

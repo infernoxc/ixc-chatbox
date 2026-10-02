@@ -25,6 +25,9 @@ namespace IXC {
     protected abstract string Url();
     protected virtual Dictionary<string, string> RequestHeaders() { return null; }
     protected abstract Task Handshake();
+    // called before each connection attempt: reset "the server said hello" flags here, not in Handshake - servers that greet at once
+    // (Kick, Twitch EventSub) can do it before Handshake runs, and a reset there would throw their hello away
+    protected virtual void BeforeConnect() { }
     protected abstract void OnText(string raw);
     protected virtual bool Wanted() { return true; }
     protected virtual string WhyNotWanted() { return "turned off"; }
@@ -65,6 +68,7 @@ namespace IXC {
         w.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         var hs = RequestHeaders(); if (hs != null) foreach (var kv in hs) w.Options.SetRequestHeader(kv.Key, kv.Value);
         SetState(Failures == 0 ? "connecting" : "reconnecting", Detail);
+        BeforeConnect();
         using (var cts = new CancellationTokenSource(10000)) {
           try { w.ConnectAsync(new Uri(Url()), cts.Token).Wait(); }
           catch (Exception e) { if (cts.IsCancellationRequested) throw new Exception("no answer (timed out)"); throw new Exception(Friendly(e)); } }
