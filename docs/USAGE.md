@@ -11,7 +11,9 @@ Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC 
   - never read them out loud,
   - hide them everywhere.
 - Messages your filters caught stay visible in your panel, dimmed, with the reason. They're only hidden on stream.
-- To reply from IXC, connect that platform's account (**Platforms & accounts**). Rumble doesn't allow apps to send chat messages.
+- To reply from IXC, connect that platform's account (**Platforms & accounts**), or run **Streamer.bot**: IXC then sends through it for
+  platforms you haven't signed in to. Rumble doesn't allow apps to send chat messages.
+- Type `!` to see every command (IXC's and Streamer.bot's). The top bar shows **watching** and **chatting** (wrote in the last 10 minutes).
 
 ## Chat voice (TTS)
 - Switch it on with **🔈 Voice off/on** in the chat panel, on your phone, or on the dashboard's Home page.
@@ -64,20 +66,20 @@ Overlays are transparent and keep showing their last state if IXC restarts. They
 
 ## Phone remote
 1. Click **Phone remote > Show QR code** and scan it with your phone's camera. The browser opens and connects.
-2. That's it. It works on mobile data and any Wi-Fi.
-3. Add the page to your home screen for one-tap access.
+2. That's it. It works on mobile data and any Wi-Fi, with no app, account or settings.
+
+This uses **Quick connect**: a temporary secure link through Cloudflare's free tunnel (IXC downloads Cloudflare's program once, about
+60 MB). The link closes when IXC closes or after 30 minutes without a phone; then scan a new code. With a permanent phone relay set up
+(optional, see [DEVELOPER-SETUP.md](DEVELOPER-SETUP.md)), phones stay paired instead.
 
 | Tab | Controls |
 |---|---|
 | **Music** | Play/pause, skip, volume, queue, add songs, music destination |
-| **Chat** | Chat, platform filter, replies |
+| **Chat** | Chat, watching / chatting counts, platform filter, replies, `!` command list |
 | **Voice** | On/off, pause, skip, voice, volume, platforms |
 | **Status** | Viewers, connections, latency |
 
-The phone reconnects by itself after:
-- network changes,
-- the phone sleeping,
-- IXC or the PC restarting.
+The phone reconnects by itself after network changes and the phone sleeping (and, with a permanent relay, after IXC or the PC restarts).
 
 On the PC, **Phone remote** lists your phones. You can rename, disconnect or remove each one, or remove all of them.
 

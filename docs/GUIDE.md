@@ -137,7 +137,7 @@ Replace `8767` if IXC uses another port.
 
 | Platform | To read chat | To reply / alerts / viewers |
 |---|---|---|
-| **Twitch** | Type your channel name | **Connect** → a code is shown → enter it on twitch.tv/activate |
+| **Twitch** | Type your channel name (viewer numbers work too) | **Connect** → a code is shown → enter it on twitch.tv/activate |
 | **Kick** | Type your channel name | **Connect** → sign in to Kick in the browser |
 | **YouTube** | Type your channel (`@name`, channel link or a live video link) | **Connect** → sign in with Google |
 | **Rumble** | Paste your **Live Stream API** link (rumble.com > Account > Live Stream API) | Rumble doesn't allow apps to send messages |
@@ -149,10 +149,13 @@ problem, the others keep working. YouTube chat appears when you go live; IXC che
 ## 6. Chat
 In the **IXC ChatBox** panel or the **Chat** page:
 1. Messages from all platforms appear in one list, tagged **TWITCH**, **KICK**, **YT**, **RUMBLE**. Click a tag at the top to hide or show that platform.
-2. **Reply:** type at the bottom. The button on the left picks where it goes: **ALL** or one platform. Type `!` for command suggestions, `@` for names.
-3. **Click a message** to reply to that person, choose a voice for them, never read them out loud, hide them everywhere, or copy the message.
+2. **Reply:** type at the bottom. The button on the left picks where it goes: **ALL** or one platform. Type `!` for every command (IXC's and
+   Streamer.bot's, each labelled), `@` for names. Replies go out with your signed-in account, or through **Streamer.bot** when it's running
+   and you haven't signed in to that platform in IXC.
+3. The top bar shows **👁 watching** (viewers on all platforms right now) and **💬 chatting** (people who wrote in the last 10 minutes).
+4. **Click a message** to reply to that person, choose a voice for them, never read them out loud, hide them everywhere, or copy the message.
    Messages deleted by moderators on the platform disappear from IXC too.
-4. Messages caught by a filter stay in your panel, dimmed with the reason, but are hidden on stream.
+5. Messages caught by a filter stay in your panel, dimmed with the reason, but are hidden on stream.
 
 ## 7. Chat voice (TTS)
 1. Switch it on: **🔈** in the chat panel, **Home**, or your phone.
@@ -209,17 +212,25 @@ Turn each on/off, edit the answer, or click **+ New command**:
 Overlays are transparent. If IXC restarts, they keep showing the last state and reconnect by themselves.
 
 ## 12. Phone remote
-> Needs the IXC relay. If the page says **"Not available in this build"**, the person who built IXC hasn't done the
-> [developer setup](DEVELOPER-SETUP.md) yet.
+No app, no account, no settings.
 
 1. **Phone remote** page (or tray > **Connect phone**) > **Show QR code**.
+   - The first time, IXC downloads Cloudflare's free tunnel program (about 60 MB, once) and opens a temporary secure link.
+     This takes a few seconds; the QR code appears by itself.
 2. Scan it with the phone camera and open the link. The code works **once** and for **5 minutes**.
-3. Done. It works on mobile data and any Wi-Fi. Add the page to your home screen.
+3. Done. It works on mobile data and any Wi-Fi.
+
+**Quick connect is temporary:** the link closes when IXC closes, or after 30 minutes without a phone. Next time, press
+**Show QR code** again and scan the new code. **Stop Quick connect** closes it right away.
+
+*Permanent link (optional):* if a phone relay is set up ([developer setup](DEVELOPER-SETUP.md), or **Settings > Advanced mode >
+Phone relay address**), **Show QR code** uses it instead: phones then stay paired across restarts. **Use Quick connect instead** is
+still there.
 
 | Phone tab | |
 |---|---|
 | **Music** | Play/pause, skip, volume, queue, add songs, music destination |
-| **Chat** | Chat, platform filter, replies |
+| **Chat** | Chat, watching / chatting counts, platform filter, replies, `!` command list |
 | **Voice** | On/off, pause, skip, voice, volume, platforms |
 | **Status** | Viewers, connections, latency |
 

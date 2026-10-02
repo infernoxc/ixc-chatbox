@@ -102,6 +102,7 @@ namespace IXC {
     static void Handle(Ctx ctx) {
       var rq = ctx.Request; string path = rq.Url.AbsolutePath;
       var host = (rq.Headers["Host"] ?? "").ToLowerInvariant();
+      if (Quick.IsTunnelHost(host)) { Quick.Handle(ctx); return; }   // from the internet through Quick connect: only the phone page and its socket
       if (host != "localhost:" + Port && host != "127.0.0.1:" + Port && host != "[::1]:" + Port) { Http.Send(ctx, 421, "wrong host", "text/plain"); return; }   // DNS rebinding
       bool api = path.StartsWith("/api/") || path == "/ws" || path.StartsWith("/oauth/");
       if (api && !LocalOrigin(rq.Headers["Origin"])) { Log.Warn("net", "refused a request from another website (" + U.Trunc(rq.Headers["Origin"], 80) + ")"); Http.Json(ctx, 403, J.D("error", "origin not allowed")); return; }

@@ -105,10 +105,18 @@
       const n = v && v.state === 'live' ? `<b>${UI.num(v.count)}</b>` : v && v.state === 'offline' ? '<span class="tiny">offline</span>' : '';
       return `<span class="chip st-${esc(s.state)} ${hideP.has(p) ? 'hide' : ''}" data-p="${p}" title="${esc(P[p].name + ': ' + (UI.STATE[s.state] || s.state) + (s.detail ? ' - ' + s.detail : '') + (s.canSend ? '' : '\n' + (s.sendNote || '')))} (click: show/hide here)"><i></i>${P[p].name} ${n}</span>`; }).join('');
     if (!h) h = '<span class="muted small">No platform connected yet - <a href="#" id="setupLink">connect your accounts</a></span>';
-    const tot = viewers && viewers.total != null ? `<span class="chip total" title="Viewers on all platforms${viewers.partial ? ' (some platforms have no number right now)' : ''}">👁 <b>${UI.num(viewers.total)}</b>${viewers.partial ? '*' : ''}</span>` : '';
-    $('chips').innerHTML = h + tot;
+    // always visible: viewers right now (all platforms) and how many people wrote in chat in the last 10 minutes
+    const tot = viewers && viewers.total != null ? `<span class="chip total" id="vTot" title="Watching now on all platforms${viewers.partial ? ' (some platforms have no number right now)' : ''}">👁 <b>${UI.num(viewers.total)}</b>${viewers.partial ? '*' : ''} watching</span>`
+      : `<span class="chip total" id="vTot" title="No viewer number right now (not live, or the platform doesn't share it without signing in)">👁 – watching</span>`;
+    const act = `<span class="chip total" id="vAct" title="People who wrote in chat in the last 10 minutes">💬 <b>${activeChatters()}</b> chatting</span>`;
+    $('chips').innerHTML = h + tot + act;
     const sl = $('setupLink'); if (sl) sl.onclick = (e) => { e.preventDefault(); openApp('#accounts'); };
     sendTargets = ['all'].concat(order.filter(p => plats[p] && plats[p].canSend)); if (!sendTargets.includes(sendTargets[tIdx])) tIdx = 0; paintPlat(); }
+  // people chatting: name -> last message time (only real chat, not alerts or IXC's own lines)
+  const chatters = new Map();
+  function seen(m) { if (!m || (m.kind && m.kind !== 'chat') || !m.name) return; chatters.set(m.platform + ':' + m.name.toLowerCase(), m.at || Date.now()); const a = $('vAct'); if (a) a.querySelector('b').textContent = activeChatters(); }
+  function activeChatters() { const since = Date.now() - 600000; let n = 0; for (const [k, t] of chatters) { if (t >= since) n++; else chatters.delete(k); } return n; }
+  setInterval(() => { const a = $('vAct'); if (a) a.querySelector('b').textContent = activeChatters(); }, 30000);
   $('chips').onclick = (e) => { const c = e.target.closest('.chip[data-p]'); if (!c) return; const p = c.dataset.p; if (hideP.has(p)) hideP.delete(p); else hideP.add(p);
     list.querySelectorAll('.msg[data-p="' + p + '"]').forEach(el => el.style.display = hideP.has(p) ? 'none' : ''); paintChips();
     link.send({ type: 'settings.set', patch: { 'chat.dockPlatforms': ['twitch', 'kick', 'youtube', 'rumble'].filter(x => !hideP.has(x)) } }); };
@@ -145,7 +153,7 @@
     else if (a === 'hide') { if (!await UI.confirmBox('Hide ' + f.name + ' from this panel, the overlay and the voice?', 'Hide')) return; const l = (settings['chat.filters.blacklist'] || []).concat([f.name]); const r = await IXC.api('/api/settings', { patch: { 'chat.filters.blacklist': l } }); toast(r.ok ? f.name + ' is hidden (undo in IXC > Chat filters)' : r.error, !r.ok); if (r.ok) settings = r.values; }
     else if (a === 'copy') { try { await navigator.clipboard.writeText(f.text); toast('Copied'); } catch { toast('Copy is not allowed here', true); } } };
   // ---------- reply box with ! and @ suggestions ----------
-  let CMDS = [], USERS = [], sugItems = [], sel = 0; const input = $('msgIn'), sug = $('sug');
+  let CMDS = [], FROM = {}, USERS = [], sugItems = [], sel = 0, sugAt = 0; const input = $('msgIn'), sug = $('sug');
   async function send() { const text = input.value.trim(); if (!text) return; const to = sendTargets[tIdx] || 'all'; input.value = ''; hideSug();
     const r = await link.ask({ type: 'chat.send', platform: to, message: text }, 'chat.sent', 15000); const res = r.results || [];
     const bad = res.filter(x => !x.ok); if (!res.length) toast('Not sent: ' + (r.error || 'IXC is not running'), true); else if (bad.length) toast('Not sent to ' + bad.map(x => (P[x.platform] ? P[x.platform].name : x.platform) + ': ' + x.error).join('; '), true); }
@@ -153,23 +161,24 @@
   function hideSug() { sug.classList.remove('show'); sugItems = []; }
   function showSug() {
     const v = input.value, at = v.lastIndexOf(' ') + 1, word = v.slice(at);
-    if (/^!/.test(v) && at === 0) sugItems = CMDS.filter(c => c.toLowerCase().startsWith(word.toLowerCase())).slice(0, 30).map(c => ({ t: c, s: 'command' }));
+    if (/^!/.test(v) && at === 0) sugItems = CMDS.filter(c => c.toLowerCase().startsWith(word.toLowerCase())).slice(0, 500).map(c => ({ t: c, s: FROM[c] || 'command' }));
     else if (/^@/.test(word)) sugItems = USERS.filter(u => u.name.toLowerCase().startsWith(word.slice(1).toLowerCase())).slice(0, 30).map(u => ({ t: '@' + u.name, s: P[u.platform] ? P[u.platform].name : '' }));
     else sugItems = [];
     if (!sugItems.length) return hideSug(); sel = 0;
     sug.innerHTML = sugItems.map((x, i) => `<div class="s ${i === sel ? 'sel' : ''}" data-i="${i}">${esc(x.t)}<small>${esc(x.s)}</small></div>`).join(''); sug.classList.add('show'); }
   function pick(i) { const v = input.value, at = v.lastIndexOf(' ') + 1; input.value = v.slice(0, at) + sugItems[i].t + ' '; hideSug(); input.focus(); }
   sug.onclick = (e) => { const s = e.target.closest('.s'); if (s) pick(+s.dataset.i); };
-  input.addEventListener('input', () => { if (/^!|(^|\s)@/.test(input.value) && !CMDS.length) link.send({ type: 'chat.suggest' }); showSug(); });
+  // typing "!" refreshes the list (Streamer.bot commands can change at any time); IXC also pushes it when Streamer.bot connects
+  input.addEventListener('input', () => { if (/^!|(^|\s)@/.test(input.value) && (!CMDS.length || Date.now() - sugAt > 15000)) { sugAt = Date.now(); link.send({ type: 'chat.suggest' }); } showSug(); });
   input.addEventListener('keydown', (e) => {
-    if (sug.classList.contains('show')) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length; sug.querySelectorAll('.s').forEach((s, i) => s.classList.toggle('sel', i === sel)); return; }
+    if (sug.classList.contains('show')) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length; sug.querySelectorAll('.s').forEach((s, i) => { s.classList.toggle('sel', i === sel); if (i === sel) s.scrollIntoView({ block: 'nearest' }); }); return; }
       if (e.key === 'Tab' || (e.key === 'Enter' && sugItems.length)) { e.preventDefault(); pick(sel); return; } if (e.key === 'Escape') { hideSug(); return; } }
     if (e.key === 'Enter') { e.preventDefault(); send(); } });
   // ---------- connection ----------
   const link = IXC.connect({ role: 'chat', topics: ['chat', 'tts', 'viewers', 'settings', 'reload'], onState: (up) => { $('conn').classList.toggle('show', !up); if (up) link.send({ type: 'chat.suggest' }); }, on: (m) => {
     switch (m.type) {
-      case 'chat.history': list.innerHTML = ''; (m.messages || []).forEach(add); follow = true; toBottom(); break;
-      case 'chat.msg': add(m.m); break;
+      case 'chat.history': list.innerHTML = ''; (m.messages || []).forEach(add); (m.messages || []).forEach(seen); follow = true; toBottom(); paintChips(); break;
+      case 'chat.msg': add(m.m); seen(m.m); break;
       case 'chat.del': del(m.platform, m.id, m.login); break;
       case 'chat.clear': list.querySelectorAll('.msg[data-p="' + m.platform + '"]').forEach(el => el.remove()); break;
       case 'chat.reply': if (m.error) sys((P[m.platform] ? P[m.platform].name : '') + ': ' + (m.text ? '"' + m.text + '" was not sent - ' : '') + m.error, true); else if (m.text) sys('IXC: ' + m.text); break;
@@ -177,7 +186,7 @@
       case 'viewers': viewers = m; paintChips(); break;
       case 'tts.state': tts = m; paintTts(); break;
       case 'tts.voices': voices = m.voices || []; fillVoices(); break;
-      case 'chat.suggest': CMDS = m.commands || []; USERS = m.users || []; break;
+      case 'chat.suggest': CMDS = m.commands || []; FROM = m.from || {}; USERS = m.users || []; if (sug.classList.contains('show')) showSug(); break;
       case 'settings.all': settings = m.values || {}; hideP = new Set(['twitch', 'kick', 'youtube', 'rumble'].filter(p => !(settings['chat.dockPlatforms'] || []).includes(p))); paintChips(); break;
       case 'settings': settings[m.key] = m.value; break;
       case 'error': toast(m.error, true); break;

@@ -41,7 +41,8 @@ namespace IXC {
     public static DateTime LastMessage = DateTime.MinValue;
     static readonly Dictionary<string, KeyValuePair<string, DateTime>> Chatters = new Dictionary<string, KeyValuePair<string, DateTime>>(StringComparer.OrdinalIgnoreCase);
 
-    public static void Init() { Enabled = true; }
+    public static void Init() { Enabled = true;
+      Settings.Changed += k => { if (k == "commands.list" || k == "chat.hiddenCommands" || k == "chat.extraCommandsFile") Task.Run(() => PushSuggestions()); }; }
 
     // ---------- the pipeline ----------
     public static void Ingest(ChatMsg m) {
@@ -92,7 +93,7 @@ namespace IXC {
       var res = new List<Dictionary<string, object>>(); message = Regex.Replace((message ?? "").Trim(), "[\\r\\n]+", " "); if (message.Length == 0) return res; if (message.Length > 480) message = message.Substring(0, 480);
       platform = (platform ?? "all").ToLowerInvariant();
       var targets = platform == "all" ? Platforms.SendTargets() : new List<string> { platform };
-      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", "No chat is connected that IXC can send to. Sign in to a platform under Accounts.")); return res; }
+      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", Accounts.Available("twitch") || Accounts.Available("kick") || Accounts.Available("youtube") ? "IXC can't reply anywhere yet: open Streamer.bot (IXC replies through it), or connect your account under Platforms & accounts." : "IXC can't reply anywhere yet: open Streamer.bot with its WebSocket server on - IXC replies through it.")); return res; }
       var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } return J.D("platform", p, "ok", err == null, "error", err ?? ""); }).ToList();
       foreach (var t in tasks) res.Add(await t);
       Log.Info("chat", "sent to " + string.Join("+", res.Where(r => (bool)r["ok"]).Select(r => r["platform"])) + (res.Any(r => !(bool)r["ok"]) ? " (failed: " + string.Join(", ", res.Where(r => !(bool)r["ok"]).Select(r => r["platform"] + " - " + r["error"])) + ")" : ""));
@@ -103,17 +104,20 @@ namespace IXC {
       Task.Run(async () => { var err = await Platforms.Send(to.Platform, text); if (err != null) { Log.Info("chat", "could not answer on " + to.Platform + ": " + err); Hub.Publish("chat", J.D("type", "chat.reply", "platform", to.Platform, "text", text, "error", err)); } }); }
 
     // ---------- reply-box suggestions ----------
+    // everything "!" can complete in the chat box: IXC's commands, Streamer.bot's commands and an optional extra commands file
     public static async Task<Dictionary<string, object>> Suggest() {
-      var cmds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-      foreach (var c in Commands.Triggers()) cmds.Add(c);
-      foreach (var c in await Platforms.Sb.Commands()) cmds.Add(c);
+      var cmds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase); var from = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+      foreach (var c in Commands.Triggers()) { cmds.Add(c); from[c] = "IXC"; }
+      foreach (var c in await Platforms.Sb.Commands()) { cmds.Add(c); if (!from.ContainsKey(c)) from[c] = "Streamer.bot"; }
       var cf = Settings.Str("chat.extraCommandsFile");
       if (cf.Length > 0 && File.Exists(cf)) { try { var cs = File.ReadAllText(cf);
         foreach (Match mm in Regex.Matches(cs, "\\{\\s*\"([a-z0-9]+)\"\\s*,")) cmds.Add("!" + mm.Groups[1].Value);
         foreach (Match mm in Regex.Matches(cs, "case\\s+\"([a-z0-9]+)\"\\s*:")) cmds.Add("!" + mm.Groups[1].Value); } catch { } }
       foreach (var h in Settings.List("chat.hiddenCommands")) cmds.Remove(h.StartsWith("!") ? h : "!" + h);
       List<object> users; lock (Chatters) users = Chatters.OrderByDescending(x => x.Value.Value).Take(300).Select(x => (object)J.D("name", x.Key, "platform", x.Value.Key)).ToList();
-      return J.D("commands", cmds.ToList(), "users", users); }
+      return J.D("commands", cmds.ToList(), "from", from, "users", users); }
+    // push a fresh list to every open chat box (Streamer.bot connected, commands changed)
+    public static async Task PushSuggestions() { try { var d = new Dictionary<string, object>(await Suggest()); d["type"] = "chat.suggest"; Hub.Publish("chat", d); } catch (Exception e) { Log.Debug("chat", "suggestions: " + e.Message); } }
 
     public static Dictionary<string, object> DiagInfo() {
       return J.D("messages", Received, "perPlatform", new Dictionary<string, int>(PerPlatform), "duplicatesDropped", Duplicates, "hiddenByFilters", Hidden,

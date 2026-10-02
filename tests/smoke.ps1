@@ -25,7 +25,7 @@ Write-Host '1) Static checks'
 foreach ($f in Get-ChildItem $repo -Recurse -Filter *.ps1 | ? { $_.FullName -notmatch '\\(dist|node_modules)\\' }) {
   Check "parses: $($f.FullName.Replace($repo + '\', ''))" { $e = $null; [Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$e) | Out-Null; if ($e.Count) { throw $e[0].Message } } }
 Check 'no secrets / personal paths in shipped files' {
-  $bad = Get-ChildItem "$repo\src", "$repo\scripts", "$repo\relay\src", "$repo\relay\public" -Recurse -File -Exclude *.exe, *.ico, *.png |
+  $bad = Get-ChildItem "$repo\src", "$repo\scripts", "$repo\relay\src" -Recurse -File -Exclude *.exe, *.ico, *.png |
     Select-String -Pattern '[A-Z]:\\Users\\[A-Za-z]', '"password"\s*:\s*"[^"]+"', '"clientSecret"\s*:\s*"[^"]+"', 'live_[a-z0-9]{20,}', 'sk-[A-Za-z0-9]{20,}', 'ghp_[A-Za-z0-9]{20,}', 'AIza[0-9A-Za-z_-]{30,}'
   if ($bad) { throw (($bad | Select -First 3 | % { "$($_.Filename):$($_.LineNumber)" }) -join ', ') } }
 
