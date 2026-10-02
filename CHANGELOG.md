@@ -3,6 +3,18 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-02
+### Added
+- Phone remote with **Quick connect**: Show QR code works with no setup (Cloudflare's free quick tunnel, temporary link, signature-checked download, only the phone page reachable). The relay stays optional, for phones that stay paired across restarts.
+- Replies go through Streamer.bot for platforms IXC reads but isn't signed in to.
+- The "!" list shows every IXC and Streamer.bot command, labelled, in the chat panel and on the phone.
+- The chat panel and the phone show viewers watching and people chatting. Twitch viewer numbers work without signing in.
+### Fixed
+- Typing a channel name on the platforms page or in the setup assistant was wiped by live updates.
+- "No chat is connected" although Streamer.bot was connected; Twitch viewers showed 0 while live.
+- A removed phone sometimes only saw "disconnected" instead of "signed out".
+- Release: a run can be started again from the Actions page for an existing release.
+
 ## [3.0.0] - 2026-10-02
 IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`), and **Streamer.bot is no longer needed**.
 ### Added
@@ -18,9 +30,7 @@ IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`)
 - Viewer counter per platform and total (stale numbers are never shown), Now Playing JSON/text outputs.
 - Overlays: Now Playing (full/compact/minimal), Up Next, Chat, Viewers, Alerts, chat-voice indicator, Live status badge, styled live from the dashboard and added to OBS with one click.
 - OBS auto-setup: WebSocket server, panels, and the "IXC Audio" scene with the music player and voice in every scene.
-- Phone remote with **Quick connect**: Show QR code works with no setup (Cloudflare's free quick tunnel, temporary link, signature-checked download, only the phone page reachable). An optional permanent relay keeps phones paired across restarts; devices can be renamed/removed; latency shown.
-- Replies go through Streamer.bot for platforms IXC reads but isn't signed in to. The "!" list shows every IXC and Streamer.bot command, labelled, in the chat panel and on the phone.
-- The chat panel and the phone show viewers watching and people chatting. Twitch viewer numbers work without signing in.
+- Phone remote through a stable relay: pairing survives restarts and network changes; devices can be renamed/removed; latency shown.
 - Tray supervisor: IXC restarts itself after a crash (with a crash-loop guard).
 ### Changed
 - The music queue lives in IXC (`music.json`), so OBS restarts, cache clears or source reloads never lose it. The v2 queue is taken over automatically.
@@ -40,7 +50,7 @@ IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`)
 - Song requests with a playlist link now play just that video.
 - Local songs are still found when YouTube search is unreachable.
 ### Removed
-- The 2.x tunnel code (Quick connect replaces it), the separate diagnostics and phone pages (now in the dashboard and the relay), `config.example.json` (IXC creates its settings).
+- The cloudflared quick tunnel (replaced by the relay), the separate diagnostics and phone pages (now in the dashboard and the relay), `config.example.json` (IXC creates its settings).
 
 ## [2.0.1] - 2026-09-26
 ### Fixed
@@ -82,6 +92,6 @@ IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`)
 - Optional phone view (private networks only, random key, QR code).
 - Per-user installer and uninstaller (no admin), start at login, `-AddObsDocks`, `config.json`, smoke tests, CI, a portable ZIP and an Inno Setup installer.
 
-[Unreleased]: https://github.com/infernoxc/ixc-chatbox/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/infernoxc/ixc-chatbox/compare/v3.0.1...HEAD
 [2.0.0]: https://github.com/infernoxc/ixc-chatbox/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/infernoxc/ixc-chatbox/releases/tag/v1.0.0
