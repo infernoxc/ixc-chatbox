@@ -1,0 +1,18 @@
+/* IXC overlays - shared look. Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License */
+:root { --font: "Bahnschrift", "Segoe UI", system-ui, sans-serif; --size: 22px; --color: #ffffff; --accent: #e3141e; --bg: rgba(16,16,20,.75); --radius: 14px;
+  --tw: #9146ff; --kick: #53fc18; --yt: #ff0033; --rumble: #85c742; }
+html, body { margin: 0; background: transparent !important; overflow: hidden; }
+body { font-family: var(--font); font-size: var(--size); color: var(--color); -webkit-font-smoothing: antialiased; text-shadow: 0 1px 2px rgba(0,0,0,.45); }
+body.align-center .wrap { margin: 0 auto; text-align: center; justify-content: center; } body.align-right .wrap { margin-left: auto; text-align: right; justify-content: flex-end; }
+.box { background: var(--bg); border-radius: var(--radius); }
+.twitch { --p: var(--tw); } .kick { --p: var(--kick); } .youtube { --p: var(--yt); } .rumble { --p: var(--rumble); } .test { --p: #888; }
+.tag { display: inline-block; font-weight: 800; font-size: .52em; letter-spacing: .08em; padding: .15em .5em; border-radius: .4em; background: var(--p); color: #fff; vertical-align: .2em; text-shadow: none; }
+.kick .tag, .rumble .tag, .tag.kick, .tag.rumble { color: #0a0a0a; }
+.anim-slide .in { animation: ixcSlide .5s cubic-bezier(.2,.9,.3,1) both; } .anim-fade .in { animation: ixcFade .5s ease both; } .anim-pop .in { animation: ixcPop .45s cubic-bezier(.2,1.4,.4,1) both; }
+.anim-slide .out { animation: ixcSlideOut .45s ease forwards; } .anim-fade .out, .anim-pop .out { animation: ixcFadeOut .45s ease forwards; } .anim-none .out { display: none; }
+@keyframes ixcSlide { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes ixcFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ixcPop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+@keyframes ixcSlideOut { to { opacity: 0; transform: translateX(-16px); } }
+@keyframes ixcFadeOut { to { opacity: 0; } }
+.em { height: 1.4em; vertical-align: middle; margin: -.25em .05em; }

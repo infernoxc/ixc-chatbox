@@ -1,0 +1,7 @@
+{
+  "name": "ixc-relay",
+  "private": true,
+  "description": "IXC phone relay + sign-in helper (Cloudflare Worker)",
+  "scripts": { "dev": "wrangler dev", "deploy": "wrangler deploy" },
+  "devDependencies": { "wrangler": "^4.40.0" }
+}

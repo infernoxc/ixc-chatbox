@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!-- IXC overlay: status badge - which platforms you're live on, total viewers, music and chat voice. http://localhost:8767/overlay/status.html
+     Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Status</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { display: flex; gap: .7em; align-items: center; padding: .4em .75em; width: fit-content; max-width: 100%; box-sizing: border-box; font-size: .8em; }
+  .live { display: flex; gap: .35em; align-items: center; } .dot { width: .55em; height: .55em; border-radius: 50%; background: #ff3b45; box-shadow: 0 0 .5em #ff3b45; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } } .sep { opacity: .35; } .np { max-width: 18em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .9; }
+</style></head>
+<body><div class="wrap box" id="w"></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+let S = null, st = {}; const N = { twitch: 'TWITCH', kick: 'KICK', youtube: 'YT', rumble: 'RUMBLE' };
+Overlay.start({ name: 'status', topics: ['status'],
+  defaults: { showPlatforms: true, showViewers: true, showMusic: true, showTts: false, label: 'LIVE ON', font: 'Bahnschrift', size: 22, color: '#ffffff', accent: '#e3141e', bg: '#101014', bgOpacity: 70, radius: 12 },
+  apply: (s) => { st = s; render(); }, on: (m) => { if (m.type === 'status') { S = m; render(); } },
+  demo: () => { S = { viewers: { total: 1245, platforms: { twitch: { state: 'live' }, youtube: { state: 'live' }, kick: { state: 'live' } } }, music: { playing: true, title: 'Midnight Drive - Neon Waves' }, tts: { speaking: false } }; render(); } });
+function render() {
+  const w = document.getElementById('w'); if (!S) { w.style.display = 'none'; return; } const parts = []; const pl = (S.viewers && S.viewers.platforms) || {};
+  const live = Object.keys(pl).filter(p => pl[p].state === 'live');
+  if (st.showPlatforms && live.length) parts.push(`<span class="live"><i class="dot"></i>${st.label ? Overlay.esc(st.label) + ' ' : ''}${live.map(p => `<span class="tag ${p}">${N[p]}</span>`).join(' ')}</span>`);
+  if (st.showViewers && S.viewers && S.viewers.total != null) parts.push(`<span>👁 <b>${Number(S.viewers.total).toLocaleString('en-US')}</b></span>`);
+  if (st.showMusic && S.music && S.music.playing && S.music.title) parts.push(`<span class="np">🎵 ${Overlay.esc(S.music.title)}</span>`);
+  if (st.showTts && S.tts && S.tts.speaking) parts.push('<span>🔊 reading chat</span>');
+  w.innerHTML = parts.join('<span class="sep">|</span>'); w.style.display = parts.length ? '' : 'none'; }
+</script></body></html>

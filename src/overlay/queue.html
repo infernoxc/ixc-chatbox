@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!-- IXC overlay: Song queue / Up next. http://localhost:8767/overlay/queue.html   Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Queue</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { padding: .6em .8em; width: fit-content; min-width: 10em; max-width: 100%; box-sizing: border-box; } .wrap.hidden { display: none; }
+  .h { font-size: .55em; font-weight: 800; letter-spacing: .18em; color: var(--accent); margin-bottom: .3em; }
+  .it { display: flex; gap: .5em; align-items: baseline; padding: .15em 0; } .n { font-size: .6em; opacity: .6; width: 1.4em; flex: none; font-variant-numeric: tabular-nums; }
+  .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 20em; } .by { font-size: .6em; opacity: .7; white-space: nowrap; }
+</style></head>
+<body class="anim-fade"><div class="wrap box hidden" id="w"><div class="h" id="h"></div><div id="l"></div></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+const $ = (id) => document.getElementById(id); let S = null, st = {};
+Overlay.start({ name: 'queue', topics: ['music.state'],
+  defaults: { title: 'UP NEXT', max: 5, showRequester: true, requestsOnly: false, hideWhenEmpty: true, animation: 'fade', align: 'left', font: 'Bahnschrift', size: 20, color: '#ffffff', accent: '#e3141e', bg: '#101014', bgOpacity: 70, radius: 14 },
+  apply: (s) => { st = s; render(); }, on: (m) => { if (m.type === 'music.state') { S = m.s; render(); } },
+  demo: () => { S = { index: 0, queue: [{ title: 'Now' }, { title: 'Midnight Drive', by: 'Rushkaa' }, { title: 'Ocean Lights', by: 'neonfox' }, { title: 'Lo-fi Sunrise' }] }; render(); } });
+function render() {
+  $('h').textContent = st.title || ''; $('h').style.display = st.title ? '' : 'none';
+  const q = S && S.queue ? S.queue.slice((S.index ?? -1) + 1).filter(x => !x.bad && (!st.requestsOnly || x.by)).slice(0, st.max) : [];
+  $('w').classList.toggle('hidden', !q.length && st.hideWhenEmpty);
+  $('l').innerHTML = q.length ? q.map((x, i) => `<div class="it in"><span class="n">${i + 1}</span><span class="t">${Overlay.esc(x.title || x.q || 'song')}${x.artist ? ' — ' + Overlay.esc(x.artist) : ''}</span>${st.showRequester && x.by ? `<span class="by">· ${Overlay.esc(x.by)}</span>` : ''}</div>`).join('') : '<div class="it" style="opacity:.6;font-size:.7em">Queue is empty</div>'; }
+</script></body></html>

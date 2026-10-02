@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- IXC dashboard: http://localhost:8767/app/  (the tray icon opens it as its own window). Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IXC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e3141e'/%3E%3Ctext x='32' y='43' font-family='Arial' font-weight='900' font-size='26' text-anchor='middle' fill='white'%3EIXC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/core/ui.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="sr" href="#main">Skip to content</a>
+<aside id="nav" aria-label="Sections">
+  <div class="brand"><span class="logo">IXC</span><div><b>IXC Suite</b><small id="ver"></small></div></div>
+  <nav id="navList"></nav>
+  <div class="navfoot"><span id="connPill" class="pill st-reconnecting"><i></i>Connecting…</span></div>
+</aside>
+<div id="shell">
+  <header id="top"><button id="menuBtn" class="icon ghost" aria-label="Menu">☰</button><h1 id="pageTitle">Home</h1><span class="grow"></span><span id="healthPill"></span></header>
+  <main id="main" class="scroll" tabindex="-1"></main>
+</div>
+<div id="modal" class="modal" role="dialog" aria-modal="true"><div class="card" id="modalCard"></div></div>
+<div id="wizard" class="modal" role="dialog" aria-modal="true" aria-labelledby="wzTitle"><div class="card wz" id="wzCard"></div></div>
+<script src="/core/ixc.js"></script>
+<script src="/core/ui.js"></script>
+<script src="/core/qrcode.js"></script>
+<script src="app.js"></script>
+<script src="pages.js"></script>
+<script src="wizard.js"></script>
+</body>
+</html>

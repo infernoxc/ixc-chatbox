@@ -1,63 +1,22 @@
-# Configuration
+# All settings
 
-Most settings change live from the dock (TTS) or phone. Everything is stored in **`%LOCALAPPDATA%\IXC-OBS\config.json`**
-(Start menu › IXC for OBS › IXC settings). If you edit the file by hand: **Stop IXC**, edit, **Start IXC**. Updates keep your file.
+Every setting is in the IXC window. **You never need to edit files.** This page lists what each setting does, for reference.
+IXC stores them in `%LOCALAPPDATA%\IXC-OBS\config.json`. It checks every change, and if that file ever gets damaged, it restores the last
+good copy by itself. Sign-ins, keys and phone keys are **not** in this file: they are encrypted in `secrets.dat`.
 
-## General
-| Setting | Default | Meaning |
-|---|---|---|
-| `helper.port` | `8767` | Port of IXC Core (pages + API). If you change it, change the OBS URLs too. |
-| `diagnostics.enabled` | `true` | `false` turns off the diagnostics page and `/api/diag`. |
-| `diagnostics.verboseLog` | `false` | Also write routine events to `ixc-core.log` (errors are always logged). |
+| Area | Settings (IXC window) |
+|---|---|
+| **Platforms & accounts** | Use Twitch/Kick/YouTube/Rumble, channel, Connect account, Streamer.bot (auto / always / never) |
+| **Chat filters** | Links, caps (%), repeated characters, very long messages, same person repeating (within N s), copy-paste spam, weird characters, banned words (`*` wildcard), always hide / never filter people, moderators and subscribers skip filters, "show on stream" minimum role. Each filter can be: **Off**, **Don't read it out**, or **Hide on stream** |
+| **Commands** | Built-in and own commands: name, other names, answer (variables), who, cooldowns, platforms |
+| **Song requests** | On/off, commands (`!sr`, `!song`), who, platforms, answer in chat, max waiting / per person, cooldowns, longest song, minimum account age (Twitch), links / song names allowed, banned songs and artists |
+| **Chat voice** | On, paused, default voice, read mode, speed, pitch, volume, offline backup voice, platforms, who, skip own messages / bots, read emotes / emoji / links, longest message, moderator control, busy-chat limits, never-read / blocked-word / bot / own-name lists |
+| **Voices for people** | Voice, speed, pitch, volume, on/off per person, per role (you, moderators, VIPs, subscribers) and per platform |
+| **Music** | Ducking (on, level, fade down/up, minimum), autoplay, repeat, shuffle, start with OBS, music folders, which OBS track each platform uses, Now Playing text format and file |
+| **Overlays** | Per overlay: layout, contents, font, size, colors, background opacity, corners, alignment, animation |
+| **Phone remote** | On/off, forget phones unused for N days, paired phones |
+| **Settings** | Restart IXC automatically after a crash, check for updates, open the window with Windows, viewer refresh interval, Advanced mode |
+| **Advanced mode** | Detailed logs, IXC port, OBS WebSocket address, phone relay address, Streamer.bot address and settings file, extra commands file, hidden command suggestions, YouTube Data API key, Spotify app keys, OBS music source name |
 
-## Chat TTS (`tts`)
-| Setting | Default | Meaning |
-|---|---|---|
-| `on` | `false` | TTS on/off (the dock button). |
-| `voice` | `in-male` | `in-male`, `in-female`, `in-male-2`, `in-female-2`, `us-male`, `us-female`, `jarvis`, `local` (offline Windows voice). |
-| `readMode` | `name` | `all` (just the message), `name` ("name says message") or `tts` (only `!tts` messages). |
-| `speed` / `pitch` / `volume` | `0` / `0` / `100` | Percent (-50…100) / Hz (-30…30) / percent, on top of each voice's own tuning. |
-| `maxChars` | `200` | Longer messages are cut at a word. |
-| `queueMax` | `6` | Waiting messages; when full, the oldest normal one is dropped. |
-| `staleSec` | `60` | A message still waiting after this many seconds is skipped. |
-| `perMinute` | `20` | Messages read per minute at most (bursts beyond it are skipped). |
-| `userCooldownSec` | `3` | Minimum gap between two messages of the same person. |
-| `ignoreOwn` / `ignoreBots` | `true` / `true` | Skip your own accounts (found from Streamer.bot, plus `ownNames`) / known bots (plus `botNames`). |
-| `readEmotes` / `readEmoji` / `readLinks` | `false` | Read emote names / emoji / full links. |
-| `fallback` | `true` | Use the offline Windows voice when the neural voice fails. |
-| `ownNames`, `botNames`, `neverSpeak`, `blockedWords` | `[]` | Lists of names / words. |
-| `voices` | `{}` | Override or add voices: `"key": { "voice": "<Microsoft neural voice>", "rate": "+5%", "pitch": "-2Hz", "label": "..." }`. |
-
-## Chat (`chat`, `streamerbot`)
-| Setting | Default | Meaning |
-|---|---|---|
-| `chat.hiddenCommands` | `[]` | Commands left out of `!` suggestions, e.g. `["!mod"]`. |
-| `chat.extraCommandsFile` | `""` | Optional text or code file; every `"name",` or `case "name":` in it is suggested as `!name`. |
-| `streamerbot.websocketUrl` | `ws://127.0.0.1:8080/` | Streamer.bot WebSocket server. |
-| `streamerbot.password` | `""` | Optional; if empty, it's read from Streamer.bot's own settings. |
-| `streamerbot.settingsPath` | `auto` | Path to Streamer.bot's `data\settings.json`. `auto` finds the running Streamer.bot, or `Streamer.bot*` folders in Desktop, Documents, Downloads, your user folder, `C:\` and `D:\`. |
-
-## Phone remote (`remote`)
-| Setting | Default | Meaning |
-|---|---|---|
-| `enabled` | `true` | `false` removes the phone feature completely. |
-| `port` | `8769` | Local port the tunnel connects to (listens on `127.0.0.1` only). |
-| `sessionHours` | `12` | A phone is signed out after this many hours without use (at most 7 days in total). |
-| `idleMinutes` | `30` | The tunnel closes after this many minutes without a phone. |
-| `allowDownload` | `true` | Allow the one-time download of Cloudflare's `cloudflared.exe` (signature-checked). |
-| `cloudflaredPath` | `""` | Use your own `cloudflared.exe` instead. |
-
-## URL options
-Add them to `chat.html?...`, separated by `&`.
-
-| Option | Default | Meaning |
-|---|---|---|
-| `dock=1` | off | Dock mode. Without it you get the overlay. |
-| `viewers=1` | off | Viewer-count bar. |
-| `size` | 14 dock / 16 overlay | Text size in px. |
-| `max` | 150 dock / 14 overlay | Messages kept. |
-| `fade` | 0 dock / 90 overlay | Seconds until a message fades (0 = never). |
-| `alpha` | 1 dock / .55 overlay | Bubble background opacity. |
-| `avatars=0`, `badges=0` | on | Hide avatars / badges. |
-| `direct=1` (+ `host`, `port`) | off | Overlay reads Streamer.bot directly, without IXC (no replies or TTS). |
-| `demo=1` | off | Demo messages. |
+Power users can read and change everything with the local API (`GET/POST /api/settings`), which uses the same validation.
+The setting names are shown in the API response together with their type, default and limits.

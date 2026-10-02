@@ -1,86 +1,99 @@
-# Using IXC ChatBox
+# Using IXC
 
-## Dock vs overlay
-| Mode | URL | What you get |
-|---|---|---|
-| **Dock** (for you) | `http://localhost:8767/chat/chat.html?dock=1&viewers=1` | Scrolling chat, viewer counts, TTS bar, reply box, 📱 phone button |
-| **Overlay** (for viewers) | `http://localhost:8767/chat/chat.html?max=6&fade=45` | Transparent, newest at the bottom, messages fade after `fade` seconds |
-| **Demo** | add `&demo=1` | Fake messages, to try the look without Streamer.bot |
+Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC ChatBox**, **IXC Music** and **IXC** panels are under **Docks**.
 
-When a page opens (or OBS restarts) it shows the last messages right away. Deleted messages and messages from banned users are removed.
+## Chat
+- All platforms in one list, tagged **TWITCH**, **KICK**, **YT** and **RUMBLE**. Click a platform name at the top to hide or show it in your panel.
+- **Reply:** type at the bottom. The button on the left chooses where it goes: **ALL**, or one platform. Type `!` to get command suggestions and `@` to get name suggestions.
+- **Click a message** to:
+  - reply to that person,
+  - give them their own voice,
+  - never read them out loud,
+  - hide them everywhere.
+- Messages your filters caught stay visible in your panel, dimmed, with the reason. They're only hidden on stream.
+- To reply from IXC, connect that platform's account (**Platforms & accounts**). Rumble doesn't allow apps to send chat messages.
 
-## Replying
-- The button left of the text box picks the target: **ALL**, **TWITCH**, **KICK**, **YT**. Click it to switch.
-- **Enter** sends. A note confirms, e.g. "✓ sent to TWITCH + KICK", or says why a platform failed. YouTube only accepts messages while you're live.
-- `!` lists your bot commands, `@` lists chatters. Choose with ↑ ↓ and Tab/Enter. Click a message to reply to that person.
-- Messages are sent **as your broadcaster account** through Streamer.bot.
+## Chat voice (TTS)
+- Switch it on with **🔈 Voice off/on** in the chat panel, on your phone, or on the dashboard's Home page.
+- **⏸** pauses it (messages wait), **Skip** stops the current message.
+- **Chat voice** page:
+  - default voice, speed, pitch and volume;
+  - what gets read: platforms, roles, emotes, emoji, links;
+  - busy-chat limits;
+  - lists of people and words never to read.
+- **Voices for people:** give regulars their own voice, speed and volume. You can also set a voice for moderators, VIPs, subscribers, or a whole platform.
+- **Moderators** can type `!ttsskip`, `!ttson` and `!ttsoff` (you can turn this off).
+- **`!tts message`** is read first. Read mode **"Only !tts"** reads nothing else.
 
-## Text-to-speech
-IXC decides what to read on your PC, so TTS works whenever IXC is running: with or without the dock open, and after OBS restarts.
-The **IXC ChatBox TTS** browser source only plays the audio, so viewers hear it on the tracks you give that source.
+## Music
+- Search, or paste a YouTube or Spotify link (song, playlist or album), in the **IXC Music** panel or under **Music**.
+  - Press **Enter** to add to the queue.
+  - Press **Shift+Enter** to play now.
+- **Your own songs:** **Music > Add a music folder**. They show up in search like YouTube songs.
+- **Music goes to:** **ALL**, **TWITCH**, **KICK**, **YOUTUBE** or **OFF**. IXC switches which OBS audio tracks carry the music, then checks with OBS that it worked.
+  - If you multistream with separate audio tracks per platform, tell IXC which track each platform uses (**Music > Which platform hears the music**).
+- **Ducking:** music fades down to the level you choose while the voice speaks, then fades back up. Your normal volume is never changed.
+- **Start music when OBS opens** continues where it stopped.
+- The queue is kept by IXC. Restarting OBS, IXC or the PC loses nothing.
 
-**In the dock bar:** **TTS ON/OFF**, the voice, what to read (*read all*, *name + message*, *only `!tts` messages*), **Test** and **Skip**.
-The ⚙ button opens everything else:
+## Song requests
+1. Turn them on under **Song requests**.
+2. Viewers type `!sr song name` or `!sr <YouTube link>`. `!song` works too, and you can add your own commands.
+3. Choose who can request, the cooldowns, the maximum number waiting (in total and per person), the longest song allowed, and banned songs and artists.
+4. Requests show who asked. Remove or play them from the **Song requests** page, the music panel or your phone.
+5. Viewers can remove their own last request with `!wrongsong`.
 
-| Section | What you can do |
+## Commands
+**Commands** page: turn built-in commands on or off, edit their answers, and add your own.
+
+| Option | What it does |
 |---|---|
-| Queue | See what's playing and waiting; **Skip current**, **Clear queue** |
-| Voice | Speed (-50 … +100 %), pitch, volume, and the offline Windows voice as automatic fallback |
-| What gets read | Ignore my own account, ignore bot accounts, read emote names / emoji / links (all off by default), max length |
-| Lists | **Never speak these users**, **skip messages containing** words, extra bot names, your other account names |
-| Busy chat | Queue size, "too old" time, max messages per minute, wait between messages of the same user |
-| Recently read | Every message with a **↻ replay** button |
-| Not read (and why) | e.g. "your own account", "bot account", "chat command", "mirrored on another platform", "busy chat" |
+| **Who** | Everyone, followers, subscribers, VIPs, moderators, or only you |
+| **Cooldown** | For everyone, and per person |
+| **Platforms** | Which platforms the command works on |
+| **Answer** | Can use `{user} {song} {queue} {uptime} {viewers} {count} {args}` and more |
 
-**Voices** (★ = new in v2):
+## Overlays
+1. Open **Overlays** and pick one.
+2. Style it: layout, font, colors, size, animation, what to show. The preview updates as you go.
+3. Press **Add to OBS (current scene)**. Style changes still apply live after that.
 
-| Voice | Engine |
+Overlays are transparent and keep showing their last state if IXC restarts. They come back by themselves.
+
+**Text files:** `%LOCALAPPDATA%\IXC-OBS\output\` contains `nowplaying.txt`, `viewers.txt` and `viewers-total.txt`. Use them in OBS **Text (GDI+) > Read from file**, or in other tools.
+
+## Phone remote
+1. Click **Phone remote > Show QR code** and scan it with your phone's camera. The browser opens and connects.
+2. That's it. It works on mobile data and any Wi-Fi.
+3. Add the page to your home screen for one-tap access.
+
+| Tab | Controls |
 |---|---|
-| Indian male – Prabhat · Indian female – Neerja | Microsoft neural |
-| ★ Indian female 2 – **Neerja Expressive** (8 % faster) | Microsoft neural |
-| ★ Indian male 2 – **Madhur** (10 % faster; a Hindi voice reading English with an Indian accent) | Microsoft neural |
-| US male – Andrew · US female – Jenny · Jarvis-style – Ryan (UK) | Microsoft neural |
-| Windows voice (offline) | Voices installed in Windows. Indian ones (Heera, Ravi) need the *English (India)* speech pack: Settings › Time & language › Speech › Add voices |
+| **Music** | Play/pause, skip, volume, queue, add songs, music destination |
+| **Chat** | Chat, platform filter, replies |
+| **Voice** | On/off, pause, skip, voice, volume, platforms |
+| **Status** | Viewers, connections, latency |
 
-**How chat is cleaned before it's read:**
-- links become "link";
-- emotes, emoji and symbols are dropped;
-- "noooooo" becomes "noo", and "lol lol lol lol" becomes "lol lol";
-- long digit strings become "a long number";
-- shouting is read in normal case;
-- `@user_name123` is read as "user name";
-- long messages are cut at a word.
+The phone reconnects by itself after:
+- network changes,
+- the phone sleeping,
+- IXC or the PC restarting.
 
-Commands (`!…`) are never read, except `!tts <text>`, which goes to the front of the queue.
+On the PC, **Phone remote** lists your phones. You can rename, disconnect or remove each one, or remove all of them.
 
-**The same message on several platforms** (your "ALL" replies, or a viewer chatting on two platforms) is read once. When Streamer.bot
-re-sends an event after a reconnect, it's recognised by its message id and shown once.
+## Viewers
+- **Home** shows the total and each platform. A platform with no recent number shows **–**, never an old number.
+- Twitch viewer numbers need a Twitch sign-in. Kick, YouTube and Rumble don't.
+- Overlay: **Viewer counter**. Text: `viewers.txt`. Web: `http://localhost:8767/api/viewers.txt?p=total`.
 
-## Phone remote (works on mobile data)
-<img src="images/phone-chat.png" alt="IXC Remote on a phone: live chat from Kick, Twitch and YouTube with a reply box" align="right" width="230">
+## System check
+**System check > Run check** tests:
+- OBS, the IXC sources, music audio and the chat voice,
+- each platform and your sign-ins,
+- the phone relay, internet, settings and updates.
 
-1. In the dock press **📱**. The first time, IXC downloads Cloudflare's official tunnel program, `cloudflared` (about 50 MB), and checks its digital signature.
-2. Scan the QR code with your phone camera. The code works **once** and expires after **5 minutes**.
-3. Your phone gets four tabs:
-   - **Chat:** live chat with a reply box.
-   - **TTS:** switch, voice, speed, volume, test/skip/clear, queue, history with replay, and the never-speak list.
-   - **Music** (if IXC Music is installed): now playing, controls, volume, the Kick/Twitch/YouTube-only switch, adding songs, and the queue.
-   - **Status**.
-
-- If the phone loses signal, it reconnects by itself and catches up.
-- The phone stays signed in for **12 hours after its last use** (at most 7 days). Restarting IXC, or **Turn phone access off** in the QR window, signs all phones out.
-- The tunnel closes by itself after **30 minutes** without a phone. Next time, press 📱 again for a fresh QR code; the web address changes each time.
-
-<br clear="right">
-
-## Diagnostics
-![IXC diagnostics page](images/diagnostics.png)
-
-Open **`http://localhost:8767/diag`** (Start menu › IXC for OBS › IXC diagnostics), or add it as an OBS dock. It shows:
-- Streamer.bot and OBS connection, authentication, reconnects;
-- which OBS sources and docks are connected;
-- the TTS engine, voice, queue, read/failed counts, and why messages weren't read;
-- phone tunnel status, and whether it's reachable from the internet;
-- IXC's CPU, RAM, threads and errors, and the recent events.
-
-It costs nothing while closed. To turn it off completely, set `diagnostics.enabled` to `false`.
+Anything wrong has a **Fix automatically** button. Below the check you'll find:
+- **Repair** tools,
+- **Backups** (restore with one click),
+- **Export diagnostics**: a ZIP for support, with no passwords or keys in it,
+- **Recent events**.

@@ -3,6 +3,43 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-02
+IXC Music and IXC ChatBox are now one suite with one installer (`IXC-Setup.exe`), and **Streamer.bot is no longer needed**.
+### Added
+- Built-in chat connections: Twitch (no sign-in needed to read; sign-in for replies, follower alerts, viewers), Kick, YouTube (finds your live stream by itself), Rumble (Live Stream API). Each platform has its own status: Connected / Reconnecting / Sign-in required / Rate limited / Not live / Off. Streamer.bot stays supported as an option.
+- "Connect account" for Twitch (device code), YouTube and Kick (through the IXC relay); tokens encrypted and refreshed automatically.
+- Dashboard window (tray icon) with a first-run wizard, System check with "Fix automatically", repairs, backups/restore, diagnostics export and safe updates (backup, checksum, rollback).
+- Song requests (`!sr`, `!song`) with permissions, cooldowns, limits, banned songs/artists, maximum length, `!wrongsong`.
+- Command manager: built-in `!np !queue !skip !uptime !viewers !wrongsong !ttsskip !ttson !ttsoff` + your own commands.
+- Chat filters (links, caps, repeats, length, duplicates, copy-paste spam, symbols, banned words, block/allow lists, minimum role on stream) and platform filters for the panel, overlays and the voice.
+- Chat voice: per-person, per-role and per-platform voices (voice, speed, pitch, volume, on/off), pause/resume, moderators can skip, 4 more voices.
+- Music ducking: smooth fade down/up while the voice speaks; the normal volume is never changed and always comes back.
+- Local music folders (MP3, M4A, AAC, OGG, OPUS, WAV, FLAC) next to YouTube and Spotify links.
+- Viewer counter per platform and total (stale numbers are never shown), Now Playing JSON/text outputs.
+- Overlays: Now Playing (full/compact/minimal), Up Next, Chat, Viewers, Alerts, chat-voice indicator, Live status badge, styled live from the dashboard and added to OBS with one click.
+- OBS auto-setup: WebSocket server, panels, and the "IXC Audio" scene with the music player and voice in every scene.
+- Phone remote through a stable relay: pairing survives restarts and network changes; devices can be renamed/removed; latency shown.
+- Tray supervisor: IXC restarts itself after a crash (with a crash-loop guard).
+### Changed
+- The music queue lives in IXC (`music.json`), so OBS restarts, cache clears or source reloads never lose it. The v2 queue is taken over automatically.
+- IXC uses its own small web server on the loopback address instead of Windows' http.sys (no URL reservations, no access-denied errors); a busy port is handled automatically.
+- Release builds ship a ready-made `ixc-core.exe` and start it directly (no PowerShell window at login).
+- Settings are validated, saved at once, and a damaged settings file is replaced by the last good copy.
+### Fixed
+- Any website could control IXC through a sandboxed frame (`Origin: null`): such requests are now refused, as are foreign `Host` headers.
+- The chat voice read numbers wrong ("10000" was read as "100").
+- A temporary internet problem made a YouTube link fail for 10 minutes (failures were cached).
+- One blocked video skipped a whole YouTube playlist.
+- Failed connection attempts to OBS/Streamer.bot were never closed (a socket leak on every retry).
+- A wrong Streamer.bot password still showed "connected".
+- Installing an older app could replace a newer shared core (the version check could never work).
+- Restoring a backup could be undone by IXC saving its in-memory settings on exit.
+- Setting an API key wrote it into the log.
+- Song requests with a playlist link now play just that video.
+- Local songs are still found when YouTube search is unreachable.
+### Removed
+- The cloudflared quick tunnel (replaced by the relay), the separate diagnostics and phone pages (now in the dashboard and the relay), `config.example.json` (IXC creates its settings).
+
 ## [2.0.1] - 2026-09-26
 ### Fixed
 - Switching the shared music destination (ALL / TWITCH ONLY / KICK ONLY / YOUTUBE ONLY) right after OBS starts could fail with

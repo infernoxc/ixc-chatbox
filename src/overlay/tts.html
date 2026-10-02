@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!-- IXC overlay: "speaking now" indicator for the chat voice. http://localhost:8767/overlay/tts.html (visual only - the sound comes from the IXC TTS source)
+     Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC TTS Indicator</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { display: flex; gap: .55em; align-items: center; padding: .45em .75em; width: fit-content; max-width: 100%; box-sizing: border-box; transition: opacity .35s, transform .35s; }
+  .wrap.hidden { opacity: 0; transform: translateY(.4em); }
+  .eq { display: flex; gap: .12em; align-items: flex-end; height: 1em; } .eq i { width: .18em; background: var(--accent); border-radius: .1em; animation: eq .9s ease-in-out infinite; } .eq i:nth-child(2) { animation-delay: .2s; } .eq i:nth-child(3) { animation-delay: .4s; }
+  @keyframes eq { 0%, 100% { height: .3em; } 50% { height: 1em; } }
+  .who { font-weight: 700; } .txt { opacity: .9; max-width: 26em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .8em; }
+</style></head>
+<body class="anim-fade"><div class="wrap box hidden" id="w"><span class="eq"><i></i><i></i><i></i></span><span class="tag" id="tag"></span><span class="who" id="who"></span><span class="txt" id="txt"></span></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+const $ = (id) => document.getElementById(id); let st = {}; const P = { twitch: 'TWITCH', kick: 'KICK', youtube: 'YT', rumble: 'RUMBLE' };
+Overlay.start({ name: 'tts', topics: ['tts'],
+  defaults: { showText: true, showName: true, font: 'Bahnschrift', size: 20, color: '#ffffff', accent: '#e3141e', bg: '#101014', bgOpacity: 70, radius: 12 },
+  apply: (s) => { st = s; }, on: (m) => { if (m.type === 'tts.state') show(m.speaking ? m.current : null); },
+  demo: () => show({ user: 'Rushkaa', platform: 'twitch', text: 'Rushkaa says that was an insane clutch' }) });
+function show(c) {
+  $('w').classList.toggle('hidden', !c); if (!c) return;
+  $('tag').textContent = P[c.platform] || ''; $('tag').className = 'tag ' + (c.platform || ''); $('tag').style.display = P[c.platform] ? '' : 'none';
+  $('who').textContent = st.showName ? c.user || '' : ''; $('txt').textContent = st.showText ? c.text || '' : ''; }
+</script></body></html>

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!-- IXC overlay: follower / subscriber / raid / Super Chat alerts. http://localhost:8767/overlay/alerts.html
+     Shows each new event for a few seconds (newest last). Followers: Twitch (signed in), Kick, Rumble. Subs/gifts/raids: Twitch, Kick. Super Chats/members: YouTube, Rants: Rumble.
+     Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Alerts</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { display: flex; flex-direction: column; gap: .4em; padding: .3em; }
+  .a { display: flex; gap: .6em; align-items: center; padding: .55em .85em; background: var(--bg); border-radius: var(--radius); border-left: .25em solid var(--p, var(--accent)); width: fit-content; max-width: 100%; box-sizing: border-box; }
+  .ic { font-size: 1.3em; } .who { font-weight: 800; } .what { opacity: .9; font-size: .8em; } .amt { color: var(--accent); font-weight: 800; }
+  body.layout-latest .a:not(:last-child) { display: none; }
+</style></head>
+<body class="anim-pop layout-stack"><div class="wrap" id="w"></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+const w = document.getElementById('w'); let st = {}; const ICON = { follow: '💜', sub: '⭐', gift: '🎁', raid: '🚀', superchat: '💸', member: '🎖️' };
+const LABEL = { follow: 'just followed', sub: 'subscribed', gift: 'gifted subs', raid: 'is raiding', superchat: 'sent a Super Chat', member: 'became a member' };
+Overlay.start({ name: 'alerts', topics: ['alerts'],
+  defaults: { kinds: ['follow', 'sub', 'gift', 'raid', 'superchat', 'member'], platforms: ['twitch', 'kick', 'youtube', 'rumble'], seconds: 8, max: 3, layout: 'stack', showLatest: false, animation: 'pop', font: 'Bahnschrift', size: 22, color: '#ffffff', accent: '#ffb547', bg: '#101014', bgOpacity: 80, radius: 14 },
+  apply: (s) => { st = s; }, on: (m) => { if (m.type === 'alert' && !m.old) show(m); else if (m.type === 'alerts.recent' && st.showLatest && m.alerts && m.alerts.length) show(m.alerts[0], true); },
+  demo: () => { let i = 0; const D = [{ kind: 'follow', platform: 'twitch', name: 'neonfox' }, { kind: 'sub', platform: 'kick', name: 'ShadowSniper', text: 'subscribed for 3 months' }, { kind: 'superchat', platform: 'youtube', name: 'Aman Verma', amount: '₹200' }]; show(D[0]); setInterval(() => show(D[++i % D.length]), 3500); } });
+function show(a, sticky) {
+  if (!st.kinds.includes(a.kind) || !st.platforms.includes(a.platform)) return;
+  const el = document.createElement('div'); el.className = 'a in ' + (a.platform || '');
+  el.innerHTML = `<span class="ic">${ICON[a.kind] || '✨'}</span><div><div class="who">${Overlay.esc(a.name)} ${a.amount ? `<span class="amt">${Overlay.esc(a.amount)}</span>` : ''}</div><div class="what">${Overlay.esc(a.kind === 'sub' && a.text ? a.text : LABEL[a.kind] || a.text || '')}</div></div>`;
+  w.appendChild(el); while (w.children.length > st.max) w.firstChild.remove();
+  if (!sticky && st.seconds > 0) setTimeout(() => { el.classList.remove('in'); el.classList.add('out'); setTimeout(() => el.remove(), 500); }, st.seconds * 1000); }
+</script></body></html>

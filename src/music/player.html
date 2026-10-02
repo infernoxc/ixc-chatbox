@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!-- Part of IXC - https://github.com/infernoxc/ixc-chatbox  Copyright (c) 2026 Ishan (InFerNoxC) - MIT License -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IXC Music Player</title>
+<!-- OBS browser source "IXC Music Player" (IXC creates it by itself in the scene "IXC Audio"): http://localhost:8767/music/player.html
+     It only PLAYS what IXC tells it to. The queue lives in IXC, so reloading this source or restarting OBS loses nothing.
+     YouTube plays through the official YouTube IFrame player (nothing is downloaded); local songs through the browser's audio player. -->
+<style>html,body{margin:0;background:transparent;overflow:hidden}#yt{width:320px;height:180px;opacity:0}</style>
+</head>
+<body>
+<div id="yt"></div>
+<audio id="au" preload="auto"></audio>
+<script src="/core/ixc.js"></script>
+<script>
+const au = document.getElementById('au');
+let yt = null, ytReady = false, cur = null, base = 40, duck = 1, shown = 1, fadeT = null, userPaused = false, autoResumes = 0, errorLock = false, pendingPlay = null, readySent = false;
+const link = IXC.connect({ role: 'player', topics: ['music.player', 'reload'], on: onMsg, onState: (up) => { if (up) { readySent = false; sendReady(); } } });
+const ev = (e, extra) => link.send(Object.assign({ type: 'music.ev', ev: e, uid: cur && cur.uid }, extra || {}));
+const log = (e, info) => link.send({ type: 'music.log', ev: e, info: JSON.stringify(info || {}).slice(0, 300) });
+const isLocal = () => cur && cur.kind === 'local';
+function pos() { try { return isLocal() ? au.currentTime || 0 : (yt && ytReady ? yt.getCurrentTime() || 0 : 0); } catch { return 0; } }
+function dur() { try { return isLocal() ? (isFinite(au.duration) ? au.duration : 0) : (yt && ytReady ? yt.getDuration() || 0 : 0); } catch { return 0; } }
+function playing() { return isLocal() ? !au.paused && !au.ended : (yt && ytReady && yt.getPlayerState() === 1); }
+function sendReady() {
+  if (readySent || !link.up) return; if (!ytReady && !ytFailed) return;   // wait until YouTube is usable (or definitely unavailable)
+  readySent = true; ev('ready', { pos: pos(), playing: playing(), yt: ytReady });
+  // v2 kept the queue in this source: hand it to IXC once
+  try { const old = JSON.parse(localStorage.getItem('ixc_music') || 'null'); if (old && Array.isArray(old.queue) && old.queue.length) { link.send({ type: 'music.ev', ev: 'legacy', queue: old.queue, index: old.index, volume: old.volume, shuffle: old.shuffle, repeat: old.repeat, autoplay: old.autoplay, autostart: old.autostart, lastPos: old.lastPos }); } localStorage.removeItem('ixc_music'); } catch {}
+}
+// ---------- volume with smooth ducking (the normal volume is never changed by ducking) ----------
+function applyVolume() { const v = Math.max(0, Math.min(100, Math.round(base * shown))); try { if (yt && ytReady) yt.setVolume(v); } catch {} au.volume = v / 100; }
+function fadeTo(target, ms) {
+  clearInterval(fadeT); duck = target; if (!ms || ms < 30) { shown = target; applyVolume(); return; }
+  const from = shown, t0 = performance.now();
+  fadeT = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); const e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; shown = from + (target - from) * e; applyVolume(); if (k >= 1) clearInterval(fadeT); }, 30);
+}
+// ---------- commands from IXC ----------
+function onMsg(m) {
+  if (m.type === 'music.play') { base = m.volume ?? base; if (m.duck != null) { duck = m.duck; shown = m.duck; } load(m.item, m.startAt || 0, m.autoplay !== false, m.shuffle); return; }
+  if (m.type !== 'music.ctl') return;
+  switch (m.op) {
+    case 'pause': userPaused = true; if (isLocal()) au.pause(); else try { yt.pauseVideo(); } catch {} break;
+    case 'resume': userPaused = false; autoResumes = 0; if (isLocal()) au.play().catch(e => fail(0, String(e))); else try { yt.playVideo(); } catch {} break;
+    case 'stop': userPaused = true; au.pause(); au.removeAttribute('src'); try { yt.stopVideo(); } catch {} cur = null; break;
+    case 'seek': if (isLocal()) au.currentTime = +m.t || 0; else try { yt.seekTo(+m.t || 0, true); } catch {} break;
+    case 'volume': base = +m.v; applyVolume(); break;
+    case 'duck': fadeTo(+m.level || 1, +m.fadeMs || 0); break;
+  }
+}
+function load(item, startAt, autoplay, shuffle) {
+  cur = item; errorLock = false; autoResumes = 0; userPaused = !autoplay;
+  if (item.kind === 'local') {
+    try { yt && ytReady && yt.stopVideo(); } catch {}
+    au.src = item.url; au.currentTime = 0;
+    au.onloadedmetadata = () => { if (startAt > 0 && startAt < au.duration - 2) au.currentTime = startAt; };
+    applyVolume(); ev('loaded'); if (autoplay) au.play().catch(e => { if (e && e.name === 'NotAllowedError') log('autoplay-blocked'); else fail(0, String(e)); });
+    return;
+  }
+  au.pause(); au.removeAttribute('src');
+  if (!ytReady) { pendingPlay = [item, startAt, autoplay, shuffle]; return; }
+  try {
+    if (item.kind === 'ytlist') { yt.loadPlaylist({ listType: 'playlist', list: item.list, index: 0, startSeconds: startAt }); setTimeout(() => { try { yt.setShuffle(!!shuffle); } catch {} }, 1500); if (!autoplay) setTimeout(() => yt.pauseVideo(), 800); }
+    else if (autoplay) yt.loadVideoById({ videoId: item.id, startSeconds: Math.floor(startAt) });
+    else yt.cueVideoById({ videoId: item.id, startSeconds: Math.floor(startAt) });
+    applyVolume(); ev('loaded');
+  } catch (e) { fail(0, String(e)); }
+}
+function fail(code, msg) { if (errorLock) return; errorLock = true; ev('error', { code, msg: msg || '' }); }
+// local files
+au.onplaying = () => { autoResumes = 0; ev('playing', { pos: pos(), dur: dur() }); };
+au.onpause = () => { if (au.ended) return; ev('paused', { pos: pos() }); if (!userPaused && autoResumes < 3 && cur && isLocal()) { autoResumes++; setTimeout(() => { if (!userPaused && au.paused && !au.ended) au.play().catch(() => {}); }, 1200); } };
+au.onended = () => { if (isLocal()) ev('ended'); };
+au.onerror = () => { if (isLocal() && au.getAttribute('src')) fail(au.error && au.error.code === 4 ? 404 : 0, au.error ? 'audio error ' + au.error.code : 'audio error'); };
+// progress while playing (IXC moves bars smoothly in between)
+setInterval(() => { if (cur && playing()) { let title = ''; try { if (!isLocal()) { const vd = yt.getVideoData(); title = vd && vd.title || ''; } } catch {} ev('progress', { pos: pos(), dur: dur(), title }); } }, 4000);
+// YouTube
+let ytFailed = false;
+setTimeout(() => { if (!ytReady) { ytFailed = true; log('yt-unavailable'); sendReady(); } }, 12000);   // no internet: local songs still work
+window.onYouTubeIframeAPIReady = () => {
+  yt = new YT.Player('yt', { width: 320, height: 180, playerVars: { autoplay: 0, controls: 0, disablekb: 1, playsinline: 1, rel: 0, iv_load_policy: 3, fs: 0, origin: location.origin },
+    events: {
+      onReady: () => { ytReady = true; applyVolume(); sendReady(); if (pendingPlay) { const p = pendingPlay; pendingPlay = null; load(...p); } },
+      onStateChange: (e) => {
+        if (isLocal() || !cur) return; const st = e.data;
+        if (st === YT.PlayerState.PLAYING) { autoResumes = 0; errorLock = false; let title = ''; try { title = yt.getVideoData().title || ''; } catch {} ev('playing', { pos: pos(), dur: dur(), title }); }
+        else if (st === YT.PlayerState.ENDED) { if (cur.kind === 'ytlist') { const pl = yt.getPlaylist() || [], i = yt.getPlaylistIndex(); if (i >= 0 && i < pl.length - 1) return; } ev('ended'); }
+        else if (st === YT.PlayerState.PAUSED) { ev('paused', { pos: pos() });
+          if (!userPaused && autoResumes < 3) { autoResumes++; setTimeout(() => { if (!userPaused && yt.getPlayerState() === YT.PlayerState.PAUSED) { log('auto-resume', { n: autoResumes }); yt.playVideo(); } }, 1200); } }
+      },
+      onError: (e) => {
+        // inside a playlist: skip just that video, not the whole playlist
+        if (cur && cur.kind === 'ytlist') { const pl = yt.getPlaylist() || [], i = yt.getPlaylistIndex(); log('playlist-video-error', { code: e.data, i }); if (i >= 0 && i < pl.length - 1) { setTimeout(() => yt.nextVideo(), 600); return; } }
+        fail(e.data, '');
+      },
+    } });
+};
+const tag = document.createElement('script'); tag.src = 'https://www.youtube.com/iframe_api'; tag.onerror = () => { ytFailed = true; log('yt-script-failed'); sendReady(); }; document.head.appendChild(tag);
+window.onerror = (m) => { log('page-error', { m: String(m).slice(0, 200) }); };
+</script>
+</body>
+</html>

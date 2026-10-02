@@ -1,0 +1,20 @@
+# IXC phone relay - deploy once to your free Cloudflare account (see docs/DEVELOPER-SETUP.md).
+name = "ixc-relay"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "PcHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PcHub"]
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = false
+
+# Secrets (set with `npx wrangler secret put NAME`), only needed for "Connect account" on YouTube / Kick:
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KICK_CLIENT_ID, KICK_CLIENT_SECRET

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!-- IXC overlay: Viewer counter. http://localhost:8767/overlay/viewers.html   Part of IXC - (c) 2026 Ishan (InFerNoxC) - MIT License
+     A platform with no recent number shows "–" (never an old number). -->
+<html lang="en"><head><meta charset="utf-8"><title>IXC Viewers</title>
+<link rel="stylesheet" href="overlay.css">
+<style>
+  .wrap { display: flex; gap: .9em; align-items: center; padding: .45em .8em; width: fit-content; max-width: 100%; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+  .p { display: flex; gap: .35em; align-items: center; } .d { width: .5em; height: .5em; border-radius: 50%; background: var(--p); } .n { font-weight: 700; } .l { opacity: .8; font-size: .75em; }
+  .tot { font-weight: 800; } .tot .n { color: var(--accent); }
+  body.layout-column .wrap { flex-direction: column; align-items: flex-start; gap: .25em; } body.layout-total .p:not(.tot) { display: none; }
+  .p.off { opacity: .5; }
+</style></head>
+<body class="layout-row"><div class="wrap box" id="w"></div>
+<script src="/core/ixc.js"></script><script src="overlay.js"></script>
+<script>
+let V = null, st = {}; const N = { twitch: 'Twitch', kick: 'Kick', youtube: 'YouTube', rumble: 'Rumble' };
+Overlay.start({ name: 'viewers', topics: ['viewers'],
+  defaults: { layout: 'row', platforms: ['twitch', 'kick', 'youtube', 'rumble'], showNames: true, showTotal: true, totalLabel: 'TOTAL', hideOffline: true, font: 'Bahnschrift', size: 22, color: '#ffffff', accent: '#e3141e', bg: '#101014', bgOpacity: 70, radius: 12 },
+  apply: (s) => { st = s; render(); }, on: (m) => { if (m.type === 'viewers') { V = m; render(); } },
+  demo: () => { V = { total: 1245, platforms: { twitch: { state: 'live', count: 412 }, youtube: { state: 'live', count: 731 }, kick: { state: 'live', count: 102 } } }; render(); } });
+function render() {
+  const w = document.getElementById('w'); if (!V) { w.innerHTML = ''; return; } const pl = V.platforms || {};
+  let h = st.platforms.filter(p => pl[p] && pl[p].state !== 'off' && !(st.hideOffline && pl[p].state === 'offline')).map(p => { const v = pl[p], live = v.state === 'live';
+    return `<span class="p ${p} ${live ? '' : 'off'}" title="${Overlay.esc(v.note || '')}"><i class="d"></i>${st.showNames ? `<span class="l">${N[p]}</span>` : ''}<span class="n">${live ? Number(v.count).toLocaleString('en-US') : v.state === 'offline' ? 'offline' : '–'}</span></span>`; }).join('');
+  if (st.showTotal || st.layout === 'total') h += `<span class="p tot">${st.totalLabel ? `<span class="l">${Overlay.esc(st.totalLabel)}</span>` : ''}<span class="n">${V.total == null ? '–' : Number(V.total).toLocaleString('en-US')}</span></span>`;
+  w.innerHTML = h; w.style.display = h ? '' : 'none'; }
+</script></body></html>
