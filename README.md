@@ -11,7 +11,7 @@
 **IXC Suite = IXC Music + IXC ChatBox.** Twitch, Kick, YouTube and Rumble chat in one place, a chat voice (TTS), a music player
 with song requests, overlays, and a phone remote that works on mobile data. Made for OBS. **No Streamer.bot needed.**
 
-[**⬇ Download IXC-Setup.exe**](https://github.com/infernoxc/ixc-chatbox/releases/latest) · [Install guide](docs/INSTALL.md) · [How to use](docs/USAGE.md) · [Something wrong?](docs/TROUBLESHOOTING.md)
+[**⬇ Download IXC-Setup.exe**](https://github.com/infernoxc/ixc-chatbox/releases/latest) · [**📖 Step-by-step guide**](docs/GUIDE.md) · [Install](docs/INSTALL.md) · [How to use](docs/USAGE.md) · [Something wrong?](docs/TROUBLESHOOTING.md)
 
 </div>
 
@@ -59,7 +59,7 @@ That's all. You never edit files, ports, JSON or firewall rules.
 - **Music copyright:** use music you're allowed to stream (for example NCS or StreamBeats). Platforms mute or strike copyrighted music.
 
 ## Documentation
-[Install](docs/INSTALL.md) · [Usage](docs/USAGE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Update & uninstall](docs/UNINSTALL.md) · [All settings](docs/CONFIGURATION.md)
+[Step-by-step guide](docs/GUIDE.md) · [Install](docs/INSTALL.md) · [Usage](docs/USAGE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Update & uninstall](docs/UNINSTALL.md) · [All settings](docs/CONFIGURATION.md)
 · For developers: [Architecture & API](docs/ARCHITECTURE.md) · [Developer setup (relay, sign-in apps)](docs/DEVELOPER-SETUP.md) · [Releasing](docs/RELEASING.md) · [Contributing & tests](CONTRIBUTING.md)
 
 ## Privacy and security

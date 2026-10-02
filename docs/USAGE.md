@@ -1,6 +1,6 @@
 # Using IXC
 
-Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC Chat**, **IXC Music** and **IXC** panels are under **Docks**.
+Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC ChatBox**, **IXC Music** and **IXC** panels are under **Docks**.
 
 ## Chat
 - All platforms in one list, tagged **TWITCH**, **KICK**, **YT** and **RUMBLE**. Click a platform name at the top to hide or show it in your panel.

@@ -19,7 +19,7 @@
 | **System test** | Checks everything. Anything wrong has a **Fix** button. |
 
 Done. IXC starts with Windows and lives in the tray (bottom right). **Double-click the tray icon** to open IXC.
-In OBS you'll find the **IXC Chat**, **IXC Music** and **IXC** panels under **Docks**.
+In OBS you'll find the **IXC ChatBox**, **IXC Music** and **IXC** panels under **Docks**.
 
 ## Advanced setup
 Choose **Advanced** in the setup to decide:
