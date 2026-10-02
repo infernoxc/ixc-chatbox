@@ -82,7 +82,7 @@ if ($Setup) {
   function RunSetup($exe, $argList) { $p = Start-Process $exe -ArgumentList $argList -PassThru; if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "$([IO.Path]::GetFileName($exe)) did not finish within 5 minutes" }; $p.ExitCode }
   $dest = Join-Path $env:LOCALAPPDATA 'IXC-OBS'
   Check 'IXC-Setup.exe installs and IXC starts' { $code = RunSetup $Setup ('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="' + "$env:TEMP\ixc-setup.log" + '"'); if ($code) { throw "setup exit $code" }
-    for ($i = 0; $i -lt 60; $i++) { if ((Status 'http://127.0.0.1:8767/api/ping') -eq 200) { return $true }; Start-Sleep -Milliseconds 500 }; Get-Content "$dest\logs\app.log" -EA SilentlyContinue | Select -Last 20 | Out-Host; $false }
+    for ($i = 0; $i -lt 180; $i++) { if ((Status 'http://127.0.0.1:8767/api/ping') -eq 200) { return $true }; Start-Sleep -Milliseconds 500 }; Get-Content "$dest\logs\app.log" -EA SilentlyContinue | Select -Last 20 | Out-Host; $false }
   Check 'tray supervisor + worker are running' { @(Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'").Count -ge 2 }
   Check 'starts with Windows (scheduled task)' { [bool](Get-ScheduledTask -TaskName 'IXC for OBS' -EA SilentlyContinue) }
   Check 'Start menu shortcut' { Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'IXC for OBS\IXC.lnk') }

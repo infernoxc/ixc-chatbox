@@ -86,8 +86,16 @@ $port = try { (Get-Content -Raw $cfgFile | ConvertFrom-Json).helper.port } catch
 function Ping { try { $r = Invoke-RestMethod "http://127.0.0.1:$port/api/ping" -TimeoutSec 2; return $r.app -eq 'ixc-core' } catch { return $false } }
 if (-not $NoStart) {
   Start-Process $exe -WorkingDirectory (Split-Path $exe)
-  $ok = $false; for ($i = 0; $i -lt 40 -and -not $ok; $i++) { Start-Sleep -Milliseconds 500; $ok = Ping; if (-not $ok) { try { $port = (Get-Content -Raw $cfgFile | ConvertFrom-Json).helper.port } catch { } } }
+  # The first start of a new ixc-core.exe can take a while (antivirus scans it), so wait as long as IXC is still running (up to 90 s),
+  # and give up early only when it has exited. Otherwise a slow first start would count as failed - and an update would be rolled back.
+  function Alive { @(Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 }
+  $ok = $false; $since = Get-Date; $gone = 0
+  while (-not $ok -and ((Get-Date) - $since).TotalSeconds -lt 90) {
+    Start-Sleep -Milliseconds 500; $ok = Ping
+    if (-not $ok) { try { $port = (Get-Content -Raw $cfgFile | ConvertFrom-Json).helper.port } catch { }; if (-not $port) { $port = 8767 }
+      if (Alive) { $gone = 0 } elseif (++$gone -ge 10) { break } } }   # not running for 5 s: it stopped, don't wait any longer
   if (-not $ok) {
+    $log = Join-Path $dest 'logs\app.log'; if (Test-Path $log) { Write-Host '  last lines of the IXC log:'; Get-Content $log -Tail 15 | % { Write-Host "    $_" } }
     if (Test-Path $prev) {
       Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) } | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
       Start-Sleep -Milliseconds 800; Rename-Item -LiteralPath $app -NewName 'app.failed'; Rename-Item -LiteralPath $prev -NewName (Split-Path $app -Leaf); Start-Process (Join-Path $app 'core\ixc-core.exe')
