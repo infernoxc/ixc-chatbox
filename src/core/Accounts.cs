@@ -154,12 +154,13 @@ namespace IXC {
           var arr = J.Get(J.Parse(v.Body ?? ""), "data") as ArrayList; var it = arr != null && arr.Count > 0 ? (Dictionary<string, object>)arr[0] : null;
           a["userId"] = it == null ? "" : J.Str(it, "user_id", ""); a["login"] = it == null ? "" : J.Str(it, "name", ""); a["displayName"] = a["login"]; } }
       catch (Exception e) { Log.Warn("auth", p + " profile lookup failed: " + e.Message); }
-      Save(p, a); Flow(p, "connected", "Connected as " + J.Str(a, "displayName", J.Str(a, "login", "you")), null);
-      Log.Info("auth", "signed in to " + p + " as " + J.Str(a, "login", "?"));
+      Save(p, a); Log.Info("auth", "signed in to " + p + " as " + J.Str(a, "login", "?"));
       // first sign-in: use it as the channel too, so a beginner doesn't have to type it
       var src = Platforms.Get(p);
       if (src != null) { var patch = new Dictionary<string, object>(); if (src.Channel.Length == 0) { var ch = p == "youtube" ? J.Str(a, "userId", "") : J.Str(a, "login", ""); if (ch.Length > 0) patch["platforms." + p + ".channel"] = ch; }
-        if (!src.Enabled) patch["platforms." + p + ".enabled"] = true; if (patch.Count > 0) Settings.Apply(patch); else src.Restart(); } }
+        if (!src.Enabled) patch["platforms." + p + ".enabled"] = true; if (patch.Count > 0) Settings.Apply(patch); else src.Restart(); }
+      // only now say "connected", so the window never shows a sign-in whose channel isn't set yet
+      Flow(p, "connected", "Connected as " + J.Str(a, "displayName", J.Str(a, "login", "you")), null); }
     public static void Cancel(string p) { lock (L) Flows.Remove(p); Changed(p); }
     public static void OpenBrowser(string url) {
       if (Program.TestMode) { Log.Info("auth", "(test) would open " + url.Split('?')[0]); return; }
