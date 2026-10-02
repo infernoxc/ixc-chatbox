@@ -47,7 +47,9 @@ namespace IXC {
     public Dictionary<string, object> Status() {
       var acc = Accounts.Info(Id);
       return J.D("id", Id, "label", Label, "configured", Configured, "enabled", Enabled, "channel", Id == "rumble" ? (Accounts.RumbleUrl().Length > 0 ? "set" : "") : Channel, "state", Configured ? State : "off", "detail", Configured ? Detail : (Enabled ? "add your channel" : "turned off"),
-        "canSend", CanSend, "sendNote", CanSend ? "" : SendNote, "account", acc, "viewers", global::IXC.Viewers.View(this)); }
+        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "account", acc, "viewers", global::IXC.Viewers.View(this)); }
+    // no IXC sign-in for this platform, but Streamer.bot is connected: replies go through Streamer.bot (Rumble can't send at all)
+    public bool ViaSb { get { return !CanSend && Id != "rumble" && Platforms.Sb.Ready; } }
     protected Timer viewerT;
     protected void StartViewerPolling() {
       viewerT = new Timer(_ => { if (!Configured) return; try { PollViewers(); } catch (Exception e) { Viewers.Fail(U.Plain(e)); Log.Debug("net", Label + " viewers: " + U.Plain(e)); } }, null, 3000, Settings.Int("viewers.refreshSec") * 1000);
@@ -75,13 +77,23 @@ namespace IXC {
       try { await irc.Tx("PRIVMSG #" + Login + " :" + text); irc.EchoOwn(text); return null; } catch (Exception e) { return U.Plain(e); } }
     public override List<string> OwnNames() { var a = Accounts.Info("twitch"); var l = new List<string> { Login }; if (a != null) l.Add(J.Str(a, "login", "")); return l.Where(x => x.Length > 0).ToList(); }
     public override void PollViewers() {
-      if (!Accounts.Has("twitch")) { Viewers.Fail("sign in to Twitch to see viewers"); return; }
+      if (!Accounts.Has("twitch")) { PublicViewers(); return; }
       var r = Accounts.Helix("GET", "streams?user_login=" + Uri.EscapeDataString(Login), null);
       if (r == null) { Viewers.Fail("Twitch sign-in needed"); return; }
       if (!r.Ok) { Viewers.Fail("Twitch: " + (r.Error ?? ("HTTP " + r.Code))); return; }
       var data = J.Get(J.Parse(r.Body), "data") as ArrayList; var s = data != null && data.Count > 0 ? data[0] as Dictionary<string, object> : null;
       if (s == null) Viewers.Set(null, false, "Twitch", null);
       else { DateTime st; Viewers.Set(J.Int(s, "viewer_count", 0), true, "Twitch", DateTime.TryParse(J.Str(s, "started_at", ""), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out st) ? (DateTime?)st.ToLocalTime() : null); } }
+    // not signed in: the same public data twitch.tv's own pages use (no account needed; unofficial, so it may change)
+    void PublicViewers() {
+      var q = "[{\"query\":\"query{user(login:\\\"" + Regex.Replace(Login, "[^A-Za-z0-9_]", "") + "\\\"){stream{viewersCount createdAt}}}\"}]";
+      var r = Http.Request("POST", Ep.Get("twitch_gql", "https://gql.twitch.tv/gql"), q, "text/plain;charset=UTF-8", new Dictionary<string, string> { { "Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko" } }, 12000);
+      if (!r.Ok) { Viewers.Fail("Twitch viewers: " + (r.Error ?? ("HTTP " + r.Code)) + " - sign in to Twitch for the official numbers"); return; }
+      var arr = J.Parse("{\"a\":" + r.Body + "}"); var a = J.Get(arr, "a") as ArrayList; var d = a != null && a.Count > 0 ? a[0] as Dictionary<string, object> : null;
+      if (d == null || J.Get(d, "data.user") == null) { Viewers.Fail("Twitch has no channel called \"" + Login + "\""); return; }
+      var stream = J.Obj(d, "data.user.stream");
+      if (stream == null) { Viewers.Set(null, false, "Twitch", null); return; }
+      DateTime st; Viewers.Set(J.Int(stream, "viewersCount", 0), true, "Twitch", DateTime.TryParse(J.Str(stream, "createdAt", ""), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out st) ? (DateTime?)st.ToLocalTime() : null); }
     // follower / account age checks for commands and song requests (Helix, cached)
     readonly Dictionary<string, KeyValuePair<DateTime, object>> cache = new Dictionary<string, KeyValuePair<DateTime, object>>();
     public bool? IsFollower(string userId) {
@@ -472,7 +484,7 @@ namespace IXC {
         "YouTube", new[] { "Message", "StatisticsUpdated", "BroadcastStarted", "BroadcastEnded", "MessageDeleted", "UserBanned", "SuperChat", "NewSponsor" },
         "Kick", new[] { "ChatMessage", "ViewerCountUpdate", "StreamOnline", "StreamOffline", "ChatMessageDeleted", "UserBanned", "UserTimedOut", "Follow", "Subscription", "GiftSubscription" }))), 5000);
       if (sub == null || J.Str(sub, "status", "ok") != "ok") throw new Exception("Streamer.bot did not accept the event subscription"); }
-    protected override void OnConnected() { Task.Run(() => LoadBroadcasters()); }
+    protected override void OnConnected() { Task.Run(() => LoadBroadcasters()); cmdAt = DateTime.MinValue; Task.Run(() => Chat.PushSuggestions()); }
     async Task LoadBroadcasters() {
       var r = await Request(J.D("request", "GetBroadcaster"), 5000); if (r == null) return;
       var names = new List<string>(); Collect(r, names, 0);
@@ -503,10 +515,14 @@ namespace IXC {
       var id = J.Str(m, "id", null); if (id != null) Complete(id, m); }
     public Task<Dictionary<string, object>> Request(Dictionary<string, object> req, int ms) { if (!Ready) return Task.FromResult<Dictionary<string, object>>(null); var id = NewId(); req["id"] = id; return Ask(id, J.Ser(req), ms); }
     static List<string> cmdCache = new List<string>(); static DateTime cmdAt = DateTime.MinValue;
+    // the chat commands set up in Streamer.bot (every enabled command's triggers); only a good answer is cached
     public async Task<List<string>> Commands() {
       if (!Ready) return new List<string>(); if ((DateTime.Now - cmdAt).TotalSeconds < 30) return cmdCache;
-      var l = new List<string>(); var rc = await Request(J.D("request", "GetCommands"), 3000);
-      if (rc != null) { var arr = J.Get(rc, "commands") as ArrayList; if (arr != null) foreach (var o in arr) { var od = o as Dictionary<string, object>; if (od == null || !J.Bool(od, "enabled", true)) continue; foreach (var cm in J.List(od, "commands")) if (cm.StartsWith("!")) l.Add(cm); } }
+      var rc = await Request(J.D("request", "GetCommands"), 3000); var arr = rc == null ? null : J.Get(rc, "commands") as ArrayList;
+      if (arr == null) return cmdCache;
+      var l = new List<string>();
+      foreach (var o in arr) { var od = o as Dictionary<string, object>; if (od == null || !J.Bool(od, "enabled", true)) continue;
+        foreach (var cm in J.List(od, "commands")) { var t = (cm ?? "").Trim(); if (t.Length > 1 && t.Length <= 40 && !t.Contains(" ")) l.Add(t); } }
       cmdCache = l; cmdAt = DateTime.Now; return l; }
     public async Task<string> SendTo(string platform, string message) {
       if (!Ready) return "Streamer.bot is not connected";
@@ -583,11 +599,12 @@ namespace IXC {
     public static void ReconnectAll() { foreach (var s in All) s.Restart(); Sb.Restart(); }
     public static List<string> SendTargets() {
       var l = new List<string>();
-      foreach (var s in All) if ((s.Configured && s.CanSend) || (Sb.Ready && s.Id != "rumble" && !s.Configured)) l.Add(s.Id);
+      foreach (var s in All) if ((s.Configured && s.CanSend) || (Sb.Ready && s.Id != "rumble")) l.Add(s.Id);
       return l; }
     public static async Task<string> Send(string platform, string text) {
       var s = Get(platform); if (s == null) return "unknown platform " + platform;
       if (s.Configured && s.CanSend) return await s.Send(text);
+      // not signed in to this platform in IXC (or the sign-in isn't available in this build): Streamer.bot sends it when it's connected
       if (Sb.Ready && platform != "rumble") return await Sb.SendTo(platform, text);
       return s.Configured ? s.SendNote : s.Label + " isn't set up in IXC"; }
     public static List<string> OwnNames() { var l = new List<string>(); foreach (var s in All) { try { l.AddRange(s.OwnNames()); } catch { } } lock (Sb.Broadcasters) l.AddRange(Sb.Broadcasters); return l.Where(x => !string.IsNullOrEmpty(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(); }

@@ -41,7 +41,8 @@ namespace IXC {
     public static DateTime LastMessage = DateTime.MinValue;
     static readonly Dictionary<string, KeyValuePair<string, DateTime>> Chatters = new Dictionary<string, KeyValuePair<string, DateTime>>(StringComparer.OrdinalIgnoreCase);
 
-    public static void Init() { Enabled = true; }
+    public static void Init() { Enabled = true;
+      Settings.Changed += k => { if (k == "commands.list" || k == "chat.hiddenCommands" || k == "chat.extraCommandsFile") Task.Run(() => PushSuggestions()); }; }
 
     // ---------- the pipeline ----------
     public static void Ingest(ChatMsg m) {
@@ -103,17 +104,20 @@ namespace IXC {
       Task.Run(async () => { var err = await Platforms.Send(to.Platform, text); if (err != null) { Log.Info("chat", "could not answer on " + to.Platform + ": " + err); Hub.Publish("chat", J.D("type", "chat.reply", "platform", to.Platform, "text", text, "error", err)); } }); }
 
     // ---------- reply-box suggestions ----------
+    // everything "!" can complete in the chat box: IXC's commands, Streamer.bot's commands and an optional extra commands file
     public static async Task<Dictionary<string, object>> Suggest() {
-      var cmds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-      foreach (var c in Commands.Triggers()) cmds.Add(c);
-      foreach (var c in await Platforms.Sb.Commands()) cmds.Add(c);
+      var cmds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase); var from = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+      foreach (var c in Commands.Triggers()) { cmds.Add(c); from[c] = "IXC"; }
+      foreach (var c in await Platforms.Sb.Commands()) { cmds.Add(c); if (!from.ContainsKey(c)) from[c] = "Streamer.bot"; }
       var cf = Settings.Str("chat.extraCommandsFile");
       if (cf.Length > 0 && File.Exists(cf)) { try { var cs = File.ReadAllText(cf);
         foreach (Match mm in Regex.Matches(cs, "\\{\\s*\"([a-z0-9]+)\"\\s*,")) cmds.Add("!" + mm.Groups[1].Value);
         foreach (Match mm in Regex.Matches(cs, "case\\s+\"([a-z0-9]+)\"\\s*:")) cmds.Add("!" + mm.Groups[1].Value); } catch { } }
       foreach (var h in Settings.List("chat.hiddenCommands")) cmds.Remove(h.StartsWith("!") ? h : "!" + h);
       List<object> users; lock (Chatters) users = Chatters.OrderByDescending(x => x.Value.Value).Take(300).Select(x => (object)J.D("name", x.Key, "platform", x.Value.Key)).ToList();
-      return J.D("commands", cmds.ToList(), "users", users); }
+      return J.D("commands", cmds.ToList(), "from", from, "users", users); }
+    // push a fresh list to every open chat box (Streamer.bot connected, commands changed)
+    public static async Task PushSuggestions() { try { var d = new Dictionary<string, object>(await Suggest()); d["type"] = "chat.suggest"; Hub.Publish("chat", d); } catch (Exception e) { Log.Debug("chat", "suggestions: " + e.Message); } }
 
     public static Dictionary<string, object> DiagInfo() {
       return J.D("messages", Received, "perPlatform", new Dictionary<string, int>(PerPlatform), "duplicatesDropped", Duplicates, "hiddenByFilters", Hidden,

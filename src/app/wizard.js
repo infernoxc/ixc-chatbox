@@ -7,7 +7,9 @@ window.Wizard = (() => {
   let step = 0, shown = false, timer = null, obs = null, check = null;
   function open(force) { if (shown && !force) return; shown = true; step = 0; $('wizard').classList.add('show'); render(); clearInterval(timer); timer = setInterval(refresh, 2000); }
   function close() { $('wizard').classList.remove('show'); clearInterval(timer); }
-  async function refresh() { if (STEPS[step] === 'obs') { obs = await IXC.api('/api/obs/detect'); render(); } else if (STEPS[step] === 'platforms' || STEPS[step] === 'sound' || STEPS[step] === 'phone') render(); }
+  // redraws every 2 s to show live states - but never while a channel name is being typed (that would wipe it)
+  function typing() { const a = document.activeElement; return !!a && $('wzCard').contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio|range|button)$/i.test(a.type))); }
+  async function refresh() { if (typing()) return; if (STEPS[step] === 'obs') { obs = await IXC.api('/api/obs/detect'); render(); } else if (STEPS[step] === 'platforms' || STEPS[step] === 'sound' || STEPS[step] === 'phone') render(); }
   const line = (ok, title, sub, action) => `<div class="stepline"><span style="font-size:20px">${ok === true ? '✅' : ok === false ? '⚠️' : '⏳'}</span><div class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</div>${action || ''}</div>`;
   function render() {
     const id = STEPS[step]; let h = `<div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'done' : ''}"></i>`).join('')}</div>`;

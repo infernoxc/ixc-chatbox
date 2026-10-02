@@ -32,11 +32,16 @@ window.App = (() => {
     $('healthPill').innerHTML = `<a href="#check" style="text-decoration:none">${UI.pill(st.overall === 'healthy' ? 'healthy' : st.overall === 'error' ? 'error' : 'warning', st.overall === 'healthy' ? 'All good' : n + ' thing' + (n === 1 ? '' : 's') + ' to check')}</a>`;
     const b = document.querySelector('#navList a[data-p="check"] .badge'); if (b) b.hidden = n === 0; }
   function on(ev, fn) { listeners.push([ev, fn]); }
-  function emit(ev, d) { listeners.filter(l => l[0] === ev).forEach(l => { try { l[1](d); } catch (e) { console.error(e); } }); }
+  // Live updates redraw pages. Never while someone is typing in a field on the page: that would replace the box and lose
+  // what was typed. The newest update for each event waits until the field is left, then runs once.
+  const held = new Map();
+  function typing() { const a = document.activeElement; return !!a && $('main').contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio|range|button|submit|color|file)$/i.test(a.type))); }
+  function emit(ev, d) { if (typing()) { held.set(ev, d); return; } listeners.filter(l => l[0] === ev).forEach(l => { try { l[1](d); } catch (e) { console.error(e); } }); }
+  document.addEventListener('focusout', () => setTimeout(() => { if (typing() || !held.size) return; const h = [...held]; held.clear(); h.forEach(([ev, d]) => emit(ev, d)); }, 0));
   // ---------- navigation ----------
   function page(id, title, render) { pages[id] = { title, render }; }
   function route() {
-    const h = (location.hash || '#home').slice(1); const [id, qs] = h.split('?'); const p = pages[id] || pages.home; current = id; listeners = [];
+    const h = (location.hash || '#home').slice(1); const [id, qs] = h.split('?'); const p = pages[id] || pages.home; current = id; listeners = []; held.clear();
     document.querySelectorAll('#navList a').forEach(a => a.classList.toggle('sel', a.dataset.p === id)); $('pageTitle').textContent = p.title; document.title = p.title + ' - IXC';
     $('nav').classList.remove('open'); const main = $('main'); main.innerHTML = ''; main.scrollTop = 0;
     try { p.render(main, new URLSearchParams(qs || '')); } catch (e) { console.error(e); main.innerHTML = '<div class="banner err">This page had a problem: ' + esc(e.message) + '</div>'; }

@@ -7,7 +7,7 @@
 //
 // The relay only forwards messages. The PC checks every phone's key (pairing + device keys live on the PC).
 // Copyright (c) 2026 Ishan (InFerNoxC) - MIT License.
-import PHONE_HTML from '../public/phone.html';
+import PHONE_HTML from '../../src/core/web/phone.html';   // the same page IXC serves for Quick connect
 
 const ID = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_PHONES = 12, MAX_MSG = 65536;
