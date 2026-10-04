@@ -341,6 +341,16 @@ namespace IXC {
           else { Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000); if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); if (fails >= 3) VideoId = ""; } }
         if (restart) continue; wake.WaitOne(wait); } }
     // "@handle", channel URL, /live URL, a video URL or an 11-character video id
+    // the video a channel's /live page shows. YouTube doesn't always include the same tags (the canonical link was missing on
+    // some pages in Oct 2026), so several places are checked, from the most to the least specific
+    static readonly string[] VideoIdPatterns = {
+      "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"",
+      "<meta property=\"og:url\" content=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"",
+      "\"videoDetails\":\\{\"videoId\":\"([\\w-]{11})\"",
+      "<link rel=\"shortlinkUrl\" href=\"https://youtu\\.be/([\\w-]{11})\"" };
+    public static string LiveVideoId(string page) {
+      foreach (var p in VideoIdPatterns) { var m = Regex.Match(page ?? "", p); if (m.Success) return m.Groups[1].Value; }
+      return null; }
     bool FindLive() {
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
       if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
@@ -350,8 +360,8 @@ namespace IXC {
         var r = Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
-        page = r.Body ?? ""; var cm = Regex.Match(page, "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"");
-        if (!cm.Success) { VideoId = ""; return false; } VideoId = cm.Groups[1].Value; }
+        page = r.Body ?? ""; var id = LiveVideoId(page);
+        if (id == null) { VideoId = ""; return false; } VideoId = id; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
       if (!live) { if (Regex.IsMatch(page, "\"isUpcoming\":true")) { detail = "stream scheduled, not started yet"; } VideoId = ""; return false; }

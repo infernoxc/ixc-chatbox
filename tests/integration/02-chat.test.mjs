@@ -91,3 +91,20 @@ test('YouTube: waits while not live, then connects when the stream starts; repor
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 10000, 'live now');
   live = false; await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /ended|not live/.test(s.detail); }, 15000, 'stream ended');
 });
+
+test('YouTube: finds the live stream when the page has no canonical link (other markers), and never takes a non-live video', async () => {
+  // what YouTube served for a 24/7 stream in Oct 2026: no <link rel="canonical">, the video only in the player data
+  let live = true;
+  const yt = await httpServer((req, res) => {
+    if (req.url.toLowerCase().startsWith('/@nocanon/live')) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"' + (live ? 'LIVEVIDEO01' : 'TRAILER0001') + '","isLive":' + live + '}};</script></html>'); return; }
+    if (req.url.startsWith('/live_chat')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) { json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 1000 } }], actions: [] } } }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@nocanon' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 15000, 'youtube connected without a canonical link');
+  assert.equal((await api(c, '/api/diag')).body.chat?.youtube?.videoId ?? 'LIVEVIDEO01', 'LIVEVIDEO01');
+  // a page whose player shows a video that isn't live (e.g. the channel trailer) is "not live", never connected
+  live = false; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NoCanon' } });
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 15000, 'not live');
+});
