@@ -3,6 +3,14 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-10-04
+### Fixed
+- Sending to ALL no longer shows errors for platforms you haven't set up in IXC (e.g. Streamer.bot refusing YouTube); the message still goes everywhere it can. Sending to one platform still says clearly why it failed.
+- YouTube: the live stream is also found when YouTube's page has no canonical link (other page markers are used).
+- YouTube: the status now says the real reason instead of only "not live": "stream scheduled, not started yet", or that YouTube is asking this network to confirm it's not a bot (some networks and VPNs).
+- Quick connect: a damaged or blocked `cloudflared.exe` is deleted so the next Show QR code downloads it again.
+- Safety net: a request that came through Cloudflare but names this PC as its host never reaches the local API.
+
 ## [3.0.1] - 2026-10-02
 ### Added
 - Phone remote with **Quick connect**: Show QR code works with no setup (Cloudflare's free quick tunnel, temporary link, signature-checked download, only the phone page reachable). The relay stays optional, for phones that stay paired across restarts.

@@ -94,8 +94,12 @@ test('YouTube: waits while not live, then connects when the stream starts; repor
 
 test('YouTube: finds the live stream when the page has no canonical link (other markers), and never takes a non-live video', async () => {
   // what YouTube served for a 24/7 stream in Oct 2026: no <link rel="canonical">, the video only in the player data
-  let live = true;
+  let live = true, botWall = false, upcoming = false;
   const yt = await httpServer((req, res) => {
+    if (req.url.toLowerCase().startsWith('/@nocanon/live') && botWall) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Sign in to confirm you\u2019re not a bot"}}; var x = "Sign in to confirm you\'re not a bot";</script>'); return; }
+    if (req.url.toLowerCase().startsWith('/@nocanon/live') && upcoming) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<script>var ytInitialPlayerResponse = {"videoDetails":{"videoId":"SOON0000001","isLive":false,"isUpcoming":true}};</script>'); return; }
     if (req.url.toLowerCase().startsWith('/@nocanon/live')) { res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html><script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"' + (live ? 'LIVEVIDEO01' : 'TRAILER0001') + '","isLive":' + live + '}};</script></html>'); return; }
     if (req.url.startsWith('/live_chat')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
@@ -107,4 +111,10 @@ test('YouTube: finds the live stream when the page has no canonical link (other 
   // a page whose player shows a video that isn't live (e.g. the channel trailer) is "not live", never connected
   live = false; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NoCanon' } });
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 15000, 'not live');
+  // YouTube's "confirm you're not a bot" page is named as such (not "not live")
+  botWall = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@nocanon' } });
+  await until(async () => /not a bot/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'bot check named');
+  // a scheduled stream says so
+  botWall = false; upcoming = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NOCANON' } });
+  await until(async () => /scheduled/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'scheduled named');
 });

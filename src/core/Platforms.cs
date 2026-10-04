@@ -332,7 +332,7 @@ namespace IXC {
         try {
           if (VideoId.Length == 0 || continuation.Length == 0) {
             if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-            if (!FindLive()) { Set("unavailable", "not live right now - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
+            if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
             OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; }
           int timeout = Poll(); fails = 0; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
@@ -348,10 +348,15 @@ namespace IXC {
       "<meta property=\"og:url\" content=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"",
       "\"videoDetails\":\\{\"videoId\":\"([\\w-]{11})\"",
       "<link rel=\"shortlinkUrl\" href=\"https://youtu\\.be/([\\w-]{11})\"" };
+    // YouTube sometimes answers with "Sign in to confirm you're not a bot" instead of the page (some networks, VPNs, data centres)
+    static bool BotCheck(string page) { return Regex.IsMatch(page ?? "", "\"playabilityStatus\":\\{\"status\":\"LOGIN_REQUIRED\"") && Regex.IsMatch(page, "not a bot", RegexOptions.IgnoreCase); }
+    const string BotCheckNote = "YouTube is asking this network to confirm it's not a bot (happens on some networks and VPNs), so IXC can't see if you're live";
     public static string LiveVideoId(string page) {
       foreach (var p in VideoIdPatterns) { var m = Regex.Match(page ?? "", p); if (m.Success) return m.Groups[1].Value; }
       return null; }
+    string notLiveWhy = "not live right now";
     bool FindLive() {
+      notLiveWhy = "not live right now";
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
       if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
       else {
@@ -361,10 +366,10 @@ namespace IXC {
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
         page = r.Body ?? ""; var id = LiveVideoId(page);
-        if (id == null) { VideoId = ""; return false; } VideoId = id; }
+        if (id == null) { VideoId = ""; if (BotCheck(page)) notLiveWhy = BotCheckNote; return false; } VideoId = id; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
-      if (!live) { if (Regex.IsMatch(page, "\"isUpcoming\":true")) { detail = "stream scheduled, not started yet"; } VideoId = ""; return false; }
+      if (!live) { notLiveWhy = Regex.IsMatch(page, "\"isUpcoming\":true") ? "stream scheduled, not started yet" : BotCheck(page) ? BotCheckNote : "not live right now"; VideoId = ""; return false; }
       return true; }
     void OpenChat() {
       var r = Http.Request("GET", Base + "/live_chat?is_popout=1&v=" + VideoId, null, null, Hdr(), 15000);
