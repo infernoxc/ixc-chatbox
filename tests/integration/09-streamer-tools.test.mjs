@@ -13,7 +13,8 @@ test('Kick read by IXC (no sign-in) + Streamer.bot connected: replies go through
   const sb = await wsServer((c) => { if (!sbUp) { c.ws.close(); return; }   // "not running yet" until the test starts it
     c.send({ request: 'Hello', info: { name: 'Streamer.bot' } });
     c.ws.on('message', (d) => { const m = JSON.parse(d.toString()); c.lines.push(m);
-      if (m.request === 'Subscribe' || m.request === 'SendMessage') c.send({ id: m.id, status: 'ok' });
+      if (m.request === 'SendMessage' && m.platform !== 'kick') c.send({ id: m.id, status: 'error', error: 'Not connected to ' + m.platform });   // only Kick is connected in Streamer.bot
+      else if (m.request === 'Subscribe' || m.request === 'SendMessage') c.send({ id: m.id, status: 'ok' });
       else if (m.request === 'GetBroadcaster') c.send({ id: m.id, status: 'ok', platforms: {} });
       else if (m.request === 'GetCommands') c.send({ id: m.id, status: 'ok', commands: [{ enabled: true, commands: ['!drop', '!discord'] }, { enabled: false, commands: ['!off'] }, { enabled: true, commands: ['!socials'] }] }); }); }); cleanup.push(sb.close);
   const c = await startCore({ env: { IXC_EP_KICK_WEB: kweb.url, IXC_EP_KICK_PUSHER: pusher.url + '/app/k', IXC_EP_STREAMERBOT: sb.url },
@@ -32,6 +33,10 @@ test('Kick read by IXC (no sign-in) + Streamer.bot connected: replies go through
   // send to Kick, and to ALL
   let r = (await api(c, '/api/chat/send', { platform: 'kick', message: 'hello kick' })).body; assert.equal(r.results[0].ok, true, JSON.stringify(r));
   r = (await api(c, '/api/chat/send', { platform: 'all', message: 'hello everyone' })).body; assert.ok(r.results.some(x => x.platform === 'kick' && x.ok), JSON.stringify(r));
+  // ALL also tried Twitch and YouTube through Streamer.bot (not used in IXC, not connected in Streamer.bot): no error shown for those
+  assert.deepEqual(r.results.filter(x => !x.ok), [], 'no failures reported for platforms that aren\'t set up');
+  // asking for one of them directly still says why it didn't work
+  const yt = (await api(c, '/api/chat/send', { platform: 'youtube', message: 'hi yt' })).body.results[0]; assert.equal(yt.ok, false); assert.match(yt.error, /Not connected to youtube/);
   const sent = sb.conns.flatMap(x => x.lines).filter(l => l.request === 'SendMessage' && l.platform === 'kick').map(l => l.message);
   assert.deepEqual(sent, ['hello kick', 'hello everyone']);
 });

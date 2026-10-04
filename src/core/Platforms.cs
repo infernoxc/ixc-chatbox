@@ -594,6 +594,7 @@ namespace IXC {
         var m = Regex.Match(k, "^platforms\\.(\\w+)\\."); if (!m.Success) return;
         if (m.Groups[1].Value == "streamerbot") { Sb.Restart(); return; }
         var s = Get(m.Groups[1].Value); if (s != null) s.Restart(); Hub.Publish("chat", J.D("type", "chat.status", "platforms", StatusAll())); }; }
+    public static bool IsSetUp(string p) { var s = Get(p); return s != null && s.Configured; }
     public static bool HandlesChat(string p) { var s = Get(p); return s != null && s.Configured && s.State == "connected"; }
     public static bool HandlesViewers(string p) { var s = Get(p); return s != null && s.Configured && s.Viewers.Count != null && (DateTime.Now - s.Viewers.At).TotalSeconds < 120; }
     public static void ReconnectAll() { foreach (var s in All) s.Restart(); Sb.Restart(); }

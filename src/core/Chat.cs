@@ -96,6 +96,11 @@ namespace IXC {
       if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", Accounts.Available("twitch") || Accounts.Available("kick") || Accounts.Available("youtube") ? "IXC can't reply anywhere yet: open Streamer.bot (IXC replies through it), or connect your account under Platforms & accounts." : "IXC can't reply anywhere yet: open Streamer.bot with its WebSocket server on - IXC replies through it.")); return res; }
       var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } return J.D("platform", p, "ok", err == null, "error", err ?? ""); }).ToList();
       foreach (var t in tasks) res.Add(await t);
+      // "ALL" also tries, through Streamer.bot, platforms you haven't set up in IXC: a failure there (Streamer.bot isn't connected to it)
+      // isn't news, so it's only logged - unless nothing was sent at all
+      if (platform == "all" && res.Any(r => (bool)r["ok"])) {
+        var quiet = res.Where(r => !(bool)r["ok"] && !Platforms.IsSetUp((string)r["platform"])).ToList();
+        foreach (var r in quiet) { Log.Info("chat", "not sent to " + r["platform"] + " (not set up in IXC): " + r["error"]); res.Remove(r); } }
       Log.Info("chat", "sent to " + string.Join("+", res.Where(r => (bool)r["ok"]).Select(r => r["platform"])) + (res.Any(r => !(bool)r["ok"]) ? " (failed: " + string.Join(", ", res.Where(r => !(bool)r["ok"]).Select(r => r["platform"] + " - " + r["error"])) + ")" : ""));
       return res; }
     // a reply to one message (commands, song requests): same platform; silently skipped when IXC can't send there

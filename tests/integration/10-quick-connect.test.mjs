@@ -9,7 +9,7 @@ import { startCore, api, inject, client, wsServer, until } from './harness.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url)); const FAKE = path.join(here, '..', 'fakes', 'cloudflared.mjs'); const HOST = 'ixc-test-tunnel.trycloudflare.com';
 const cleanup = []; after(async () => { for (const f of cleanup.reverse()) await f(); });
 // a request as it arrives from the tunnel: to 127.0.0.1, with the public host name
-function viaTunnel(c, p, opts = {}) { return new Promise((res, rej) => { const r = http.request({ host: '127.0.0.1', port: c.port, path: p, method: opts.method || 'GET', headers: Object.assign({ Host: HOST + ':' + c.port }, opts.headers || {}) }, (resp) => {
+function viaTunnel(c, p, opts = {}) { return new Promise((res, rej) => { const r = http.request({ host: '127.0.0.1', port: c.port, path: p, method: opts.method || 'GET', headers: Object.assign({ Host: HOST + ':' + c.port, 'CF-Ray': '8c0ffee-AMS', 'CF-Connecting-IP': '203.0.113.9' }, opts.headers || {}) }, (resp) => {
   let b = ''; resp.on('data', d => b += d); resp.on('end', () => res({ status: resp.statusCode, headers: resp.headers, body: b })); }); r.on('error', rej); r.end(opts.body); }); }
 
 test('Quick connect: one click opens a temporary link, the QR pairs a phone, only the phone page is reachable, stopping forgets the phone', async () => {
@@ -26,6 +26,8 @@ test('Quick connect: one click opens a temporary link, the QR pairs a phone, onl
   const pg = await viaTunnel(c, '/p/' + id); assert.equal(pg.status, 200); assert.match(pg.body, /IXC Remote/); assert.match(pg.headers['content-security-policy'], /frame-ancestors 'none'/);
   for (const p of ['/api/settings', '/api/remote/pair', '/app/', '/chat/chat.html', '/core/phone.html', '/p/wrongid', '/ws', '/oauth/kick']) assert.equal((await viaTunnel(c, p)).status, 404, p);
   assert.equal((await viaTunnel(c, '/api/remote/pair', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })).status, 404);
+  // safety net: something that came through Cloudflare but names this PC as its host still never reaches the local API
+  for (const h of ['localhost:' + c.port, '127.0.0.1:' + c.port]) assert.equal((await viaTunnel(c, '/api/settings', { headers: { Host: h } })).status, 421, h);
   const wsUrl = 'ws://127.0.0.1:' + c.port + '/phone/' + id; const headers = { Host: HOST + ':' + c.port };
   await assert.rejects(client(wsUrl, null, { headers, origin: 'https://evil.example' }), /403/, 'other websites are refused');
   // pair like the phone page does
