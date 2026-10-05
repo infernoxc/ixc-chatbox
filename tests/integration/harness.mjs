@@ -23,7 +23,7 @@ export async function startCore(opts = {}) {
   const cfg = Object.assign({ helper: { port }, obs: { websocketUrl: 'ws://127.0.0.1:1/' }, platforms: { streamerbot: { mode: 'off' } }, general: { firstRunDone: true, checkUpdates: false } }, opts.config || {});
   if (!opts.keepConfig) fs.writeFileSync(path.join(dir, 'config.json'), opts.rawConfig ?? JSON.stringify(cfg, null, 2));
   if (opts.defaults) fs.writeFileSync(path.join(app, 'core/ixc.defaults.json'), JSON.stringify(opts.defaults)); else if (fs.existsSync(path.join(app, 'core/ixc.defaults.json'))) fs.rmSync(path.join(app, 'core/ixc.defaults.json'));
-  const env = Object.assign({}, process.env, { IXC_TTS_FAKE: '1', IXC_OBS_CONFIG: path.join(dir, 'obs-config'), IXC_EP_NET_CHECK: 'http://127.0.0.1:1/', IXC_EP_TWITCH_GQL: 'http://127.0.0.1:1/' }, opts.env || {});
+  const env = Object.assign({}, process.env, { IXC_TTS_FAKE: '1', IXC_OBS_CONFIG: path.join(dir, 'obs-config'), IXC_EP_NET_CHECK: 'http://127.0.0.1:1/', IXC_EP_TWITCH_GQL: 'http://127.0.0.1:1/', IXC_EP_YOUTUBE_END_CONFIRM_MS: '3000' }, opts.env || {});
   const proc = spawn('mono', [path.join(app, 'core/ixc-core.exe'), '--test', '--config', path.join(dir, 'config.json')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; proc.stdout.on('data', d => out += d); proc.stderr.on('data', d => out += d);
   const core = { port, dir, proc, url: 'http://127.0.0.1:' + port, exited: null, output: () => out };

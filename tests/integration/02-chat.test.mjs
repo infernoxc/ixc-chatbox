@@ -118,3 +118,21 @@ test('YouTube: finds the live stream when the page has no canonical link (other 
   botWall = false; upcoming = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NOCANON' } });
   await until(async () => /scheduled/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'scheduled named');
 });
+
+test('YouTube: a moment where YouTube\'s chat answers "no chat" doesn\'t flip the stream offline (it stays connected like Twitch and Kick)', async () => {
+  let glitch = 0, pageHits = 0;
+  const yt = await httpServer((req, res) => {
+    if (req.url.toLowerCase().startsWith('/@steady/live')) { pageHits++; res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<link rel="canonical" href="https://www.youtube.com/watch?v=STEADYLIVE1">"isLiveNow":true'); return; }
+    if (req.url.startsWith('/live_chat')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) {
+      if (glitch > 0) { glitch--; json(res, 200, { responseContext: {} }); return; }   // what YouTube sometimes sends mid-stream: no chat data at all
+      json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 300 } }], actions: [] } } }); return; }
+    if (req.url.startsWith('/youtubei/v1/updated_metadata')) { json(res, 200, { actions: [{ updateViewershipAction: { viewCount: { videoViewCountRenderer: { originalViewCount: '40' } } } }] }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@steady' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 10000, 'connected');
+  const hitsBefore = pageHits; glitch = 2; const seen = new Set();
+  const end = Date.now() + 8000; while (Date.now() < end) { seen.add((await api(c, '/api/chat/status')).body.platforms.youtube.state); await new Promise(r => setTimeout(r, 150)); }
+  assert.deepEqual([...seen], ['connected'], 'stayed connected through the glitch: ' + [...seen]);
+  assert.equal(glitch, 0, 'the glitch happened'); assert.equal(pageHits, hitsBefore, 'the stream wasn\'t looked up again');
+});

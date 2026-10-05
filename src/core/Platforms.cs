@@ -318,11 +318,12 @@ namespace IXC {
     public override DateTime StateSince { get { return since; } }
     void Set(string s, string d) { if (state != s || detail != d) { state = s; detail = d ?? ""; since = DateTime.Now; Publish(); } }
     public override void Start() { th = new Thread(Loop) { IsBackground = true, Name = "YouTube chat" }; th.Start(); StartViewerPolling(); NetWatch.Woke += () => wake.Set(); }
-    public override void Restart() { restart = true; VideoId = ""; LiveChatId = ""; wake.Set(); PollNow(); }
+    public override void Restart() { restart = true; VideoId = ""; LiveChatId = ""; continuation = ""; endSignals = 0; wake.Set(); PollNow(); }
     public override void Kick() { wake.Set(); }
     // the live video Streamer.bot names in its YouTube events: used when the channel page doesn't show the stream
     // (YouTube's "confirm you're not a bot" page on some networks, an unlisted stream, another page layout)
-    volatile string sbVideo = "";
+    volatile string sbVideo = ""; int endSignals; DateTime firstEnd;
+    static int EndConfirmMs { get { return int.Parse(Ep.Get("youtube_end_confirm_ms", "45000")); } }
     public void StreamerBotVideo(string id) {
       if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
       sbVideo = id; Log.Info("chat", "YouTube: Streamer.bot names your live stream " + id);
@@ -338,15 +339,26 @@ namespace IXC {
         if (!Configured) { Set("off", Enabled ? "add your YouTube channel" : "turned off"); wake.WaitOne(5000); continue; }
         restart = false; int wait;
         try {
-          if (VideoId.Length == 0 || continuation.Length == 0) {
-            if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-            if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
-            OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; }
-          int timeout = Poll(); fails = 0; wait = Math.Max(1000, Math.Min(10000, timeout)); }
+          if (continuation.Length == 0) {
+            // the stream is found once; after that IXC stays on it (like a Twitch or Kick connection) and only re-opens its chat
+            if (VideoId.Length == 0) {
+              if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
+              if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
+            OpenChat(); if (state != "connected") Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); Set("connected", ""); }
+          int timeout = Poll(); fails = 0; endSignals = 0; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
-          if (msg.StartsWith("ended")) { if (VideoId == sbVideo) sbVideo = ""; VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
-          else { Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000); if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); if (fails >= 3) VideoId = ""; } }
+          if (msg.StartsWith("ended")) {
+            // YouTube's chat sometimes answers "no chat" for a moment while the stream goes on: the stream counts as ended only when
+            // that keeps happening for a while; until then the chat is re-opened and the state stays as it is
+            if (endSignals++ == 0) firstEnd = DateTime.Now;
+            if (endSignals >= 3 && (DateTime.Now - firstEnd).TotalMilliseconds >= EndConfirmMs) {
+              if (VideoId == sbVideo) sbVideo = ""; VideoId = ""; LiveChatId = ""; endSignals = 0; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
+            else { Log.Debug("chat", "YouTube chat: " + msg + " - checking again"); wait = Math.Max(2000, EndConfirmMs / 3); } }
+          else {
+            // one failed request isn't shown; a connection that keeps failing is
+            if (fails >= 2) Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000);
+            if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); } }
         if (restart) continue; wake.WaitOne(wait); } }
     // "@handle", channel URL, /live URL, a video URL or an 11-character video id
     // the video a channel's /live page shows. YouTube doesn't always include the same tags (the canonical link was missing on
