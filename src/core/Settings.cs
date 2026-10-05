@@ -28,7 +28,7 @@ namespace IXC {
 
     static Settings() {
       // general
-      B("general.firstRunDone", false); B("general.advanced", false); B("general.autoRestart", true); B("general.checkUpdates", true); B("general.openDashboardOnStart", false);
+      B("general.firstRunDone", false); B("general.advanced", false); B("general.autoRestart", true); B("general.checkUpdates", true); B("general.autoUpdate", true); B("general.openDashboardOnStart", false);
       B("diagnostics.verboseLog", false); Adv("diagnostics.verboseLog");
       // platforms (built-in connections; Streamer.bot is optional)
       foreach (var p in PlatformIds) B("platforms." + p + ".enabled", false);

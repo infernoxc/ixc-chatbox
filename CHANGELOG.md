@@ -3,7 +3,10 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
-## [3.0.2] - 2026-10-04
+## [3.0.2] - 2026-10-05
+### Added
+- Updates install by themselves (Settings > General, on by default): IXC checks 20 s after it starts and every 6 hours, and installs a new version only while OBS isn't streaming or recording and no platform shows you live. One automatic try per version; **Update now** always works.
+- The Updates section checks right away when it hasn't checked yet, instead of showing "not checked yet".
 ### Fixed
 - Sending to ALL no longer shows errors for platforms you haven't set up in IXC (e.g. Streamer.bot refusing YouTube); the message still goes everywhere it can. Sending to one platform still says clearly why it failed.
 - YouTube: the live stream is also found when YouTube's page has no canonical link (other page markers are used).

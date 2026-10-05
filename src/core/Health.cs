@@ -165,12 +165,36 @@ namespace IXC {
   public static class Updates {
     static string latest = "", notes = "", setupUrl = "", sumsUrl = "", checkedAt = "", error = ""; static volatile bool busy; static string progress = ""; static Timer t;
     static string Repo { get { var r = Program.Default("updateRepo"); return r.Length > 0 ? r : "infernoxc/ixc-chatbox"; } }
-    public static void Init() { t = new Timer(_ => { if (Settings.Bool("general.checkUpdates")) Check(); }, null, 60000, 6 * 3600 * 1000); }
-    public static Dictionary<string, object> Summary() { return J.D("current", Program.Version, "latest", latest, "available", Newer(latest, Program.Version), "checked", checkedAt, "error", error, "busy", busy, "progress", progress, "notes", notes); }
+    static DateTime lastCheck = DateTime.MinValue; static string autoNote = "", autoFailed = "";
+    // checks soon after IXC starts and then every 6 hours; an update found is installed by itself (general.autoUpdate) as soon as
+    // it's safe: not while OBS streams or records, and not while a platform shows you live (IXC restarts during an update)
+    public static void Init() { int tick = int.Parse(Ep.Get("update_tick_ms", "600000")); t = new Timer(_ => Tick(), null, Math.Min(20000, tick), tick); }
+    static void Tick() {
+      try {
+        if (!Settings.Bool("general.checkUpdates") || busy) return;
+        if ((DateTime.Now - lastCheck).TotalHours >= 6) Check();
+        if (!Settings.Bool("general.autoUpdate") || !Newer(latest, Program.Version)) { autoNote = ""; return; }
+        // one try per version, also across restarts: if the installer didn't finish, IXC doesn't try again in a loop
+        var tried = Path.Combine(Cfg.DataDir, "updates", "auto-tried.txt"); string triedV = ""; try { if (File.Exists(tried)) triedV = File.ReadAllText(tried).Trim(); } catch { }
+        if (autoFailed == latest || triedV == latest) { autoNote = "installing by itself didn't work - press Update now"; return; }
+        var why = Busy(); if (why != null) { if (autoNote != why) { autoNote = why; Log.Info("update", "IXC " + latest + " will install by itself " + why); Publish(); } return; }
+        autoNote = ""; Log.Info("update", "installing IXC " + latest + " by itself");
+        try { Directory.CreateDirectory(Path.GetDirectoryName(tried)); File.WriteAllText(tried, latest); } catch { } var r = Install(false); if (!J.Bool(r, "ok", false)) { autoFailed = latest; Log.Warn("update", "automatic update: " + J.Str(r, "error", "")); } }
+      catch (Exception e) { Log.Warn("update", "automatic update: " + U.Plain(e)); } }
+    // why now isn't a good moment to restart IXC, or null
+    static string Busy() {
+      if (Obs.Link.Ready) {
+        foreach (var req in new[] { "GetStreamStatus", "GetRecordStatus" }) {
+          Dictionary<string, object> r = null; try { var tk = Obs.Link.Call(req, null); if (tk.Wait(5000)) r = tk.Result; } catch { }
+          if (r != null && J.Bool(r, "outputActive", false)) return req == "GetStreamStatus" ? "after you stop streaming" : "after you stop recording"; } }
+      foreach (var p in Platforms.All) { var v = Viewers.View(p); if ((string)v["state"] == "live") return "after your stream ends"; }
+      return null; }
+    public static Dictionary<string, object> Summary() { return J.D("current", Program.Version, "latest", latest, "available", Newer(latest, Program.Version), "checked", checkedAt, "error", error, "busy", busy, "progress", progress, "notes", notes,
+      "auto", Settings.Bool("general.autoUpdate"), "autoNote", autoNote); }
     public static bool Newer(string a, string b) { Version va, vb; return Version.TryParse((a ?? "").TrimStart('v'), out va) && Version.TryParse((b ?? "").TrimStart('v'), out vb) && va > vb; }
     public static Dictionary<string, object> Check() {
       var r = Http.Request("GET", Ep.Get("github_api", "https://api.github.com") + "/repos/" + Repo + "/releases/latest", null, null, new Dictionary<string, string> { { "Accept", "application/vnd.github+json" }, { "User-Agent", "IXC-Updater" } }, 15000);
-      checkedAt = DateTime.Now.ToString("HH:mm");
+      checkedAt = DateTime.Now.ToString("HH:mm"); lastCheck = DateTime.Now;
       if (!r.Ok) { error = "couldn't check for updates (" + (r.Error ?? r.Code.ToString()) + ")"; return Summary(); }
       var d = J.Parse(r.Body); latest = J.Str(d, "tag_name", "").TrimStart('v'); notes = U.Trunc(J.Str(d, "body", ""), 4000); error = ""; setupUrl = ""; sumsUrl = "";
       foreach (var a in J.Objs(d, "assets")) { var n = J.Str(a, "name", ""); var u = J.Str(a, "browser_download_url", "");
@@ -198,7 +222,7 @@ namespace IXC {
           progress = "installing - IXC restarts by itself"; Publish(); Log.Info("update", "installing " + Path.GetFileName(file));
           if (Program.TestMode) { progress = "verified (test mode: not installed)"; busy = false; Publish(); return; }
           Process.Start(new ProcessStartInfo(file, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART") { UseShellExecute = true }); }
-        catch (Exception e) { error = U.Plain(e); progress = "failed: " + error; busy = false; Log.Err("update", "update failed: " + error); Publish(); } });
+        catch (Exception e) { error = U.Plain(e); progress = "failed: " + error; busy = false; autoFailed = latest; Log.Err("update", "update failed: " + error); Publish(); } });
       return J.D("ok", true, "message", "Updating to " + latest + " - IXC backs up your settings, installs, and restarts by itself."); }
     static void Publish() { Hub.Publish("status", Status.Msg()); }
   }

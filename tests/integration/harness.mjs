@@ -101,6 +101,8 @@ export async function fakeObs(opts = {}) {
         case 'CreateSceneItem': if (!st.items[q.sceneName]) fail('no scene'); else { st.items[q.sceneName].push(q.sourceName); data = { sceneItemId: st.items[q.sceneName].length }; } break;
         case 'SetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found by the name of `' + q.inputName + '`.'); else { if (opts.notReadyOnce && !st.nr) { st.nr = 1; ok = false; comment = 'OBS is not ready to perform the request.'; break; } Object.assign(st.tracks[q.inputName], q.inputAudioTracks); } break;
         case 'GetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found'); else data = { inputAudioTracks: st.tracks[q.inputName] }; break;
+        case 'GetStreamStatus': data = { outputActive: !!st.streaming }; break;
+        case 'GetRecordStatus': data = { outputActive: !!st.recording }; break;
         default: fail('unknown request ' + t); }
       c.send({ op: 7, d: { requestType: t, requestId: id, requestStatus: { result: ok, code: ok ? 100 : 600, comment }, responseData: data } }); }); });
   s.st = st; return s; }
