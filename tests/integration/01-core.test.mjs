@@ -1,6 +1,6 @@
 // Core: security of the local API, settings validation / persistence / corruption recovery, v2 upgrade, static files.
 import { test, after } from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';
-import { startCore, api, settings, page, client, sleep } from './harness.mjs';
+import { startCore, api, settings, page, client, sleep, freePort } from './harness.mjs';
 
 const cores = []; after(async () => { for (const c of cores) await c.stop(); });
 async function core(o) { const c = await startCore(o); cores.push(c); return c; }
@@ -58,7 +58,7 @@ test('a damaged config.json never stops IXC: last good copy is restored and the 
 test('upgrading a v2 config: passwords move to the encrypted store, old keys are cleaned, setup is not shown again', async () => {
   const v2 = { _readme: 'x', version: '2.0.1', helper: { port: 0 }, tts: { on: true, voice: 'jarvis' }, streamerbot: { websocketUrl: 'ws://127.0.0.1:8080/', password: 'sbSecretPass123', settingsPath: 'auto' },
     music: { routing: { mode: 'kick' }, spotify: { clientId: 'abc', clientSecret: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' } }, remote: { enabled: true, port: 8769, sessionHours: 12, idleMinutes: 30, allowDownload: true, cloudflaredPath: '' }, obs: { websocketUrl: 'ws://127.0.0.1:1/' } };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-v2-')); const port = 30000 + Math.floor(Math.random() * 20000); v2.helper.port = port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-v2-')); const port = await freePort(); v2.helper.port = port;   // a free port, so another program can't take it first
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(v2));
   const c = await core({ dir, port, keepConfig: true });
   const cfg = fs.readFileSync(path.join(dir, 'config.json'), 'utf8');

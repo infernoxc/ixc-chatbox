@@ -8,6 +8,7 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 - Sending to ALL no longer shows errors for platforms you haven't set up in IXC (e.g. Streamer.bot refusing YouTube); the message still goes everywhere it can. Sending to one platform still says clearly why it failed.
 - YouTube: the live stream is also found when YouTube's page has no canonical link (other page markers are used).
 - YouTube: the status now says the real reason instead of only "not live": "stream scheduled, not started yet", or that YouTube is asking this network to confirm it's not a bot (some networks and VPNs).
+- YouTube showed "offline" while live when YouTube's page didn't show the stream to IXC: IXC now uses the live stream Streamer.bot names in its YouTube events and reads that chat itself, and a viewer number from Streamer.bot is no longer replaced by "offline".
 - Quick connect: a damaged or blocked `cloudflared.exe` is deleted so the next Show QR code downloads it again.
 - Safety net: a request that came through Cloudflare but names this PC as its host never reaches the local API.
 

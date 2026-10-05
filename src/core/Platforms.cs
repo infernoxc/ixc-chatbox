@@ -320,6 +320,14 @@ namespace IXC {
     public override void Start() { th = new Thread(Loop) { IsBackground = true, Name = "YouTube chat" }; th.Start(); StartViewerPolling(); NetWatch.Woke += () => wake.Set(); }
     public override void Restart() { restart = true; VideoId = ""; LiveChatId = ""; wake.Set(); PollNow(); }
     public override void Kick() { wake.Set(); }
+    // the live video Streamer.bot names in its YouTube events: used when the channel page doesn't show the stream
+    // (YouTube's "confirm you're not a bot" page on some networks, an unlisted stream, another page layout)
+    volatile string sbVideo = "";
+    public void StreamerBotVideo(string id) {
+      if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
+      sbVideo = id; Log.Info("chat", "YouTube: Streamer.bot names your live stream " + id);
+      if (state != "connected") wake.Set(); }
+    public void StreamerBotEnded() { sbVideo = ""; }
     public override bool CanSend { get { return Accounts.Has("youtube") && !Accounts.IsInvalid("youtube") && VideoId.Length > 0; } }
     public override string SendNote { get { return !Accounts.Has("youtube") ? "Sign in to YouTube (Accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
     string Base { get { return Ep.Get("youtube_web", "https://www.youtube.com"); } }
@@ -337,7 +345,7 @@ namespace IXC {
           int timeout = Poll(); fails = 0; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
-          if (msg.StartsWith("ended")) { VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
+          if (msg.StartsWith("ended")) { if (VideoId == sbVideo) sbVideo = ""; VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
           else { Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000); if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); if (fails >= 3) VideoId = ""; } }
         if (restart) continue; wake.WaitOne(wait); } }
     // "@handle", channel URL, /live URL, a video URL or an 11-character video id
@@ -356,6 +364,11 @@ namespace IXC {
       return null; }
     string notLiveWhy = "not live right now";
     bool FindLive() {
+      bool found = false; Exception err = null;
+      try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
+      if (!found && sbVideo.Length > 0) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
+      if (err != null) throw err; return found; }
+    bool FindLiveOnPage() {
       notLiveWhy = "not live right now";
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
       if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
@@ -421,7 +434,10 @@ namespace IXC {
       else { m.Kind = "gift"; m.Name = J.Str(r, "authorName.simpleText", J.Str(r, "header.liveChatSponsorshipsHeaderRenderer.authorName.simpleText", "someone")); m.Text = Runs(J.Obj(r, "header.liveChatSponsorshipsHeaderRenderer.primaryText") ?? new Dictionary<string, object>(), null); }
       return m; }
     public override void PollViewers() {
-      if (VideoId.Length == 0) { if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
+      if (VideoId.Length == 0) {
+        // IXC can't see the stream itself; a recent number from Streamer.bot is kept rather than replaced by "offline"
+        if (Viewers.Source == "Streamer.bot" && (DateTime.Now - Viewers.At).TotalSeconds < 120) return;
+        if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
       var body = J.Ser(J.D("context", J.D("client", J.D("clientName", "WEB", "clientVersion", clientVersion, "hl", "en")), "videoId", VideoId));
       var r = Http.Request("POST", Base + "/youtubei/v1/updated_metadata?prettyPrint=false" + (apiKey.Length > 0 ? "&key=" + apiKey : ""), body, "application/json", Hdr(), 12000);
       if (!r.Ok) { Viewers.Fail("YouTube: " + (r.Error ?? ("HTTP " + r.Code))); return; }
@@ -554,6 +570,7 @@ namespace IXC {
       string src = J.Str(m, "event.source", "").ToLowerInvariant(), type = J.Str(m, "event.type", ""); var data = J.Obj(m, "data") ?? new Dictionary<string, object>();
       if (src != "twitch" && src != "kick" && src != "youtube") return;
       var vs = Platforms.Get(src);
+      if (src == "youtube") { if (type == "BroadcastEnded") Platforms.YouTube.StreamerBotEnded(); else { var vid = VideoId(data, 0); if (vid != null) Platforms.YouTube.StreamerBotVideo(vid); else if (!ytShapeLogged && type == "Message") { ytShapeLogged = true; Log.Info("streamerbot", "YouTube message without a stream id; fields: " + Shape(data, 0)); } } }
       if (type == "ViewerCountUpdate" || type == "StatisticsUpdated") { if (vs != null && !Platforms.HandlesViewers(src)) { var n = FindCount(data, 0); if (n != null) vs.Viewers.Set(n, true, "Streamer.bot", null); } return; }
       if (type == "StreamOffline" || type == "BroadcastEnded") { if (vs != null && !Platforms.HandlesViewers(src)) vs.Viewers.Set(null, false, "Streamer.bot", null); return; }
       if (type == "ChatMessageDeleted" || type == "MessageDeleted") { Chat.Delete(src, Pick(G(data, "messageId"), G(data, "msgId"), G(data, "targetMessageId"), G(data, "id")), null); return; }
@@ -565,6 +582,17 @@ namespace IXC {
       else if (type != "ChatMessage" && type != "Message") return;
       if (cm.Kind == "chat" && string.IsNullOrWhiteSpace(cm.Text)) return;
       Chat.Ingest(cm); }
+    // the live video in a Streamer.bot YouTube event: data.broadcast.id (a broadcast's id is its video id) or a videoId field
+    static string VideoId(object o, int depth) {
+      var d = o as Dictionary<string, object>; if (d == null || depth > 3) return null;
+      foreach (var kv in d) { var k = kv.Key.ToLowerInvariant(); var sv = kv.Value as string;
+        if (sv != null && (k == "videoid" || k == "broadcastid" || k == "liveid") && Regex.IsMatch(sv, "^[\\w-]{11}$")) return sv;
+        var sub = kv.Value as Dictionary<string, object>;
+        if (sub != null && k.Contains("broadcast")) { var id = G(sub, "id") as string; if (id != null && Regex.IsMatch(id, "^[\\w-]{11}$")) return id; } }
+      foreach (var kv in d) { var r = VideoId(kv.Value, depth + 1); if (r != null) return r; } return null; }
+    static bool ytShapeLogged;
+    // field names only (no values), to see what a Streamer.bot version sends
+    static string Shape(object o, int depth) { var d = o as Dictionary<string, object>; if (d == null || depth > 2) return ""; return string.Join(",", d.Select(kv => kv.Key + (kv.Value is Dictionary<string, object> ? "{" + Shape(kv.Value, depth + 1) + "}" : ""))); }
     static int? FindCount(object o, int depth) {
       var d = o as Dictionary<string, object>; if (d == null || depth > 4) return null;
       foreach (var kv in d) if ((kv.Value is int || kv.Value is long || kv.Value is decimal || kv.Value is double) && Regex.IsMatch(kv.Key, "viewer|concurrent|watching", RegexOptions.IgnoreCase)) return Convert.ToInt32(kv.Value);
