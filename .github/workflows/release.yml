@@ -46,7 +46,14 @@ jobs:
         run: |
           $t = "${{ inputs.tag || github.ref_name }}"; $notes = "docs\release-notes\$t.md"
           $files = Get-ChildItem dist -File | % FullName
+          # Windows PowerShell 5.1 turns redirected stderr of a native command into a terminating error under "Stop": a release that
+          # does not exist yet (gh prints "release not found") then failed this step. This step therefore runs with "Continue" and
+          # checks the exit codes itself; a failure is written as an annotation so it can be read without the run log.
+          $ErrorActionPreference = 'Continue'
           gh release view $t *> $null
-          if ($LASTEXITCODE -eq 0) { gh release upload $t $files --clobber; exit 0 }   # release already made by hand: refresh its files
-          if (Test-Path $notes) { gh release create $t $files --title "IXC $t" --notes-file $notes }
-          else { gh release create $t $files --title "IXC $t" --generate-notes }
+          $exists = ($LASTEXITCODE -eq 0)
+          if ($exists) { gh release upload $t $files --clobber; exit $LASTEXITCODE }   # release already made by hand: refresh its files
+          if (Test-Path $notes) { $out = gh release create $t $files --title "IXC $t" --notes-file $notes 2>&1 | Out-String }
+          else { $out = gh release create $t $files --title "IXC $t" --generate-notes 2>&1 | Out-String }
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::gh release create failed: $out"; exit 1 }
+          Write-Host $out

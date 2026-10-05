@@ -61,7 +61,7 @@ namespace IXC {
       // TTS
       B("tts.on", false); B("tts.paused", false); S("tts.voice", "in-male", 60); E("tts.readMode", "name", "all", "name", "tts");
       I("tts.speed", 0, -50, 100); I("tts.pitch", 0, -30, 30); I("tts.volume", 100, 0, 100);
-      I("tts.maxChars", 200, 40, 500); I("tts.queueMax", 6, 1, 50); I("tts.staleSec", 60, 10, 600); I("tts.perMinute", 20, 1, 120); I("tts.userCooldownSec", 3, 0, 120);
+      I("tts.maxChars", 200, 40, 500); I("tts.queueMax", 15, 3, 50); I("tts.staleSec", 90, 20, 600); I("tts.perMinute", 40, 5, 120); I("tts.userCooldownSec", 2, 0, 120);
       B("tts.ignoreOwn", true); B("tts.ignoreBots", true); B("tts.readEmotes", false); B("tts.readEmoji", false); B("tts.readLinks", false); B("tts.fallback", true);
       L("tts.neverSpeak", 300); L("tts.blockedWords", 300); L("tts.botNames", 300); L("tts.ownNames", 50);
       L("tts.platforms", 8, "twitch", "kick", "youtube", "rumble"); E("tts.minRole", "everyone", Roles); B("tts.modControls", true);
