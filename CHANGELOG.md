@@ -2,6 +2,11 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Fixed
+- YouTube chat: a short "ended" answer from YouTube no longer flips the chip to Not live; IXC re-checks the stream up to 3 times first.
+- YouTube chat: messages sent while IXC was reconnecting (same stream, gap up to 5 minutes) are now read out and treated as new instead of being marked old and skipped. Repeats are still dropped by message id.
+- Kick chat: IXC now sends a keepalive ping every 45 s. A quiet chat no longer looked dead and was no longer dropped and reconnected every ~150 s.
+
 
 ## [3.0.1] - 2026-10-02
 ### Added
