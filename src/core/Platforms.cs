@@ -321,7 +321,7 @@ namespace IXC {
     volatile string state = "off", detail = ""; DateTime since = DateTime.Now; Thread th; readonly AutoResetEvent wake = new AutoResetEvent(false); volatile bool restart;
     public string VideoId = "", LiveChatId = ""; string apiKey = "", clientVersion = "2.20250925.01.00", continuation = ""; DateTime? started;
     // reconnect bookkeeping: a short "ended" blip must not flip the chip to Not live, and messages sent while IXC was reconnecting must still be read out
-    int endStrikes; DateTime openedAt = DateTime.MinValue, lastPollOk = DateTime.MinValue; string lastChatVideo = "";
+    int endStrikes, liveMiss; string whyNot = ""; DateTime openedAt = DateTime.MinValue, lastPollOk = DateTime.MinValue; string lastChatVideo = "";
     public YouTubeSource() { Id = "youtube"; Label = "YouTube"; }
     public override bool Configured { get { return Enabled && Channel.Length > 0; } }
     public override string State { get { return state; } }
@@ -343,8 +343,12 @@ namespace IXC {
         try {
           if (VideoId.Length == 0 || continuation.Length == 0) {
             if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-            if (!FindLive()) { Set("unavailable", "not live right now - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
-            OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; openedAt = DateTime.Now; }
+            if (!FindLive()) {
+              // we were reading this stream's chat a moment ago: look again a couple of times before calling it "not live" (YouTube pages hiccup)
+              if (lastChatVideo.Length > 0 && (DateTime.Now - lastPollOk).TotalSeconds < 120 && liveMiss < 2) { liveMiss++; Set("reconnecting", "checking that the live stream is still on"); wake.WaitOne(4000); continue; }
+              if (state != "unavailable") Log.Info("chat", "YouTube: not live (" + whyNot + ")");
+              Set("unavailable", "not live right now (" + whyNot + ") - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
+            liveMiss = 0; OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; openedAt = DateTime.Now; }
           int timeout = Poll(); fails = 0; endStrikes = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
@@ -365,10 +369,10 @@ namespace IXC {
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
         page = r.Body ?? ""; var cm = Regex.Match(page, "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"");
-        if (!cm.Success) { VideoId = ""; return false; } VideoId = cm.Groups[1].Value; }
+        if (!cm.Success) { VideoId = ""; whyNot = "your channel has no live stream page yet - start the broadcast in YouTube Studio"; return false; } VideoId = cm.Groups[1].Value; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
-      if (!live) { if (Regex.IsMatch(page, "\"isUpcoming\":true")) { detail = "stream scheduled, not started yet"; } VideoId = ""; return false; }
+      if (!live) { whyNot = Regex.IsMatch(page, "\"isUpcoming\":true") ? "the stream is scheduled but not started - press Go live in YouTube Studio" : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
     void OpenChat() {
       var r = Http.Request("GET", Base + "/live_chat?is_popout=1&v=" + VideoId, null, null, Hdr(), 15000);

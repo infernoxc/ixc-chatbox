@@ -5,6 +5,7 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 ### Fixed
 - YouTube chat: a short "ended" answer from YouTube no longer flips the chip to Not live; IXC re-checks the stream up to 3 times first.
 - YouTube chat: messages sent while IXC was reconnecting (same stream, gap up to 5 minutes) are now read out and treated as new instead of being marked old and skipped. Repeats are still dropped by message id.
+- YouTube chat: after losing a live stream IXC looks twice more (4 s apart) before showing Not live, and the Not live chip now says why (for example "scheduled but not started - press Go live in YouTube Studio").
 - Kick chat: IXC now sends a keepalive ping every 45 s. A quiet chat no longer looked dead and was no longer dropped and reconnected every ~150 s.
 - TTS: the "busy chat" limits can no longer be dragged down to values that silently drop most messages (waiting messages 3-50, per minute 5-120, skip-older-than 20 s and up). New defaults read more of a busy multi-platform chat: 15 waiting, skip after 90 s, 40 per minute, same person waits 2 s.
 
