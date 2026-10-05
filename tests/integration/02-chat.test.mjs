@@ -89,5 +89,5 @@ test('YouTube: waits while not live, then connects when the stream starts; repor
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 8000, 'not live');
   live = true; await api(c, '/api/repair', { action: 'platform.youtube' });
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 10000, 'live now');
-  live = false; await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /ended|not live/.test(s.detail); }, 15000, 'stream ended');
+  live = false; await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /ended|not live/.test(s.detail); }, 30000, 'stream ended');
 });

@@ -274,6 +274,15 @@ namespace IXC {
       var key = J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); var cluster = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2");
       return Ep.Get("kick_pusher", "wss://ws-" + cluster + ".pusher.com/app/" + key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
     protected override void BeforeConnect() { established.Reset(); }
+    // Pusher expects the client to ping when the room is quiet. Without it a quiet chat looked dead after 150 s and IXC dropped
+    // and re-opened the connection again and again (each time risking messages in the gap). The pong also resets the idle timer.
+    protected override void OnConnected() {
+      var mine = ws;
+      Task.Run(async () => {
+        while (mine != null && ws == mine && mine.State == WebSocketState.Open) {
+          await Task.Delay(45000);
+          if (ws != mine) break;
+          try { await Tx("{\"event\":\"pusher:ping\",\"data\":{}}"); } catch (Exception) { break; } } }); }
     protected override async Task Handshake() {
       if (!await Task.Run(() => established.Wait(10000))) throw new Exception("Kick chat did not answer");
       foreach (var ch in new[] { "chatrooms." + src.ChatroomId + ".v2", "chatroom_" + src.ChatroomId, "channel." + src.ChannelId, "channel_" + src.ChannelId })
@@ -311,6 +320,8 @@ namespace IXC {
   public class YouTubeSource : ChatSource {
     volatile string state = "off", detail = ""; DateTime since = DateTime.Now; Thread th; readonly AutoResetEvent wake = new AutoResetEvent(false); volatile bool restart;
     public string VideoId = "", LiveChatId = ""; string apiKey = "", clientVersion = "2.20250925.01.00", continuation = ""; DateTime? started;
+    // reconnect bookkeeping: a short "ended" blip must not flip the chip to Not live, and messages sent while IXC was reconnecting must still be read out
+    int endStrikes, liveMiss; string whyNot = ""; DateTime openedAt = DateTime.MinValue, lastPollOk = DateTime.MinValue; string lastChatVideo = "";
     public YouTubeSource() { Id = "youtube"; Label = "YouTube"; }
     public override bool Configured { get { return Enabled && Channel.Length > 0; } }
     public override string State { get { return state; } }
@@ -332,12 +343,19 @@ namespace IXC {
         try {
           if (VideoId.Length == 0 || continuation.Length == 0) {
             if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-            if (!FindLive()) { Set("unavailable", "not live right now - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
-            OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; }
-          int timeout = Poll(); fails = 0; wait = Math.Max(1000, Math.Min(10000, timeout)); }
+            if (!FindLive()) {
+              // we were reading this stream's chat a moment ago: look again a couple of times before calling it "not live" (YouTube pages hiccup)
+              if (lastChatVideo.Length > 0 && (DateTime.Now - lastPollOk).TotalSeconds < 120 && liveMiss < 2) { liveMiss++; Set("reconnecting", "checking that the live stream is still on"); wake.WaitOne(4000); continue; }
+              if (state != "unavailable") Log.Info("chat", "YouTube: not live (" + whyNot + ")");
+              Set("unavailable", "not live right now (" + whyNot + ") - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
+            liveMiss = 0; OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; openedAt = DateTime.Now; }
+          int timeout = Poll(); fails = 0; endStrikes = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
-          if (msg.StartsWith("ended")) { VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
+          if (msg.StartsWith("ended")) {
+            if ((DateTime.Now - openedAt).TotalSeconds > 60) endStrikes = 0; endStrikes++;
+            if (endStrikes <= 3) { Set("reconnecting", "checking that the live stream is still on"); Log.Info("chat", "YouTube chat said \"" + msg + "\" - checking again (" + endStrikes + "/3)"); wait = 2000 * endStrikes; }
+            else { endStrikes = 0; VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; } }
           else { Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000); if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); if (fails >= 3) VideoId = ""; } }
         if (restart) continue; wake.WaitOne(wait); } }
     // "@handle", channel URL, /live URL, a video URL or an 11-character video id
@@ -351,10 +369,10 @@ namespace IXC {
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
         page = r.Body ?? ""; var cm = Regex.Match(page, "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"");
-        if (!cm.Success) { VideoId = ""; return false; } VideoId = cm.Groups[1].Value; }
+        if (!cm.Success) { VideoId = ""; whyNot = "your channel has no live stream page yet - start the broadcast in YouTube Studio"; return false; } VideoId = cm.Groups[1].Value; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
-      if (!live) { if (Regex.IsMatch(page, "\"isUpcoming\":true")) { detail = "stream scheduled, not started yet"; } VideoId = ""; return false; }
+      if (!live) { whyNot = Regex.IsMatch(page, "\"isUpcoming\":true") ? "the stream is scheduled but not started - press Go live in YouTube Studio" : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
     void OpenChat() {
       var r = Http.Request("GET", Base + "/live_chat?is_popout=1&v=" + VideoId, null, null, Hdr(), 15000);
@@ -385,10 +403,13 @@ namespace IXC {
           if (custom) { sb.Append(name); if (m != null) { m.EmoteNames.Add(name); m.Parts.Add(J.D("t", "emote", "name", name, "url", url)); } }
           else { var id = J.Str(e, "emojiId", ""); sb.Append(id); if (m != null) m.Parts.Add(J.D("t", "text", "v", id)); } } }
       return sb.ToString(); }
-    void Actions(ArrayList acts, bool old) {
+    void Actions(ArrayList acts, bool initial) {
+      // same stream, short gap (<= 5 min): messages that arrived while IXC was reconnecting are new, not history. Repeats are dropped by the message id.
+      DateTime resumeFrom = DateTime.MaxValue;
+      if (initial && VideoId == lastChatVideo && lastPollOk != DateTime.MinValue && (DateTime.Now - lastPollOk).TotalMinutes <= 5) resumeFrom = lastPollOk.AddSeconds(-5);
       foreach (var a0 in acts) { var a = a0 as Dictionary<string, object>; if (a == null) continue;
         var item = J.Obj(a, "addChatItemAction.item");
-        if (item != null) { var m = Item(item); if (m != null) { m.Old = old; Chat.Ingest(m); } continue; }
+        if (item != null) { var m = Item(item); if (m != null) { m.Old = initial && !(m.At >= resumeFrom && (DateTime.Now - m.At).TotalSeconds < 300); Chat.Ingest(m); } continue; }
         var del = J.Str(a, "markChatItemAsDeletedAction.targetItemId", J.Str(a, "removeChatItemAction.targetItemId", null)); if (del != null) { Chat.Delete("youtube", del, null); continue; }
         var byAuthor = J.Str(a, "markChatItemsByAuthorAsDeletedAction.externalChannelId", J.Str(a, "removeChatItemByAuthorAction.externalChannelId", null)); if (byAuthor != null) Chat.DeleteByUserId("youtube", byAuthor); } }
     ChatMsg Item(Dictionary<string, object> item) {
