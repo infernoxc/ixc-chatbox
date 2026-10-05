@@ -4,6 +4,11 @@ on:
     branches: [main, "claude/**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      youtube:
+        description: "YouTube channel for the live check, e.g. @infernoxc00"
+        required: false
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -56,7 +61,11 @@ jobs:
       - name: Live platform check (public Twitch chat, YouTube page)
         shell: powershell
         continue-on-error: true
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\live.ps1
+        env:
+          YT: ${{ inputs.youtube }}
+        run: |
+          $yt = "$env:YT"; if ($yt -notmatch '^@?[\w.\-]{3,40}$') { $yt = '@LofiGirl' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\live.ps1 -YouTube $yt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

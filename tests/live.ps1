@@ -25,6 +25,14 @@ try {
   $v = Invoke-RestMethod "$base/api/viewers"; foreach ($k in 'twitch', 'youtube', 'kick') { $x = $v.platforms.$k; $results["$k viewers"] = "$($x.state) $($x.count) $($x.note)" }
   $h = Invoke-RestMethod "$base/api/health"; foreach ($i in $h.items | ? { $_.id -in 'tts', 'network' }) { $results[$i.name] = "$($i.level): $($i.message)" }
   try { $s = Invoke-RestMethod "$base/api/music/search?q=lofi%20hip%20hop"; $results['YouTube search'] = "$(@($s).Count) results" } catch { $results['YouTube search'] = "failed: $($_.Exception.Message)" }
+  # what YouTube returns for the live page, fetched the way IXC fetches it (helps tell "not live" from a page IXC can't read)
+  try { $yp = '@' + $YouTube.TrimStart('@')
+    $r = Invoke-WebRequest -UseBasicParsing "https://www.youtube.com/$yp/live" -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36' -Headers @{ Cookie = 'SOCS=CAI; CONSENT=YES+1'; 'Accept-Language' = 'en-US,en;q=0.9' } -MaximumRedirection 5
+    $b = $r.Content; $marks = @{ canonicalWatch = $b -match '<link rel="canonical" href="https://www\.youtube\.com/watch\?v='; canonicalAny = ([regex]::Match($b, '<link rel="canonical" href="([^"]+)"')).Groups[1].Value; isLiveNow = $b -match '"isLiveNow":true'; isLive = $b -match '"isLive":true'; consent = $b -match 'consent\.youtube'; botCheck = $b -match "not a bot|unusual traffic"
+      ogUrl = $b -match '<meta property="og:url" content="https://www\.youtube\.com/watch\?v='; videoDetails = $b -match '"videoDetails":\{"videoId":"'; shortlink = $b -match '<link rel="shortlinkUrl" href="https://youtu\.be/'
+      playability = ([regex]::Match($b, '"playabilityStatus":\{"status":"([A-Z_]+)"')).Groups[1].Value }
+    $results['YouTube page probe'] = "HTTP $($r.StatusCode), $($b.Length) chars, " + (($marks.GetEnumerator() | Sort Name | % { "$($_.Name)=$($_.Value)" }) -join ', ') }
+  catch { $results['YouTube page probe'] = "failed: $($_.Exception.Message)" }
 } finally { if (-not $p.HasExited) { $p.Kill() } }
 Write-Host 'Live platform results:'; $results.GetEnumerator() | % { Write-Host ("  {0,-20} {1}" -f $_.Key, $_.Value) }
 Get-Content "$tmp\data\logs\chat.log" -EA SilentlyContinue | Select -Last 15 | % { Write-Host "  log: $_" }

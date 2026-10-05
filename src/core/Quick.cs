@@ -48,7 +48,10 @@ namespace IXC {
         if (!Ensure()) return;
         Set("starting", "Opening a secure link through Cloudflare…");
         var psi = new ProcessStartInfo(Exe, "tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:" + Program.Port) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
-        Process p; try { p = Process.Start(psi); } catch (Exception e) { Set("error", "Couldn't start Cloudflare's tunnel program: " + e.Message); return; }
+        Process p; try { p = Process.Start(psi); }
+        catch (Exception e) {   // damaged or half-written download (or blocked by antivirus): delete it, so the next try downloads it again
+          if (TestExe == null) { try { File.Delete(Exe); } catch { } }
+          Set("error", "Couldn't start Cloudflare's tunnel program (" + e.Message + "). Press Show QR code to download it again."); Log.Warn("phone", message); return; }
         string lastErr = "";
         lock (TL) { tunnel = p; host = null; id = U.Token(9); }
         AddToJob(p);

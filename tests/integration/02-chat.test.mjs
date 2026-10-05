@@ -91,3 +91,64 @@ test('YouTube: waits while not live, then connects when the stream starts; repor
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 10000, 'live now');
   live = false; await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /ended|not live/.test(s.detail); }, 30000, 'stream ended');
 });
+
+test('YouTube: finds the live stream when the page has no canonical link (other markers), and never takes a non-live video', async () => {
+  // what YouTube served for a 24/7 stream in Oct 2026: no <link rel="canonical">, the video only in the player data
+  let live = true, botWall = false, upcoming = false;
+  const yt = await httpServer((req, res) => {
+    if (req.url.toLowerCase().startsWith('/@nocanon/live') && botWall) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Sign in to confirm you\u2019re not a bot"}}; var x = "Sign in to confirm you\'re not a bot";</script>'); return; }
+    if (req.url.toLowerCase().startsWith('/@nocanon/live') && upcoming) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<script>var ytInitialPlayerResponse = {"videoDetails":{"videoId":"SOON0000001","isLive":false,"isUpcoming":true}};</script>'); return; }
+    if (req.url.toLowerCase().startsWith('/@nocanon/live')) { res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"' + (live ? 'LIVEVIDEO01' : 'TRAILER0001') + '","isLive":' + live + '}};</script></html>'); return; }
+    if (req.url.startsWith('/live_chat') && req.url.includes('v=LIVEVIDEO01')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) { json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 1000 } }], actions: [] } } }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@nocanon' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 15000, 'youtube connected without a canonical link');
+  assert.equal((await api(c, '/api/diag')).body.chat?.youtube?.videoId ?? 'LIVEVIDEO01', 'LIVEVIDEO01');
+  // a page whose player shows a video that isn't live (e.g. the channel trailer) is "not live", never connected
+  live = false; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NoCanon' } });
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 15000, 'not live');
+  // YouTube's "confirm you're not a bot" page is named as such (not "not live")
+  botWall = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@nocanon' } });
+  await until(async () => /not a bot/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'bot check named');
+  // a scheduled stream says so
+  botWall = false; upcoming = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NOCANON' } });
+  await until(async () => /scheduled/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'scheduled named');
+});
+
+test('YouTube: a moment where YouTube\'s chat answers "no chat" doesn\'t flip the stream offline (it stays connected like Twitch and Kick)', async () => {
+  let glitch = 0, pageHits = 0;
+  const yt = await httpServer((req, res) => {
+    if (req.url.toLowerCase().startsWith('/@steady/live')) { pageHits++; res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<link rel="canonical" href="https://www.youtube.com/watch?v=STEADYLIVE1">"isLiveNow":true'); return; }
+    if (req.url.startsWith('/live_chat')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) {
+      if (glitch > 0) { glitch--; json(res, 200, { responseContext: {} }); return; }   // what YouTube sometimes sends mid-stream: no chat data at all
+      json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 300 } }], actions: [] } } }); return; }
+    if (req.url.startsWith('/youtubei/v1/updated_metadata')) { json(res, 200, { actions: [{ updateViewershipAction: { viewCount: { videoViewCountRenderer: { originalViewCount: '40' } } } }] }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@steady' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 10000, 'connected');
+  const hitsBefore = pageHits; glitch = 2; const seen = new Set();
+  const end = Date.now() + 8000; while (Date.now() < end) { seen.add((await api(c, '/api/chat/status')).body.platforms.youtube.state); await new Promise(r => setTimeout(r, 150)); }
+  assert.deepEqual([...seen], ['connected'], 'stayed connected through the glitch: ' + [...seen]);
+  assert.equal(glitch, 0, 'the glitch happened'); assert.equal(pageHits, hitsBefore, 'the stream wasn\'t looked up again');
+});
+
+test('YouTube: the page names the stream but leaves out the "live" markers (seen on a home connection): a running live chat decides; a replay chat does not', async () => {
+  let video = 'MARKERLESS1';
+  const yt = await httpServer((req, res) => {
+    // what the channel's /live page looked like on the streamer's PC: canonical link to the stream, no isLive / isLiveNow
+    if (req.url.toLowerCase().startsWith('/@nomarks/live')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<html><link rel="canonical" href="https://www.youtube.com/watch?v=' + video + '"><script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"' + video + '"}};</script></html>'); return; }
+    if (req.url.startsWith('/live_chat') && req.url.includes('v=MARKERLESS1')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    // an old stream: its chat is only a replay
+    if (req.url.startsWith('/live_chat') && req.url.includes('v=OLDSTREAM01')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"liveChatReplayContinuationData":{"continuation":"R0"}}],"isReplay":true,"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) { json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 500 } }], actions: [] } } }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@nomarks' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 15000, 'connected through the running live chat');
+  video = 'OLDSTREAM01'; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NoMarks' } });
+  await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /not live/.test(s.detail) ? s : null; }, 15000, 'a replay chat is not live');
+});

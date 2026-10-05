@@ -321,7 +321,7 @@ namespace IXC {
     volatile string state = "off", detail = ""; DateTime since = DateTime.Now; Thread th; readonly AutoResetEvent wake = new AutoResetEvent(false); volatile bool restart;
     public string VideoId = "", LiveChatId = ""; string apiKey = "", clientVersion = "2.20250925.01.00", continuation = ""; DateTime? started;
     // reconnect bookkeeping: a short "ended" blip must not flip the chip to Not live, and messages sent while IXC was reconnecting must still be read out
-    int endStrikes, liveMiss; string whyNot = ""; DateTime openedAt = DateTime.MinValue, lastPollOk = DateTime.MinValue; string lastChatVideo = "";
+    DateTime openedAt = DateTime.MinValue, lastPollOk = DateTime.MinValue; string lastChatVideo = "";
     public YouTubeSource() { Id = "youtube"; Label = "YouTube"; }
     public override bool Configured { get { return Enabled && Channel.Length > 0; } }
     public override string State { get { return state; } }
@@ -329,8 +329,17 @@ namespace IXC {
     public override DateTime StateSince { get { return since; } }
     void Set(string s, string d) { if (state != s || detail != d) { state = s; detail = d ?? ""; since = DateTime.Now; Publish(); } }
     public override void Start() { th = new Thread(Loop) { IsBackground = true, Name = "YouTube chat" }; th.Start(); StartViewerPolling(); NetWatch.Woke += () => wake.Set(); }
-    public override void Restart() { restart = true; VideoId = ""; LiveChatId = ""; wake.Set(); PollNow(); }
+    public override void Restart() { restart = true; VideoId = ""; LiveChatId = ""; continuation = ""; endSignals = 0; wake.Set(); PollNow(); }
     public override void Kick() { wake.Set(); }
+    // the live video Streamer.bot names in its YouTube events: used when the channel page doesn't show the stream
+    // (YouTube's "confirm you're not a bot" page on some networks, an unlisted stream, another page layout)
+    volatile string sbVideo = ""; int endSignals; DateTime firstEnd;
+    static int EndConfirmMs { get { return int.Parse(Ep.Get("youtube_end_confirm_ms", "45000")); } }
+    public void StreamerBotVideo(string id) {
+      if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
+      sbVideo = id; Log.Info("chat", "YouTube: Streamer.bot names your live stream " + id);
+      if (state != "connected") wake.Set(); }
+    public void StreamerBotEnded() { sbVideo = ""; }
     public override bool CanSend { get { return Accounts.Has("youtube") && !Accounts.IsInvalid("youtube") && VideoId.Length > 0; } }
     public override string SendNote { get { return !Accounts.Has("youtube") ? "Sign in to YouTube (Accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
     string Base { get { return Ep.Get("youtube_web", "https://www.youtube.com"); } }
@@ -341,25 +350,49 @@ namespace IXC {
         if (!Configured) { Set("off", Enabled ? "add your YouTube channel" : "turned off"); wake.WaitOne(5000); continue; }
         restart = false; int wait;
         try {
-          if (VideoId.Length == 0 || continuation.Length == 0) {
-            if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-            if (!FindLive()) {
-              // we were reading this stream's chat a moment ago: look again a couple of times before calling it "not live" (YouTube pages hiccup)
-              if (lastChatVideo.Length > 0 && (DateTime.Now - lastPollOk).TotalSeconds < 120 && liveMiss < 2) { liveMiss++; Set("reconnecting", "checking that the live stream is still on"); wake.WaitOne(4000); continue; }
-              if (state != "unavailable") Log.Info("chat", "YouTube: not live (" + whyNot + ")");
-              Set("unavailable", "not live right now (" + whyNot + ") - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; }
-            liveMiss = 0; OpenChat(); Set("connected", ""); Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); fails = 0; openedAt = DateTime.Now; }
-          int timeout = Poll(); fails = 0; endStrikes = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
+          if (continuation.Length == 0) {
+            // the stream is found once; after that IXC stays on it (like a Twitch or Kick connection) and only re-opens its chat
+            if (VideoId.Length == 0) {
+              if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
+              if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
+            OpenChat(); openedAt = DateTime.Now; if (state != "connected") Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); Set("connected", ""); }
+          int timeout = Poll(); fails = 0; endSignals = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
           if (msg.StartsWith("ended")) {
-            if ((DateTime.Now - openedAt).TotalSeconds > 60) endStrikes = 0; endStrikes++;
-            if (endStrikes <= 3) { Set("reconnecting", "checking that the live stream is still on"); Log.Info("chat", "YouTube chat said \"" + msg + "\" - checking again (" + endStrikes + "/3)"); wait = 2000 * endStrikes; }
-            else { endStrikes = 0; VideoId = ""; LiveChatId = ""; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; } }
-          else { Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000); if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); if (fails >= 3) VideoId = ""; } }
+            // YouTube's chat sometimes answers "no chat" for a moment while the stream goes on: the stream counts as ended only when
+            // that keeps happening for a while; until then the chat is re-opened and the state stays as it is
+            if (endSignals++ == 0) firstEnd = DateTime.Now;
+            if (endSignals >= 3 && (DateTime.Now - firstEnd).TotalMilliseconds >= EndConfirmMs) {
+              if (VideoId == sbVideo) sbVideo = ""; VideoId = ""; LiveChatId = ""; endSignals = 0; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
+            else { Log.Debug("chat", "YouTube chat: " + msg + " - checking again"); wait = Math.Max(2000, EndConfirmMs / 3); } }
+          else {
+            // one failed request isn't shown; a connection that keeps failing is
+            if (fails >= 2) Set("reconnecting", msg); wait = U.Backoff(fails - 1, 2000, 60000);
+            if (fails <= 2 || fails % 10 == 0) Log.Info("chat", "YouTube chat: " + msg + " - retrying in " + wait / 1000 + " s"); } }
         if (restart) continue; wake.WaitOne(wait); } }
     // "@handle", channel URL, /live URL, a video URL or an 11-character video id
+    // the video a channel's /live page shows. YouTube doesn't always include the same tags (the canonical link was missing on
+    // some pages in Oct 2026), so several places are checked, from the most to the least specific
+    static readonly string[] VideoIdPatterns = {
+      "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"",
+      "<meta property=\"og:url\" content=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"",
+      "\"videoDetails\":\\{\"videoId\":\"([\\w-]{11})\"",
+      "<link rel=\"shortlinkUrl\" href=\"https://youtu\\.be/([\\w-]{11})\"" };
+    // YouTube sometimes answers with "Sign in to confirm you're not a bot" instead of the page (some networks, VPNs, data centres)
+    static bool BotCheck(string page) { return Regex.IsMatch(page ?? "", "\"playabilityStatus\":\\{\"status\":\"LOGIN_REQUIRED\"") && Regex.IsMatch(page, "not a bot", RegexOptions.IgnoreCase); }
+    const string BotCheckNote = "YouTube is asking this network to confirm it's not a bot (happens on some networks and VPNs), so IXC can't see if you're live";
+    public static string LiveVideoId(string page) {
+      foreach (var p in VideoIdPatterns) { var m = Regex.Match(page ?? "", p); if (m.Success) return m.Groups[1].Value; }
+      return null; }
+    string notLiveWhy = "not live right now";
     bool FindLive() {
+      bool found = false; Exception err = null;
+      try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
+      if (!found && sbVideo.Length > 0) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
+      if (err != null) throw err; return found; }
+    bool FindLiveOnPage() {
+      notLiveWhy = "not live right now";
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
       if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
       else {
@@ -368,12 +401,23 @@ namespace IXC {
         var r = Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
-        page = r.Body ?? ""; var cm = Regex.Match(page, "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([\\w-]{11})\"");
-        if (!cm.Success) { VideoId = ""; whyNot = "your channel has no live stream page yet - start the broadcast in YouTube Studio"; return false; } VideoId = cm.Groups[1].Value; }
+        page = r.Body ?? ""; var id = LiveVideoId(page);
+        if (id == null) { VideoId = ""; notLiveWhy = BotCheck(page) ? BotCheckNote : "your channel has no live stream right now"; return false; } VideoId = id; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
-      if (!live) { whyNot = Regex.IsMatch(page, "\"isUpcoming\":true") ? "the stream is scheduled but not started - press Go live in YouTube Studio" : "YouTube says the stream is not live"; VideoId = ""; return false; }
+      if (!live) {
+        if (Regex.IsMatch(page, "\"isUpcoming\":true")) { notLiveWhy = "the stream is scheduled but not started - press Go live in YouTube Studio"; VideoId = ""; return false; }
+        // the page names a video but leaves out YouTube's "live" markers (seen on home connections in Oct 2026, and with YouTube's
+        // bot check): the video's own live chat decides - a running live chat means the stream is live
+        if (LiveChatRunning(VideoId)) { Log.Info("chat", "YouTube: the page doesn't say \"live\", but the live chat of " + VideoId + " is running - connecting"); return true; }
+        notLiveWhy = BotCheck(page) ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
+    // a live (not replay) chat with a continuation: the stream is on air
+    bool LiveChatRunning(string id) {
+      try {
+        var r = Http.Request("GET", Base + "/live_chat?is_popout=1&v=" + id, null, null, Hdr(), 15000); var h = r.Body ?? "";
+        return r.Ok && Regex.IsMatch(h, "\"(invalidationContinuationData|timedContinuationData|reloadContinuationData)\"") && !h.Contains("\"isReplay\":true") && !h.Contains("liveChatReplayContinuationData"); }
+      catch { return false; } }
     void OpenChat() {
       var r = Http.Request("GET", Base + "/live_chat?is_popout=1&v=" + VideoId, null, null, Hdr(), 15000);
       if (!r.Ok) throw new Exception("couldn't open the live chat (" + (r.Error ?? r.Code.ToString()) + ")");
@@ -427,7 +471,10 @@ namespace IXC {
       else { m.Kind = "gift"; m.Name = J.Str(r, "authorName.simpleText", J.Str(r, "header.liveChatSponsorshipsHeaderRenderer.authorName.simpleText", "someone")); m.Text = Runs(J.Obj(r, "header.liveChatSponsorshipsHeaderRenderer.primaryText") ?? new Dictionary<string, object>(), null); }
       return m; }
     public override void PollViewers() {
-      if (VideoId.Length == 0) { if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
+      if (VideoId.Length == 0) {
+        // IXC can't see the stream itself; a recent number from Streamer.bot is kept rather than replaced by "offline"
+        if (Viewers.Source == "Streamer.bot" && (DateTime.Now - Viewers.At).TotalSeconds < 120) return;
+        if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
       var body = J.Ser(J.D("context", J.D("client", J.D("clientName", "WEB", "clientVersion", clientVersion, "hl", "en")), "videoId", VideoId));
       var r = Http.Request("POST", Base + "/youtubei/v1/updated_metadata?prettyPrint=false" + (apiKey.Length > 0 ? "&key=" + apiKey : ""), body, "application/json", Hdr(), 12000);
       if (!r.Ok) { Viewers.Fail("YouTube: " + (r.Error ?? ("HTTP " + r.Code))); return; }
@@ -560,6 +607,7 @@ namespace IXC {
       string src = J.Str(m, "event.source", "").ToLowerInvariant(), type = J.Str(m, "event.type", ""); var data = J.Obj(m, "data") ?? new Dictionary<string, object>();
       if (src != "twitch" && src != "kick" && src != "youtube") return;
       var vs = Platforms.Get(src);
+      if (src == "youtube") { if (type == "BroadcastEnded") Platforms.YouTube.StreamerBotEnded(); else { var vid = VideoId(data, 0); if (vid != null) Platforms.YouTube.StreamerBotVideo(vid); else if (!ytShapeLogged && type == "Message") { ytShapeLogged = true; Log.Info("streamerbot", "YouTube message without a stream id; fields: " + Shape(data, 0)); } } }
       if (type == "ViewerCountUpdate" || type == "StatisticsUpdated") { if (vs != null && !Platforms.HandlesViewers(src)) { var n = FindCount(data, 0); if (n != null) vs.Viewers.Set(n, true, "Streamer.bot", null); } return; }
       if (type == "StreamOffline" || type == "BroadcastEnded") { if (vs != null && !Platforms.HandlesViewers(src)) vs.Viewers.Set(null, false, "Streamer.bot", null); return; }
       if (type == "ChatMessageDeleted" || type == "MessageDeleted") { Chat.Delete(src, Pick(G(data, "messageId"), G(data, "msgId"), G(data, "targetMessageId"), G(data, "id")), null); return; }
@@ -571,6 +619,17 @@ namespace IXC {
       else if (type != "ChatMessage" && type != "Message") return;
       if (cm.Kind == "chat" && string.IsNullOrWhiteSpace(cm.Text)) return;
       Chat.Ingest(cm); }
+    // the live video in a Streamer.bot YouTube event: data.broadcast.id (a broadcast's id is its video id) or a videoId field
+    static string VideoId(object o, int depth) {
+      var d = o as Dictionary<string, object>; if (d == null || depth > 3) return null;
+      foreach (var kv in d) { var k = kv.Key.ToLowerInvariant(); var sv = kv.Value as string;
+        if (sv != null && (k == "videoid" || k == "broadcastid" || k == "liveid") && Regex.IsMatch(sv, "^[\\w-]{11}$")) return sv;
+        var sub = kv.Value as Dictionary<string, object>;
+        if (sub != null && k.Contains("broadcast")) { var id = G(sub, "id") as string; if (id != null && Regex.IsMatch(id, "^[\\w-]{11}$")) return id; } }
+      foreach (var kv in d) { var r = VideoId(kv.Value, depth + 1); if (r != null) return r; } return null; }
+    static bool ytShapeLogged;
+    // field names only (no values), to see what a Streamer.bot version sends
+    static string Shape(object o, int depth) { var d = o as Dictionary<string, object>; if (d == null || depth > 2) return ""; return string.Join(",", d.Select(kv => kv.Key + (kv.Value is Dictionary<string, object> ? "{" + Shape(kv.Value, depth + 1) + "}" : ""))); }
     static int? FindCount(object o, int depth) {
       var d = o as Dictionary<string, object>; if (d == null || depth > 4) return null;
       foreach (var kv in d) if ((kv.Value is int || kv.Value is long || kv.Value is decimal || kv.Value is double) && Regex.IsMatch(kv.Key, "viewer|concurrent|watching", RegexOptions.IgnoreCase)) return Convert.ToInt32(kv.Value);
@@ -615,6 +674,7 @@ namespace IXC {
         var m = Regex.Match(k, "^platforms\\.(\\w+)\\."); if (!m.Success) return;
         if (m.Groups[1].Value == "streamerbot") { Sb.Restart(); return; }
         var s = Get(m.Groups[1].Value); if (s != null) s.Restart(); Hub.Publish("chat", J.D("type", "chat.status", "platforms", StatusAll())); }; }
+    public static bool IsSetUp(string p) { var s = Get(p); return s != null && s.Configured; }
     public static bool HandlesChat(string p) { var s = Get(p); return s != null && s.Configured && s.State == "connected"; }
     public static bool HandlesViewers(string p) { var s = Get(p); return s != null && s.Configured && s.Viewers.Count != null && (DateTime.Now - s.Viewers.At).TotalSeconds < 120; }
     public static void ReconnectAll() { foreach (var s in All) s.Restart(); Sb.Restart(); }

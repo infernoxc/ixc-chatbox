@@ -1,6 +1,6 @@
 // System check, repairs, backups / restore, settings reset, diagnostics export (no secrets), safe updates, restart / quit codes.
 import { test, after } from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } from 'node:child_process'; import crypto from 'node:crypto';
-import { startCore, api, settings, httpServer, json, sleep, until } from './harness.mjs';
+import { startCore, api, settings, httpServer, json, sleep, until, fakeObs } from './harness.mjs';
 
 const cleanup = []; after(async () => { for (const f of cleanup.reverse()) await f(); });
 const zipText = (f) => execFileSync('python3', ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print("\\n".join(n+"\\n"+z.read(n).decode("utf-8","replace") for n in z.namelist()))', f]).toString();
@@ -71,4 +71,42 @@ test('restart and quit from the dashboard give the supervisor the right exit cod
   if (!second.err) { await until(() => second.exited != null ? true : null, 8000, 'second copy exits'); assert.equal(second.exited, 0, 'a second copy exits quietly'); } else assert.match(String(second.err.message), /exited 0/);
   assert.equal((await api(c, '/api/ping')).status, 200, 'the first copy keeps running');
   await api(c, '/api/system/quit', {}); assert.equal((await waitExit(c)).code, 4);
+});
+
+test('updates install by themselves, but not while you are live; one try per version', async () => {
+  const setup = Buffer.from('auto installer ' + Date.now()); const sum = crypto.createHash('sha256').update(setup).digest('hex'); let downloads = 0;
+  const gh = await httpServer((req, res) => {
+    if (req.url === '/repos/infernoxc/ixc-chatbox/releases/latest') { json(res, 200, { tag_name: 'v9.9.8', body: 'Auto', assets: [{ name: 'IXC-Setup-v9.9.8.exe', browser_download_url: gh.url + '/dl/IXC-Setup-v9.9.8.exe' }, { name: 'SHA256SUMS.txt', browser_download_url: gh.url + '/dl/SHA256SUMS.txt' }] }); return; }
+    if (req.url === '/dl/IXC-Setup-v9.9.8.exe') { downloads++; res.writeHead(200); res.end(setup); return; }
+    if (req.url === '/dl/SHA256SUMS.txt') { res.writeHead(200); res.end(sum + '  IXC-Setup-v9.9.8.exe\n'); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(gh.close);
+  let live = true; const rumble = await httpServer((req, res) => json(res, 200, { livestreams: [{ is_live: live, watching_now: 5, created_on: '2026-10-05T01:00:00+00:00', chat: { recent_messages: [], recent_rants: [] } }] })); cleanup.push(rumble.close);
+  const c = await startCore({ env: { IXC_EP_GITHUB_API: gh.url, IXC_EP_RUMBLE_API: rumble.url + '/api', IXC_EP_UPDATE_TICK_MS: '1000' }, config: { general: { firstRunDone: true, checkUpdates: true } } }); cleanup.push(() => c.stop());
+  await api(c, '/api/accounts/rumble/rumble', { url: 'https://rumble.com/-livestream-api/get-data?key=SECRETKEY123' });
+  // live on Rumble: the update waits and says why
+  await until(async () => /after your stream ends/.test((await api(c, '/api/status')).body.update.autoNote || ''), 15000, 'waits while live');
+  assert.equal(downloads, 0, 'nothing downloaded while live');
+  // the stream ends: it installs by itself (test mode: downloaded and verified, not run)
+  live = false; await until(async () => /verified/.test((await api(c, '/api/status')).body.update.progress || ''), 30000, 'installed by itself after the stream');
+  assert.equal(downloads, 1);
+  // the same version isn't tried again by itself (a failed installer would otherwise loop)
+  await sleep(3000); assert.equal(downloads, 1, 'one automatic try per version');
+  assert.match((await api(c, '/api/status')).body.update.autoNote, /Update now/);
+});
+
+test('updates never install while OBS is streaming or recording', async () => {
+  const setup = Buffer.from('obs installer ' + Date.now()); const sum = crypto.createHash('sha256').update(setup).digest('hex'); let downloads = 0;
+  const gh = await httpServer((req, res) => {
+    if (req.url === '/repos/infernoxc/ixc-chatbox/releases/latest') { json(res, 200, { tag_name: 'v9.9.7', body: '', assets: [{ name: 'IXC-Setup-v9.9.7.exe', browser_download_url: gh.url + '/dl/IXC-Setup-v9.9.7.exe' }, { name: 'SHA256SUMS.txt', browser_download_url: gh.url + '/dl/SHA256SUMS.txt' }] }); return; }
+    if (req.url === '/dl/IXC-Setup-v9.9.7.exe') { downloads++; res.writeHead(200); res.end(setup); return; }
+    if (req.url === '/dl/SHA256SUMS.txt') { res.writeHead(200); res.end(sum + '  IXC-Setup-v9.9.7.exe\n'); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(gh.close);
+  const obs = await fakeObs(); obs.st.streaming = true; cleanup.push(obs.close);
+  const c = await startCore({ env: { IXC_EP_GITHUB_API: gh.url, IXC_EP_UPDATE_TICK_MS: '1000' }, config: { obs: { websocketUrl: obs.url }, general: { firstRunDone: true, checkUpdates: true } } }); cleanup.push(() => c.stop());
+  await until(async () => /after you stop streaming/.test((await api(c, '/api/status')).body.update.autoNote || ''), 20000, 'waits while streaming');
+  obs.st.streaming = false; obs.st.recording = true;
+  await until(async () => /after you stop recording/.test((await api(c, '/api/status')).body.update.autoNote || ''), 10000, 'waits while recording');
+  assert.equal(downloads, 0, 'nothing downloaded while OBS streams or records');
+  obs.st.recording = false;
+  await until(async () => /verified/.test((await api(c, '/api/status')).body.update.progress || ''), 30000, 'installs once OBS is idle');
 });

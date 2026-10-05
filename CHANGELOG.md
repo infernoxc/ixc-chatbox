@@ -3,6 +3,20 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-10-05
+### Added
+- Updates install by themselves (Settings > General, on by default): IXC checks 20 s after it starts and every 6 hours, and installs a new version only while OBS isn't streaming or recording and no platform shows you live. One automatic try per version; **Update now** always works.
+- The Updates section checks right away when it hasn't checked yet, instead of showing "not checked yet".
+### Fixed
+- YouTube said "Not live (YouTube says the stream is not live)" while live: YouTube's page named the stream but left out its "live" markers on some home connections. IXC now checks the stream's live chat in that case; a running live chat (not a replay) means the stream is live.
+- YouTube went online and offline during a stream: a moment where YouTube's chat answers "no chat" no longer ends the connection. IXC stays on the stream it found (like Twitch and Kick) and only reports it ended when that is confirmed for about a minute. One failed request is no longer shown as "reconnecting".
+- Sending to ALL no longer shows errors for platforms you haven't set up in IXC (e.g. Streamer.bot refusing YouTube); the message still goes everywhere it can. Sending to one platform still says clearly why it failed.
+- YouTube: the live stream is also found when YouTube's page has no canonical link (other page markers are used).
+- YouTube: the status now says the real reason instead of only "not live": "stream scheduled, not started yet", or that YouTube is asking this network to confirm it's not a bot (some networks and VPNs).
+- YouTube showed "offline" while live when YouTube's page didn't show the stream to IXC: IXC now uses the live stream Streamer.bot names in its YouTube events and reads that chat itself, and a viewer number from Streamer.bot is no longer replaced by "offline".
+- Quick connect: a damaged or blocked `cloudflared.exe` is deleted so the next Show QR code downloads it again.
+- Safety net: a request that came through Cloudflare but names this PC as its host never reaches the local API.
+
 ## [3.0.2] - 2026-10-05
 ### Fixed
 - YouTube chat: a short "ended" answer from YouTube no longer flips the chip to Not live; IXC re-checks the stream up to 3 times first.

@@ -13,7 +13,8 @@ test('Kick read by IXC (no sign-in) + Streamer.bot connected: replies go through
   const sb = await wsServer((c) => { if (!sbUp) { c.ws.close(); return; }   // "not running yet" until the test starts it
     c.send({ request: 'Hello', info: { name: 'Streamer.bot' } });
     c.ws.on('message', (d) => { const m = JSON.parse(d.toString()); c.lines.push(m);
-      if (m.request === 'Subscribe' || m.request === 'SendMessage') c.send({ id: m.id, status: 'ok' });
+      if (m.request === 'SendMessage' && m.platform !== 'kick') c.send({ id: m.id, status: 'error', error: 'Not connected to ' + m.platform });   // only Kick is connected in Streamer.bot
+      else if (m.request === 'Subscribe' || m.request === 'SendMessage') c.send({ id: m.id, status: 'ok' });
       else if (m.request === 'GetBroadcaster') c.send({ id: m.id, status: 'ok', platforms: {} });
       else if (m.request === 'GetCommands') c.send({ id: m.id, status: 'ok', commands: [{ enabled: true, commands: ['!drop', '!discord'] }, { enabled: false, commands: ['!off'] }, { enabled: true, commands: ['!socials'] }] }); }); }); cleanup.push(sb.close);
   const c = await startCore({ env: { IXC_EP_KICK_WEB: kweb.url, IXC_EP_KICK_PUSHER: pusher.url + '/app/k', IXC_EP_STREAMERBOT: sb.url },
@@ -32,6 +33,10 @@ test('Kick read by IXC (no sign-in) + Streamer.bot connected: replies go through
   // send to Kick, and to ALL
   let r = (await api(c, '/api/chat/send', { platform: 'kick', message: 'hello kick' })).body; assert.equal(r.results[0].ok, true, JSON.stringify(r));
   r = (await api(c, '/api/chat/send', { platform: 'all', message: 'hello everyone' })).body; assert.ok(r.results.some(x => x.platform === 'kick' && x.ok), JSON.stringify(r));
+  // ALL also tried Twitch and YouTube through Streamer.bot (not used in IXC, not connected in Streamer.bot): no error shown for those
+  assert.deepEqual(r.results.filter(x => !x.ok), [], 'no failures reported for platforms that aren\'t set up');
+  // asking for one of them directly still says why it didn't work
+  const yt = (await api(c, '/api/chat/send', { platform: 'youtube', message: 'hi yt' })).body.results[0]; assert.equal(yt.ok, false); assert.match(yt.error, /Not connected to youtube/);
   const sent = sb.conns.flatMap(x => x.lines).filter(l => l.request === 'SendMessage' && l.platform === 'kick').map(l => l.message);
   assert.deepEqual(sent, ['hello kick', 'hello everyone']);
 });
@@ -46,4 +51,32 @@ test('Twitch viewers without signing in (public data), offline shown as offline,
   await until(async () => (await api(c, '/api/viewers')).body.platforms.twitch.state === 'offline', 15000, 'twitch offline');
   await api(c, '/api/settings', { patch: { 'platforms.twitch.channel': 'nobody' } });
   await until(async () => /no channel called/.test((await api(c, '/api/viewers')).body.platforms.twitch.note || ''), 15000, 'missing channel reported');
+});
+
+test('YouTube page shows no live stream (e.g. YouTube\'s bot check) but Streamer.bot is connected to YouTube: its viewer number stays, and IXC reads chat from the stream Streamer.bot names', async () => {
+  let polls = 0;
+  const yt = await httpServer((req, res) => {
+    // the channel page never names a live video (what some home networks get from YouTube)
+    if (req.url.toLowerCase().startsWith('/@hidden/live')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Sign in to confirm you\'re not a bot"}};</script>'); return; }
+    if (req.url.startsWith('/live_chat') && req.url.includes('v=SBLIVE00001')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) { polls++; json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 500 } }],
+      actions: polls === 2 ? [{ addChatItemAction: { item: { liveChatTextMessageRenderer: { id: 'yb1', message: { runs: [{ text: 'read by IXC itself' }] }, authorName: { simpleText: '@Viewer' }, authorExternalChannelId: 'UC9' } } } }] : [] } } }); return; }
+    if (req.url.startsWith('/youtubei/v1/updated_metadata')) { json(res, 200, { actions: [{ updateViewershipAction: { viewCount: { videoViewCountRenderer: { originalViewCount: '14' } } } }] }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const sb = await wsServer((x) => { x.send({ request: 'Hello', info: { name: 'Streamer.bot' } });
+    x.ws.on('message', (d) => { const m = JSON.parse(d.toString()); if (m.request === 'GetCommands') x.send({ id: m.id, status: 'ok', commands: [] }); else x.send({ id: m.id, status: 'ok', platforms: {} }); }); }); cleanup.push(sb.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url, IXC_EP_STREAMERBOT: sb.url }, config: { viewers: { refreshSec: 15 }, platforms: { youtube: { enabled: true, channel: '@hidden' }, streamerbot: { mode: 'on' } } } }); cleanup.push(() => c.stop());
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.streamerbot.state === 'connected', 10000, 'streamer.bot connected');
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 10000, 'youtube page shows no stream');
+  // Streamer.bot reports YouTube viewers: the number stays, IXC's own check doesn't overwrite it with "offline"
+  sb.conns[0].send({ event: { source: 'YouTube', type: 'StatisticsUpdated' }, data: { concurrentViewers: 12 } });
+  await until(async () => (await api(c, '/api/viewers')).body.platforms.youtube.count === 12, 5000, 'viewers from Streamer.bot');
+  await new Promise(r => setTimeout(r, 17000));   // more than one viewer refresh later
+  const v = (await api(c, '/api/viewers')).body.platforms.youtube; assert.equal(v.state, 'live', JSON.stringify(v)); assert.equal(v.count, 12);
+  // a YouTube chat message through Streamer.bot names the live stream: IXC connects to that stream's chat itself
+  sb.conns[0].send({ event: { source: 'YouTube', type: 'Message' }, data: { eventId: 'e1', message: 'hello from youtube', user: { id: 'UC1', name: 'infernoxc00', isOwner: true },
+    broadcast: { id: 'SBLIVE00001', channelId: 'UC1', title: 'live', status: 'live' } } });
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 15000, 'youtube connected through the stream Streamer.bot named');
+  await until(async () => (await api(c, '/api/chat/history')).body.messages?.some(m => m.id === 'yb1'), 10000, 'chat read by IXC');
+  await until(async () => (await api(c, '/api/viewers')).body.platforms.youtube.count === 14, 20000, 'viewers from IXC once connected');
 });

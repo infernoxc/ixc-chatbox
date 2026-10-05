@@ -4,7 +4,7 @@
 ; Copyright (c) 2026 Ishan (InFerNoxC) - MIT License
 
 #ifndef AppVersion
-  #define AppVersion "3.0.2"
+  #define AppVersion "3.0.3"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\dist\stage"

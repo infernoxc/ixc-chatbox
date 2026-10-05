@@ -23,7 +23,7 @@ export async function startCore(opts = {}) {
   const cfg = Object.assign({ helper: { port }, obs: { websocketUrl: 'ws://127.0.0.1:1/' }, platforms: { streamerbot: { mode: 'off' } }, general: { firstRunDone: true, checkUpdates: false } }, opts.config || {});
   if (!opts.keepConfig) fs.writeFileSync(path.join(dir, 'config.json'), opts.rawConfig ?? JSON.stringify(cfg, null, 2));
   if (opts.defaults) fs.writeFileSync(path.join(app, 'core/ixc.defaults.json'), JSON.stringify(opts.defaults)); else if (fs.existsSync(path.join(app, 'core/ixc.defaults.json'))) fs.rmSync(path.join(app, 'core/ixc.defaults.json'));
-  const env = Object.assign({}, process.env, { IXC_TTS_FAKE: '1', IXC_OBS_CONFIG: path.join(dir, 'obs-config'), IXC_EP_NET_CHECK: 'http://127.0.0.1:1/', IXC_EP_TWITCH_GQL: 'http://127.0.0.1:1/' }, opts.env || {});
+  const env = Object.assign({}, process.env, { IXC_TTS_FAKE: '1', IXC_OBS_CONFIG: path.join(dir, 'obs-config'), IXC_EP_NET_CHECK: 'http://127.0.0.1:1/', IXC_EP_TWITCH_GQL: 'http://127.0.0.1:1/', IXC_EP_YOUTUBE_END_CONFIRM_MS: '3000' }, opts.env || {});
   const proc = spawn('mono', [path.join(app, 'core/ixc-core.exe'), '--test', '--config', path.join(dir, 'config.json')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; proc.stdout.on('data', d => out += d); proc.stderr.on('data', d => out += d);
   const core = { port, dir, proc, url: 'http://127.0.0.1:' + port, exited: null, output: () => out };
@@ -101,6 +101,8 @@ export async function fakeObs(opts = {}) {
         case 'CreateSceneItem': if (!st.items[q.sceneName]) fail('no scene'); else { st.items[q.sceneName].push(q.sourceName); data = { sceneItemId: st.items[q.sceneName].length }; } break;
         case 'SetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found by the name of `' + q.inputName + '`.'); else { if (opts.notReadyOnce && !st.nr) { st.nr = 1; ok = false; comment = 'OBS is not ready to perform the request.'; break; } Object.assign(st.tracks[q.inputName], q.inputAudioTracks); } break;
         case 'GetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found'); else data = { inputAudioTracks: st.tracks[q.inputName] }; break;
+        case 'GetStreamStatus': data = { outputActive: !!st.streaming }; break;
+        case 'GetRecordStatus': data = { outputActive: !!st.recording }; break;
         default: fail('unknown request ' + t); }
       c.send({ op: 7, d: { requestType: t, requestId: id, requestStatus: { result: ok, code: ok ? 100 : 600, comment }, responseData: data } }); }); });
   s.st = st; return s; }
