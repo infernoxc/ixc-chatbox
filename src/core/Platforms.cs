@@ -334,6 +334,10 @@ namespace IXC {
     // the live video Streamer.bot names in its YouTube events: used when the channel page doesn't show the stream
     // (YouTube's "confirm you're not a bot" page on some networks, an unlisted stream, another page layout)
     volatile string sbVideo = ""; int endSignals; DateTime firstEnd;
+    // the stream whose chat just ended: for a while YouTube's page can still name it and its chat page can still look live, so
+    // the "running live chat" and Streamer.bot fallbacks don't count for it (the page's own "live" marker still does)
+    string endedVideo = ""; DateTime endedAt = DateTime.MinValue;
+    bool JustEnded(string id) { return id.Length > 0 && id == endedVideo && (DateTime.Now - endedAt).TotalMinutes < 10; }
     static int EndConfirmMs { get { return int.Parse(Ep.Get("youtube_end_confirm_ms", "45000")); } }
     public void StreamerBotVideo(string id) {
       if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
@@ -364,7 +368,7 @@ namespace IXC {
             // that keeps happening for a while; until then the chat is re-opened and the state stays as it is
             if (endSignals++ == 0) firstEnd = DateTime.Now;
             if (endSignals >= 3 && (DateTime.Now - firstEnd).TotalMilliseconds >= EndConfirmMs) {
-              if (VideoId == sbVideo) sbVideo = ""; VideoId = ""; LiveChatId = ""; endSignals = 0; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
+              if (VideoId == sbVideo) sbVideo = ""; endedVideo = VideoId; endedAt = DateTime.Now; VideoId = ""; LiveChatId = ""; endSignals = 0; Set("unavailable", "the live stream ended"); Log.Info("chat", "YouTube live chat ended"); wait = 15000; }
             else { Log.Debug("chat", "YouTube chat: " + msg + " - checking again"); wait = Math.Max(2000, EndConfirmMs / 3); } }
           else {
             // one failed request isn't shown; a connection that keeps failing is
@@ -389,7 +393,7 @@ namespace IXC {
     bool FindLive() {
       bool found = false; Exception err = null;
       try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
-      if (!found && sbVideo.Length > 0) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
+      if (!found && sbVideo.Length > 0 && !JustEnded(sbVideo)) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
       if (err != null) throw err; return found; }
     bool FindLiveOnPage() {
       notLiveWhy = "not live right now";
@@ -409,7 +413,7 @@ namespace IXC {
         if (Regex.IsMatch(page, "\"isUpcoming\":true")) { notLiveWhy = "the stream is scheduled but not started - press Go live in YouTube Studio"; VideoId = ""; return false; }
         // the page names a video but leaves out YouTube's "live" markers (seen on home connections in Oct 2026, and with YouTube's
         // bot check): the video's own live chat decides - a running live chat means the stream is live
-        if (LiveChatRunning(VideoId)) { Log.Info("chat", "YouTube: the page doesn't say \"live\", but the live chat of " + VideoId + " is running - connecting"); return true; }
+        if (!JustEnded(VideoId) && LiveChatRunning(VideoId)) { Log.Info("chat", "YouTube: the page doesn't say \"live\", but the live chat of " + VideoId + " is running - connecting"); return true; }
         notLiveWhy = BotCheck(page) ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
     // a live (not replay) chat with a continuation: the stream is on air

@@ -152,3 +152,23 @@ test('YouTube: the page names the stream but leaves out the "live" markers (seen
   video = 'OLDSTREAM01'; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NoMarks' } });
   await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /not live/.test(s.detail) ? s : null; }, 15000, 'a replay chat is not live');
 });
+
+test('YouTube: after a stream ends, a channel page that still names it (and its chat page that still looks live for a while) doesn\'t reconnect to it', async () => {
+  let ended = false;
+  const yt = await httpServer((req, res) => {
+    // the page keeps naming the stream, without "live" markers (as on the streamer's PC)
+    if (req.url.toLowerCase().startsWith('/@afterend/live')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<link rel="canonical" href="https://www.youtube.com/watch?v=JUSTENDED01">'); return; }
+    // the chat page still looks live even after the stream ended
+    if (req.url.startsWith('/live_chat')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<script>ytcfg.set({"INNERTUBE_API_KEY":"K","INNERTUBE_CLIENT_VERSION":"2.2026"});</script><script>window["ytInitialData"] = {"contents":{"liveChatRenderer":{"continuations":[{"invalidationContinuationData":{"continuation":"C0"}}],"actions":[]}}};</script>'); return; }
+    if (req.url.startsWith('/youtubei/v1/live_chat/get_live_chat')) {
+      if (ended) { json(res, 200, { continuationContents: { liveChatContinuation: { actions: [] } } }); return; }   // no continuation: chat finished
+      json(res, 200, { continuationContents: { liveChatContinuation: { continuations: [{ timedContinuationData: { continuation: 'C1', timeoutMs: 300 } }], actions: [] } } }); return; }
+    res.writeHead(404); res.end(); }); cleanup.push(yt.close);
+  const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url }, config: { platforms: { youtube: { enabled: true, channel: '@afterend' } } } }); cleanup.push(c.stop);
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'connected', 15000, 'connected');
+  ended = true;
+  await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.youtube; return s.state === 'unavailable' && /ended/.test(s.detail); }, 20000, 'stream ended');
+  const seen = new Set(); const end = Date.now() + 22000;   // longer than the 15 s before IXC looks for a stream again
+  while (Date.now() < end) { seen.add((await api(c, '/api/chat/status')).body.platforms.youtube.state); await new Promise(r => setTimeout(r, 250)); }
+  assert.ok(!seen.has('connected'), 'reconnected to the stream that ended: ' + [...seen]);
+});
