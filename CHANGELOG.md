@@ -3,6 +3,10 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-10-06
+### Fixed
+- YouTube: after a stream ended, IXC could connect to it again and drop it again for several minutes (YouTube's page can keep naming the stream that just ended, and its chat page can still look live). The stream that just ended is no longer taken from the chat or Streamer.bot for 10 minutes; YouTube's own "live" marker still counts.
+
 ## [3.0.3] - 2026-10-05
 ### Added
 - Updates install by themselves (Settings > General, on by default): IXC checks 20 s after it starts and every 6 hours, and installs a new version only while OBS isn't streaming or recording and no platform shows you live. One automatic try per version; **Update now** always works.
