@@ -77,14 +77,14 @@ function Mine { @(Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | 
 function WaitFor([scriptblock]$cond, $sec) { for ($i = 0; $i -lt $sec * 2; $i++) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 500 }; $false }
 try {
   $sup = Start-Process "$tmp\app\core\ixc-core.exe" -ArgumentList "--background --config `"$cfg2`"" -PassThru
-  Check 'signed in, OBS closed: only the tray runs, IXC waits' { Start-Sleep 6; -not $sup.HasExited -and -not (Up2) -and (Mine).Count -eq 1 }
+  Check 'signed in, OBS closed: only the tray runs, IXC waits' { Start-Sleep 6; Write-Host "    tray alive: $(-not $sup.HasExited), IXC answering: $(Up2), processes: $(@(Mine).Count)"; -not $sup.HasExited -and -not (Up2) -and @(Mine).Count -eq 1 }
   $obs = Start-Process "$tmp\fakeobs\obs64.exe" -ArgumentList '-n 120 127.0.0.1' -WindowStyle Hidden -PassThru
   Check 'OBS opens -> IXC starts by itself' { WaitFor { Up2 } 25 }
-  Check 'one IXC only (tray + worker)' { (Mine).Count -eq 2 }
+  Check 'one IXC only (tray + worker)' { @(Mine).Count -eq 2 }
   Stop-Process -Id $obs.Id -Force
-  Check 'OBS closes -> IXC stops after the grace time, the tray stays' { (WaitFor { -not (Up2) } 30) -and -not $sup.HasExited -and (Mine).Count -eq 1 }
+  Check 'OBS closes -> IXC stops after the grace time, the tray stays' { (WaitFor { -not (Up2) } 30) -and -not $sup.HasExited -and @(Mine).Count -eq 1 }
   Start-Process "$tmp\app\core\ixc-core.exe" -ArgumentList "--config `"$cfg2`"" | Out-Null
-  Check 'opening IXC yourself starts it without OBS (no second copy)' { (WaitFor { Up2 } 25) -and (Mine).Count -eq 2 }
+  Check 'opening IXC yourself starts it without OBS (no second copy)' { (WaitFor { Up2 } 25) -and @(Mine).Count -eq 2 }
   Check 'supervisor log says what happened' { $l = Get-Content -Raw "$tmp\data2\logs\supervisor.log"; $l -match 'OBS opened' -and $l -match 'OBS closed' -and $l -match 'opened by you' }
 } finally { Mine | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }; Get-Process obs64 -EA SilentlyContinue | ? { $_.Path -like "$tmp*" } | Stop-Process -Force -EA SilentlyContinue }
 
