@@ -64,6 +64,7 @@ namespace IXC {
       return U.Backoff(Failures - 1, 1000, MaxBackoffMs); }
 
     void RunOnce(ref bool connected) {
+      ws = null;   // from here on, anything still arriving on an older socket is ignored (see RecvLoop)
       using (var w = new ClientWebSocket()) {
         w.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         var hs = RequestHeaders(); if (hs != null) foreach (var kv in hs) w.Options.SetRequestHeader(kv.Key, kv.Value);
@@ -89,6 +90,7 @@ namespace IXC {
         ms.SetLength(0); WebSocketReceiveResult r;
         do { r = await w.ReceiveAsync(new ArraySegment<byte>(buf), CancellationToken.None); if (r.MessageType == WebSocketMessageType.Close) return; ms.Write(buf, 0, r.Count); if (ms.Length > 16000000) throw new Exception("message too large"); } while (!r.EndOfMessage);
         LastMessage = DateTime.Now; var raw = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
+        if (ws != w) return;   // a newer connection attempt has started: a late message from this one must not affect it
         try { OnText(raw); } catch (Exception e) { Log.Err(Area, Name + " message: " + e.Message); } } }
 
     public async Task Tx(string text) {

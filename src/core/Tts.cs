@@ -86,7 +86,7 @@ namespace IXC {
     static void Watch() {
       bool stuck; lock (L) { if (current != null && (Paused || pausedPlayback)) currentUntil = currentUntil.AddSeconds(1); stuck = current != null && DateTime.Now > currentUntil; }
       if (stuck) { Log.Warn("tts", "the TTS source did not report back - moving on"); Finish(null, "played (no confirmation)"); } }
-    static void Changed() { stateT.Change(150, Timeout.Infinite); }
+    public static void Changed() { stateT.Change(150, Timeout.Infinite); }
 
     // ---------- chat -> queue ----------
     static void Skip(ChatMsg c, string reason, string text) {
@@ -231,7 +231,7 @@ namespace IXC {
     public static Dictionary<string, object> StateMsg() {
       lock (L) return J.D("type", "tts.state", "settings", SettingsView(), "current", current == null ? null : current.View(), "paused", Paused,
         "queue", Queue.OrderByDescending(q => q.Priority).ThenBy(q => q.At).Select(q => q.View()).ToList(), "history", History.Reverse().Take(15).Select(h => h.View()).ToList(),
-        "skipped", Skipped.Reverse().Take(12).ToList(), "players", Hub.Count("tts"), "engine", EngineStatus(), "speaking", current != null && current.Status == "playing"); }
+        "skipped", Skipped.Reverse().Take(12).ToList(), "players", Hub.Count("tts"), "engine", EngineStatus(), "speaking", current != null && current.Status == "playing", "route", Routing.Info("tts")); }
     static string EngineStatus() { return DateTime.Now < edgeOffUntil ? "offline Windows voice (neural voice failed: " + edgeError + ")" : lastEngine.Length > 0 ? lastEngine : "Edge neural (ready)"; }
     public static bool Speaking { get { lock (L) return current != null && current.Status == "playing"; } }
     public static Dictionary<string, object> DiagInfo() {

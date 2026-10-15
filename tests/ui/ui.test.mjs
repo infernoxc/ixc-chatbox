@@ -28,13 +28,24 @@ test('every dashboard page renders with live data and no script errors', async (
   await settings(c, { 'general.firstRunDone': true, 'platforms.kick.enabled': true, 'platforms.kick.channel': 'demo' });
   for (let i = 0; i < 6; i++) await inject(c, { platform: ['twitch', 'kick', 'youtube'][i % 3], id: 'ui' + i, name: ['Rushkaa', 'ShadowSniper', 'Aman Verma'][i % 3], text: ['GG how many kills?', 'that spray transfer was insane', 'first time here, love the setup'][i % 3] + ' #' + i, mod: i === 1 });
   const p = await open('/app/');
-  for (const pg of ['home', 'chat', 'music', 'requests', 'accounts', 'overlays', 'phone', 'tts', 'voices', 'commands', 'timers', 'obs', 'filters', 'check', 'settings']) {
+  for (const pg of ['home', 'chat', 'music', 'requests', 'accounts', 'overlays', 'phone', 'tts', 'voices', 'commands', 'timers', 'obs', 'audio', 'filters', 'check', 'settings']) {
     await p.evaluate((h) => { location.hash = h; }, '#' + pg); await p.waitForTimeout(pg === 'check' ? 1200 : 700);
     assert.ok(await p.locator('#main').evaluate(el => el.innerText.length > 20 || el.querySelector('iframe')), pg + ' has content'); await shot(p, '10-page-' + pg); }
   // OBS page: connected (fake OBS), streaming shown, a scene button switches the scene in OBS
   obs.event('StreamStateChanged', { outputActive: true });
   await p.evaluate(() => { location.hash = '#obs'; }); await p.waitForSelector('text=Streaming', { timeout: 8000 });
   await p.click('button[data-scene="BRB"]'); await until(() => obs.st.current === 'BRB', 4000, 'scene switched from the page'); await p.waitForTimeout(500); await shot(p, '10-page-obs-connected');
+  // Audio routing: switching music off for Kick turns Kick's track off on the music source in OBS, chat voice untouched
+  await p.evaluate(() => { location.hash = '#audio'; }); await p.waitForSelector('input[data-src="music"][data-p="kick"]', { state: 'attached' });
+  await until(async () => (await api(c, '/api/music/route')).body.ok, 8000, 'route applied');
+  await p.locator('label.switch:has(input[data-src="music"][data-p="kick"])').click();
+  await until(() => obs.st.tracks['IXC Music Player'][2] === false && obs.st.tracks['IXC Music Player'][1] === true, 5000, 'kick track off in OBS');
+  assert.equal(obs.st.tracks['IXC TTS'][2], true); await p.waitForTimeout(400); await shot(p, '10-page-audio-routing');
+  await api(c, '/api/music/route', { mode: 'all' });
+  // Commands: add the ready-made !followage and !clip
+  await p.evaluate(() => { location.hash = '#commands'; }); await p.waitForSelector('#cPresets'); await p.click('#cPresets'); await p.waitForSelector('#preSave');
+  await shot(p, '10-page-commands-presets'); await p.click('#preSave');
+  await until(async () => { const l = (await api(c, '/api/settings')).body.values['commands.list']; return l.some(x => x.trigger === '!followage') && l.some(x => x.trigger === '!discord' && !x.enabled); }, 4000, 'presets added');
   // Timers: create one through the form; it is saved and shows its status
   await p.evaluate(() => { location.hash = '#timers'; }); await p.waitForTimeout(600);
   await p.click('#tAdd'); await p.fill('#tN', 'Socials'); await p.fill('#tM', 'Follow me everywhere!'); await p.fill('#tI', '10'); await p.fill('#tL', '3'); await p.click('#tSave');
@@ -70,6 +81,19 @@ test('docks and the phone page', async () => {
   const pr = (await api(c, '/api/remote/pair', {})).body; const ph = await b.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
   ph.on('pageerror', e => errors.push('phone: ' + e.message)); await ph.goto(pr.url); await ph.waitForSelector('#conn.ok', { timeout: 15000 });
   await ph.waitForTimeout(800); await shot(ph, '22-phone-music');
+  // routing on the phone: a mixed choice made on the PC shows as such, a tap on the phone changes OBS, music and voice stay separate
+  await until(async () => (await api(c, '/api/music/route')).body.ok, 8000, 'route applied');
+  await api(c, '/api/music/route', { platform: 'kick', on: false });
+  const sel = async () => ph.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-rp],[data-r]')].map(b => [b.dataset.rp || b.dataset.r, b.classList.contains('sel')])));
+  await until(async () => { const v = await sel(); return v.twitch && !v.kick && v.youtube && !v.all && !v.off; }, 5000, 'phone shows Twitch + YouTube');
+  await shot(ph, '22-phone-music-mixed');
+  await ph.click('[data-rp="youtube"]');
+  await until(() => obs.st.tracks['IXC Music Player'][3] === false && obs.st.tracks['IXC Music Player'][1] === true && obs.st.tracks['IXC Music Player'][2] === false, 5000, 'youtube music off in OBS from the phone');
+  await until(async () => { const v = await sel(); return v.twitch && !v.kick && !v.youtube; }, 5000, 'phone shows Twitch only');
+  assert.equal((await api(c, '/api/music/route')).body.mode, 'twitch', 'the PC sees the change');
+  const tts = (await api(c, '/api/tts/route')).body; assert.equal(tts.mode, 'all'); assert.equal(obs.st.tracks['IXC TTS'][3], true, 'chat voice not touched');
+  await ph.click('[data-r="all"]'); await until(() => [1, 2, 3].every(k => obs.st.tracks['IXC Music Player'][k] === true), 5000, 'ALL from the phone');
+  await until(async () => { const v = await sel(); return v.all && v.twitch && v.kick && v.youtube; }, 5000, 'phone shows ALL');
   for (const t of ['chat', 'voice', 'status']) { await ph.click(`#tabs button[data-t="${t}"]`); await ph.waitForTimeout(500); await shot(ph, '23-phone-' + t); }
   assert.equal((await api(c, '/api/remote/status')).body.devices.length, 1, 'phone paired from the real page');
   await ph.close();

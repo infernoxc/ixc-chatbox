@@ -68,8 +68,8 @@ namespace IXC {
       bool r = false; try { r = Process.GetProcessesByName("obs64").Length > 0 || Process.GetProcessesByName("obs").Length > 0 || Process.GetProcessesByName("obs32").Length > 0; } catch { }
       runCache = r; runAt = DateTime.Now; return r; }
     public static void Init() {
-      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); ObsControl.OnReady(); var t = AutoSetup(false); if (Music.Enabled) Music.OnObsReady(); };
-      Link.OnObsEvent = (type, d) => { ObsControl.OnEvent(type, d); if (Music.Enabled) Music.OnObsEvent(type, d); };
+      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); ObsControl.OnReady(); var t = AutoSetup(false); Routing.OnObsReady(); };
+      Link.OnObsEvent = (type, d) => { ObsControl.OnEvent(type, d); Routing.OnObsEvent(type, d); };
       Link.Start(); }
     public static void Changed() { Hub.Publish("status", Status.Msg()); }
 
@@ -168,13 +168,14 @@ namespace IXC {
           await EnsureInput(AudioScene, name, "browser_source", BrowserSettings(Program.BaseUrl + "/music/player.html", 320, 180), false); steps.Add("music player source ready"); }
         if (Chat.Enabled) {
           var existing = await FindByUrl("/chat/tts.html", TtsInput); var name = existing ?? TtsInput;
+          if (existing != null && existing != TtsInput) { Cfg.Set("tts.routing.inputName", existing); Cfg.Save(); }
           await EnsureInput(AudioScene, name, "browser_source", BrowserSettings(Program.BaseUrl + "/chat/tts.html", 64, 64), false); steps.Add("chat voice (TTS) source ready"); }
         int added = 0;
         foreach (var s in scenes) { if (s == AudioScene) continue; if (!await InScene(s, AudioScene)) { try { await Link.Call("CreateSceneItem", J.D("sceneName", s, "sourceName", AudioScene, "sceneItemEnabled", true)); added++; } catch (Exception e) { Log.Warn("obs", "could not add IXC Audio to scene " + s + ": " + e.Message); } } }
         if (added > 0) steps.Add("added IXC Audio to " + added + " scene(s)");
         Cfg.Set("obs.setupDone", true); Cfg.Save(); SetupOk = true; LastSetup = "OBS is set up (" + DateTime.Now.ToString("HH:mm") + ")";
         Log.Info("obs", "OBS setup done: " + string.Join("; ", steps.Cast<string>()));
-        if (Music.Enabled) Music.OnObsReady();
+        Routing.OnObsReady();
         return J.D("ok", true, "steps", steps); }
       catch (Exception e) { SetupOk = false; LastSetup = "OBS setup failed: " + U.Plain(e); Log.Err("obs", LastSetup); return J.D("ok", false, "error", LastSetup, "steps", steps); }
       finally { Interlocked.Exchange(ref setupBusy, 0); Changed(); } }

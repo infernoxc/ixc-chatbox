@@ -107,6 +107,8 @@ export async function fakeObs(opts = {}) {
         case 'SetSceneItemEnabled': { const n = (st.items[q.sceneName] || [])[q.sceneItemId - 1]; if (!n) fail('No scene item'); else if (q.sceneItemEnabled) st.hidden.delete(q.sceneName + '|' + n); else st.hidden.add(q.sceneName + '|' + n); } break;
         case 'GetStreamStatus': data = { outputActive: !!st.streaming }; break;
         case 'GetRecordStatus': data = { outputActive: !!st.recording }; break;
+        case 'GetReplayBufferStatus': data = { outputActive: !!st.replay }; break;
+        case 'SaveReplayBuffer': if (!st.replay) fail('Replay buffer is not active.'); else st.saved = (st.saved || 0) + 1; break;
         default: fail('unknown request ' + t); }
       c.send({ op: 7, d: { requestType: t, requestId: id, requestStatus: { result: ok, code: ok ? 100 : 600, comment }, responseData: data } }); }); });
   // push an OBS event to IXC (e.g. StreamStateChanged), the way OBS does

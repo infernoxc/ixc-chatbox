@@ -97,3 +97,42 @@ needs it to start or to read chat. A streamer who runs it, as the author does, g
 2. Moderation on each (delete / timeout / ban), especially Kick, whose request fields couldn't be checked against Kick's docs here.
 3. A real YouTube stream from a home connection (detection, staying connected, ending).
 4. Real OBS 30+: scene switching, show / hide, streaming state, `!brb`.
+
+## 6. 3.2.0 audit (all-in-one task), 2026-10-15
+
+**Streamer.bot**: not needed for anything. No code path requires it; `platforms.streamerbot.mode` = `auto` only uses it when it is
+already running, and **Never** turns it off completely. Every feature in section 2 works with it off (CI runs the suite with it off).
+
+| Area | Feature | Status | Tests |
+|---|---|---|---|
+| Audio | Music ON/OFF per platform (independent switches) | ✅ 3.2.0 `Routing.cs`, Audio routing page, dock | auto (mock OBS, browser) `16`, `ui` |
+| | Chat voice (TTS) ON/OFF per platform | ✅ 3.2.0 same mechanism on the "IXC TTS" source | auto (mock OBS) `16` |
+| | Real effect on viewers | needs one OBS output per platform, each on its own track | manual: **not done** |
+| OBS | Start IXC when OBS opens, stop after OBS closes, one copy only | ✅ 3.2.0 `Supervisor.cs` (tray watches `obs64.exe`) | auto (Windows) `smoke.ps1` 2b with a stand-in `obs64.exe` |
+| Music | Shuffle without repeats, never twice in a row | ✅ 3.2.0 (was: random pick each time → repeats) | auto (mock) `17` |
+| | Autoplay skips songs that played recently (also other uploads) | ✅ 3.2.0 | auto (mock) `17` |
+| | Playlists, history | ✅ 3.2.0 | auto (mock + browser) `17`, `ui` |
+| Commands | `!commands` `!followage` `!clip` `!discord` `!socials` presets | ✅ 3.2.0 | auto (mock Helix + OBS) `18`, `ui` |
+| Accounts | Last message time, reply ability, expired sign-in shown | ✅ 3.2.0 | auto (browser) |
+| Kick | Chat connection after Kick retired its old chat key (4001) | ✅ 3.2.0 new key, fallbacks, lifecycle hardening | auto (mock) `19`; live (CI): **connected to real Kick chat** 2026-10-15; receiving real messages **not seen** (test channel offline); sending: manual **not done** |
+| YouTube | Live stream found through the official Data API when YouTube's page shows the bot check (account connected) | ✅ 3.2.0 | auto (mock) `20`; manual: **not done** |
+| Phone | Music on/off per platform, mixed choices shown, PC and phone in sync | ✅ 3.2.0 | auto (browser + mock OBS) `ui` |
+| Performance | idle / busy CPU and RAM | measured on the CI Windows runner (see the CI log, `PERF` lines) | auto (Windows) |
+
+### Platforms that were asked for but are not added (and why)
+- **TikTok LIVE**: TikTok has no official API for reading or sending LIVE chat. The libraries that exist reverse-engineer TikTok's
+  website; that is the kind of unauthorized scraping this project doesn't do. Not added.
+- **Facebook Live**: official Graph API exists (`/{live-video-id}/comments`, Server-Sent Events). It needs a Meta app that passes Meta's
+  App Review for Page permissions, and a Page; nothing IXC can do for you. Possible later; not added because it can't be tested here.
+- **Instagram Live**: comments only through a webhook (`live_comments`) for Business accounts, which needs a public HTTPS server and
+  App Review. A desktop app can't receive it without a relay. Not added.
+- **Multiple accounts per platform**: one account per platform (the channel you stream on). Not added.
+
+### OBS plugins
+- **Aitum Multistream**: IXC doesn't control it (no documented obs-websocket requests). Per-platform audio works if each Aitum output can
+  be set to its own audio track; that could not be checked here. **jrDockie** (saves/loads dock layouts): IXC's docks are ordinary OBS
+  browser docks, so jrDockie saves them like any other dock; nothing to do in IXC.
+
+### Not tested (needs your PC / accounts)
+Real OBS with real outputs (audio routing heard on each platform), real Twitch clip / follow age, start-with-OBS on your PC
+(tested on a clean CI Windows with a stand-in process, not with real OBS), TTS heard through your speakers/OBS.

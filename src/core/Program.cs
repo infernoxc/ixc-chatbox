@@ -70,6 +70,7 @@ namespace IXC {
       NetWatch.Init();
       Safe("TTS", () => { if (HasChat) Tts.Init(); });
       Safe("chat", () => { if (HasChat) { Chat.Init(); Platforms.Init(); } });
+      Safe("routing", Routing.Init);
       Safe("music", () => { if (HasMusic) Music.Init(); });
       Safe("OBS", () => Obs.Init());
       Safe("phone", () => Remote.Init());
@@ -136,6 +137,7 @@ namespace IXC {
       if (path == "/api/update/check") { Http.Json(ctx, Updates.Check()); return; }
       if (path == "/api/accounts") { Http.Json(ctx, Accounts.All()); return; }
       // Streamer.bot commands that IXC doesn't have yet (names only: Streamer.bot doesn't share what its actions do)
+      if (path == "/api/commands/presets") { if (m == "POST") { var r = Commands.AddPresets(J.List(Http.BodyJson(ctx), "triggers")); Http.Json(ctx, J.Bool(r, "ok", false) ? 200 : 400, r); } else Http.Json(ctx, J.D("presets", Commands.Presets())); return; }
       if (path == "/api/commands/streamerbot") { var have = new HashSet<string>(Commands.Triggers(), StringComparer.OrdinalIgnoreCase); var sb = Platforms.Sb.Ready ? Platforms.Sb.Commands().Result : new List<string>();
         Http.Json(ctx, J.D("connected", Platforms.Sb.Ready, "commands", sb.Where(x => x.StartsWith("!") && !have.Contains(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList())); return; }
       if (path == "/api/accounts/apps" && m == "POST") { var err = Accounts.SetApps(Http.BodyJson(ctx)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "apps", Accounts.Apps())); return; }
@@ -149,6 +151,7 @@ namespace IXC {
       if (path == "/api/obs/overlay" && m == "POST") { var b = Http.BodyJson(ctx); try { Http.Json(ctx, Obs.AddOverlay(J.Str(b, "name", "Overlay"), BaseUrl + J.Str(b, "path", "/overlay/"), J.Int(b, "width", 800), J.Int(b, "height", 200)).Result); } catch (Exception e) { Http.Json(ctx, 400, J.D("ok", false, "error", U.Plain(e))); } return; }
       if (path == "/api/firstrun/done" && m == "POST") { Settings.Set("general.firstRunDone", true); Http.Json(ctx, J.D("ok", true)); return; }
       if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m)) return;
+      if (Routing.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
       if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;
       if (Remote.LocalApi(ctx, path, m)) return;
@@ -181,6 +184,7 @@ namespace IXC {
         if (c.Remote && patch.Keys.Any(k => !Remote.PhoneSettings.Contains(k))) { Hub.Send(c, J.D("type", "error", "error", "That setting can only be changed on the PC", "reqId", J.Str(msg, "reqId", ""))); return; }
         var err = Settings.Apply(patch); Hub.Send(c, J.D("type", "settings.saved", "reqId", J.Str(msg, "reqId", ""), "ok", err == null, "error", err)); return; }
       if (type == "viewers.get") { Hub.Send(c, Viewers.Snapshot()); return; }
+      Routing.OnWs(c, type, msg);
       if (HasMusic) Music.OnWs(c, type, msg);
       if (HasChat) { Chat.OnWs(c, type, msg); Tts.OnWs(c, type, msg); }
       Remote.OnWs(c, type, msg);

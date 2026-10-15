@@ -53,6 +53,11 @@ jobs:
           IXC_GOOGLE_CLIENT_ID: ${{ vars.IXC_GOOGLE_CLIENT_ID }}
           IXC_KICK_CLIENT_ID: ${{ vars.IXC_KICK_CLIENT_ID }}
         run: powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 -Installer -SkipTests
+      - name: Print installer checksums and architecture
+        shell: powershell
+        run: |
+          Get-FileHash dist\IXC-Setup-v*.exe -Algorithm SHA256 | % { "SHA256  $($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))  $((Get-Item $_.Path).Length) bytes" }
+          Get-ChildItem dist\IXC-Setup-v*.exe | % { $b = [IO.File]::ReadAllBytes($_.FullName); $pe = [BitConverter]::ToInt32($b, 60); "PE machine: 0x{0:X4} (0x014C = x86 setup program, runs on 64-bit Windows)" -f [BitConverter]::ToUInt16($b, $pe + 4) }
       - name: Clean-machine test of IXC-Setup.exe (silent install, crash restart, update, uninstall)
         shell: powershell
         run: |

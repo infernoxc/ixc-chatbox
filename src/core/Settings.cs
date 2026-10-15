@@ -28,7 +28,7 @@ namespace IXC {
 
     static Settings() {
       // general
-      B("general.firstRunDone", false); B("general.advanced", false); B("general.autoRestart", true); B("general.checkUpdates", true); B("general.autoUpdate", true); B("general.openDashboardOnStart", false);
+      B("general.firstRunDone", false); B("general.advanced", false); B("general.autoRestart", true); B("general.checkUpdates", true); B("general.autoUpdate", true); B("general.openDashboardOnStart", false); B("general.followObs", true); I("general.obsGraceSec", 20, 0, 600);
       B("diagnostics.verboseLog", false); Adv("diagnostics.verboseLog");
       // platforms (built-in connections; Streamer.bot is optional)
       foreach (var p in PlatformIds) B("platforms." + p + ".enabled", false);
@@ -75,7 +75,10 @@ namespace IXC {
       O("tts.voices"); Adv("tts.voices");
       // music
       I("music.volume", 40, 0, 100); B("music.shuffle", false); B("music.repeat", true); B("music.autoplay", true); B("music.autostart", false);
-      E("music.routing.mode", "all", "all", "twitch", "kick", "youtube", "off"); S("music.routing.inputName", "IXC Music Player", 100);
+      E("music.routing.mode", "all", "all", "twitch", "kick", "youtube", "off", "custom");
+      E("tts.routing.mode", "all", "all", "twitch", "kick", "youtube", "off", "custom"); S("tts.routing.inputName", "IXC TTS", 100);
+      foreach (var p in Routing.Plats) { B("music.routing.on." + p, true); B("tts.routing.on." + p, true); }
+      S("music.routing.inputName", "IXC Music Player", 100);
       L("music.routing.tracks.twitch", 6, "1"); L("music.routing.tracks.kick", 6, "2"); L("music.routing.tracks.youtube", 6, "3");
       L("music.localFolders", 20);
       B("music.ducking.enabled", true); I("music.ducking.level", 25, 0, 100); I("music.ducking.fadeDownMs", 400, 0, 5000); I("music.ducking.fadeUpMs", 900, 0, 8000); I("music.ducking.minVolume", 3, 0, 100);

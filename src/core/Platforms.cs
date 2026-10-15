@@ -28,6 +28,7 @@ namespace IXC {
   }
 
   public abstract class ChatSource {
+    public DateTime LastMsg = DateTime.MinValue;   // last real chat message (account health on the Platforms page)
     public string Id, Label; public ViewerInfo Viewers = new ViewerInfo();
     public abstract bool Configured { get; }
     public abstract string State { get; }
@@ -47,7 +48,7 @@ namespace IXC {
     public Dictionary<string, object> Status() {
       var acc = Accounts.Info(Id);
       return J.D("id", Id, "label", Label, "configured", Configured, "enabled", Enabled, "channel", Id == "rumble" ? (Accounts.RumbleUrl().Length > 0 ? "set" : "") : Channel, "state", Configured ? State : "off", "detail", Configured ? Detail : (Enabled ? "add your channel" : "turned off"),
-        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "mod", Moderation.Caps(Id), "account", acc, "viewers", global::IXC.Viewers.View(this)); }
+        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "mod", Moderation.Caps(Id), "account", acc, "viewers", global::IXC.Viewers.View(this), "lastMessage", LastMsg == DateTime.MinValue ? null : (object)(long)(LastMsg.ToUniversalTime() - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds); }
     // no IXC sign-in for this platform, but Streamer.bot is connected: replies go through Streamer.bot (Rumble can't send at all)
     public bool ViaSb { get { return !CanSend && Id != "rumble" && Platforms.Sb.Ready; } }
     protected Timer viewerT;
@@ -264,16 +265,59 @@ namespace IXC {
   }
 
   public class KickPusher : WsLink {
-    readonly KickSource src; readonly ManualResetEventSlim established = new ManualResetEventSlim(false);
+    readonly KickSource src; readonly ManualResetEventSlim established = new ManualResetEventSlim(false), refused = new ManualResetEventSlim(false);
     public KickPusher(KickSource s) { src = s; Name = "Kick chat"; Area = "chat"; IdleTimeoutSec = 150; }
     protected override bool Wanted() { return src.Configured; }
     protected override string WhyNotWanted() { return src.Enabled ? "add your Kick channel name" : "turned off"; }
     protected override void StateChanged() { Hub.Publish("chat", J.D("type", "chat.status", "platforms", Platforms.StatusAll())); Hub.Publish("status", Status.Msg()); }
     protected override string Url() {
       if (src.ChatroomId.Length == 0 && !src.Resolve()) { var e = src.ResolveError; if (e.StartsWith("Kick has no channel")) SetState("unavailable", e); throw new Exception(e); }
-      var key = J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); var cluster = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2");
-      return Ep.Get("kick_pusher", "wss://ws-" + cluster + ".pusher.com/app/" + key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
-    protected override void BeforeConnect() { established.Reset(); }
+      var key = Key; var cluster = Cluster; connGen = gen;
+      var tpl = Ep.Get("kick_pusher", "wss://ws-{cluster}.pusher.com/app/{key}");   // tests: a fake server, with or without the placeholders
+      return tpl.Replace("{cluster}", cluster).Replace("{key}", key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
+    // Kick's chat runs on Pusher with a key and cluster that Kick's own website uses. Kick has changed them before; when Pusher
+    // answers "App key ... not in this cluster" (4001), IXC tries the other Pusher clusters, then reads the current key and cluster
+    // from kick.com's own web app, and saves what works. Nothing is guessed silently: each step is in the log.
+    static readonly string[] Clusters = { "us2", "us3", "us1", "mt1", "eu", "ap1", "ap2", "ap3", "ap4", "sa1" };
+    // keys kick.com has used, newest first (34bf... since 2026-10, as used by the KickLib library; 32cbd... before)
+    static readonly string[] KnownKeys = { "34bf7a0ff419a2a775b9", "32cbd69e4b950bf97679" };
+    string key, cluster; int tried, keysTried; volatile int gen, connGen; volatile bool fixing; DateTime discoveredAt = DateTime.MinValue;
+    static string SavedKey { get { return J.Str(Cfg.D, "platforms.kick.pusherKey", KnownKeys[0]); } }
+    string Key { get { return key ?? SavedKey; } }
+    string Cluster { get { return cluster ?? J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); } }
+    void WrongKey(string raw) {
+      if (fixing || connGen != gen) return; fixing = true;   // a refusal from an attempt before the last change is old news
+      Task.Run(() => {
+        try {
+          // 1. the other keys Kick is known to have used
+          var otherKeys = KnownKeys.Where(k => k != SavedKey).ToList();
+          if (keysTried < otherKeys.Count) { var nk = otherKeys[keysTried++]; Log.Warn("chat", "Kick chat: key " + Key + " was refused - trying " + nk); key = nk; cluster = null; gen++; Restart(); return; }
+          // 2. what kick.com's own web app uses, 3. the other clusters
+          if ((DateTime.Now - discoveredAt).TotalMinutes >= 10) {
+            discoveredAt = DateTime.Now; string k, c; var why = Discover(out k, out c);
+            if (why != null) Log.Warn("chat", "Kick chat: couldn't read the current chat settings from kick.com (" + why + ")");
+            else if (k != Key || c != Cluster) { Log.Info("chat", "Kick chat: kick.com now uses key " + k + " on cluster " + c + " - reconnecting"); key = k; cluster = c; tried = 0; gen++; Restart(); return; } }
+          var saved = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); var others = Clusters.Where(x => x != saved).ToList();
+          if (tried < others.Count) { key = null; var next = others[tried++]; Log.Warn("chat", "Kick chat: Pusher says the key isn't on cluster " + Cluster + " - trying " + next); cluster = next; gen++; Restart(); return; }
+          SetState("unavailable", "Kick changed its chat server settings and IXC couldn't find the new ones - check for an IXC update"); }
+        catch (Exception e) { Log.Warn("chat", "Kick chat settings check: " + e.Message); }
+        finally { fixing = false; } }); }
+    // the key and cluster in kick.com's own JavaScript (the same values the website's chat uses)
+    static string Discover(out string key, out string cluster) {
+      key = cluster = null; var web = Ep.Get("kick_web", "https://kick.com");
+      var h = Http.Request("GET", web + "/", null, null, new Dictionary<string, string> { { "Accept", "text/html" } }, 15000); if (!h.Ok) return "kick.com answered " + (h.Code > 0 ? h.Code.ToString() : h.Error);
+      var texts = new List<string> { h.Body ?? "" };
+      foreach (var src in Regex.Matches(h.Body ?? "", "<script[^>]+src=\"([^\"]+\\.js[^\"]*)\"").Cast<Match>().Select(m => m.Groups[1].Value).Distinct().Take(60)) {
+        var u = src.StartsWith("http") ? src : src.StartsWith("//") ? "https:" + src : web + (src.StartsWith("/") ? "" : "/") + src;
+        if (!u.StartsWith(web) && !Regex.IsMatch(u, "^https://([\\w-]+\\.)*kick\\.com/")) continue;   // only Kick's own files
+        var r = Http.Request("GET", u, null, null, null, 15000); if (r.Ok && r.Body != null) texts.Add(r.Body); }
+      foreach (var t in texts) {
+        var m = Regex.Match(t, "Pusher\\(\\s*[\"']([0-9a-f]{20})[\"']\\s*,\\s*\\{[^}]{0,400}?cluster\\s*:\\s*[\"']([a-z]{2,3}\\d{0,2})[\"']");
+        if (m.Success) { key = m.Groups[1].Value; cluster = m.Groups[2].Value; return null; }
+        var mk = Regex.Match(t, "(?:PUSHER_APP_KEY|pusherKey|pusher_key|appKey)[\"']?\\s*[:=]\\s*[\"']([0-9a-f]{20})[\"']"); var mc = Regex.Match(t, "(?:PUSHER_APP_CLUSTER|pusherCluster|pusher_cluster)[\"']?\\s*[:=]\\s*[\"']([a-z]{2,3}\\d{0,2})[\"']");
+        if (mk.Success && mc.Success) { key = mk.Groups[1].Value; cluster = mc.Groups[1].Value; return null; } }
+      return "no Pusher settings found in " + texts.Count + " files"; }
+    protected override void BeforeConnect() { established.Reset(); refused.Reset(); }
     // Pusher expects the client to ping when the room is quiet. Without it a quiet chat looked dead after 150 s and IXC dropped
     // and re-opened the connection again and again (each time risking messages in the gap). The pong also resets the idle timer.
     protected override void OnConnected() {
@@ -284,16 +328,17 @@ namespace IXC {
           if (ws != mine) break;
           try { await Tx("{\"event\":\"pusher:ping\",\"data\":{}}"); } catch (Exception) { break; } } }); }
     protected override async Task Handshake() {
-      if (!await Task.Run(() => established.Wait(10000))) throw new Exception("Kick chat did not answer");
+      var got = await Task.Run(() => WaitHandle.WaitAny(new[] { established.WaitHandle, refused.WaitHandle }, 10000)); if (got == 1) throw new Exception("Kick refused the chat key"); if (got != 0) throw new Exception("Kick chat did not answer");
       foreach (var ch in new[] { "chatrooms." + src.ChatroomId + ".v2", "chatroom_" + src.ChatroomId, "channel." + src.ChannelId, "channel_" + src.ChannelId })
         if (!ch.EndsWith(".") && !ch.EndsWith("_")) await Tx(J.Ser(J.D("event", "pusher:subscribe", "data", J.D("auth", "", "channel", ch)))); }
     protected override void OnText(string raw) {
       var m = J.Parse(raw); var ev = J.Str(m, "event", ""); var dataRaw = J.Get(m, "data");
       var data = dataRaw is string ? J.Parse((string)dataRaw) : dataRaw as Dictionary<string, object> ?? new Dictionary<string, object>();
       switch (ev) {
-        case "pusher:connection_established": established.Set(); return;
+        case "pusher:connection_established": established.Set();
+          if (key != null || cluster != null) { if (key != null) Cfg.Set("platforms.kick.pusherKey", key); if (cluster != null) Cfg.Set("platforms.kick.pusherCluster", cluster); Cfg.SaveNow(); Log.Info("chat", "Kick chat works with key " + Key + " on cluster " + Cluster + " - saved"); key = null; cluster = null; } tried = 0; keysTried = 0; return;
         case "pusher:ping": var t = Tx("{\"event\":\"pusher:pong\",\"data\":{}}"); return;
-        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); return;
+        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); if ((J.Int(data, "code", 0) == 4001 || raw.Contains("not in this cluster")) && !established.IsSet) { refused.Set(); WrongKey(raw); } return;   // only a refusal while connecting counts
         case "App\\Events\\ChatMessageEvent": Chat.Ingest(Msg(data)); return;
         case "App\\Events\\MessageDeletedEvent": Chat.Delete("kick", J.Str(data, "message.id", null), null); return;
         case "App\\Events\\UserBannedEvent": Chat.Delete("kick", null, J.Str(data, "user.username", J.Str(data, "user.slug", null))); return;
@@ -393,8 +438,23 @@ namespace IXC {
     bool FindLive() {
       bool found = false; Exception err = null;
       try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
+      if (!found && ApiFindLive()) return true;
       if (!found && sbVideo.Length > 0 && !JustEnded(sbVideo)) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
       if (err != null) throw err; return found; }
+    // with the YouTube account connected: YouTube's official Data API names your active broadcast (liveBroadcasts.list, 1 quota
+    // unit, at most once a minute). Used when the channel page doesn't show the stream, e.g. YouTube's bot check on this network.
+    DateTime apiCheckedAt = DateTime.MinValue;
+    bool ApiFindLive() {
+      if (!Accounts.Has("youtube") || Accounts.IsInvalid("youtube") || (DateTime.Now - apiCheckedAt).TotalSeconds < 60) return false;
+      apiCheckedAt = DateTime.Now;
+      var r = Accounts.GoogleApi("GET", "liveBroadcasts?part=snippet,status&broadcastStatus=active&broadcastType=all&mine=true&maxResults=5", null);
+      if (r == null || !r.Ok) { Log.Info("chat", "YouTube API: couldn't list your live broadcasts (" + (r == null ? "not signed in" : r.Code + " " + U.Trunc(r.Body ?? r.Error ?? "", 160)) + ")"); return false; }
+      foreach (var b in J.Objs(J.Parse(r.Body), "items")) {
+        var id = J.Str(b, "id", ""); if (!Regex.IsMatch(id, "^[\\w-]{11}$") || JustEnded(id) || J.Str(b, "status.lifeCycleStatus", "live") != "live") continue;
+        VideoId = id; LiveChatId = J.Str(b, "snippet.liveChatId", ""); DateTime t; var st = J.Str(b, "snippet.actualStartTime", "");
+        started = DateTime.TryParse(st, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
+        Log.Info("chat", "YouTube: the channel page doesn't show the stream (" + notLiveWhy + "); YouTube's API says you're live (" + id + ")"); return true; }
+      return false; }
     bool FindLiveOnPage() {
       notLiveWhy = "not live right now";
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;

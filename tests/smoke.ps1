@@ -58,8 +58,35 @@ try {
   Check 'System check runs' { $h = Invoke-RestMethod "$base/api/health"; $h.items.Count -ge 8 }
   Check 'backup + diagnostics export (no secrets inside)' { $b = Invoke-RestMethod -Method Post "$base/api/backups" -Body '{}' -ContentType 'application/json'; $d = Invoke-RestMethod -Method Post "$base/api/diagnostics/export" -Body '{}' -ContentType 'application/json'
     Add-Type -AssemblyName System.IO.Compression.FileSystem; $z = [IO.Compression.ZipFile]::OpenRead($d.path); $txt = ($z.Entries | % { (New-Object IO.StreamReader($_.Open())).ReadToEnd() }) -join "`n"; $z.Dispose(); $b.ok -and $d.ok -and $txt -notmatch 'SMOKESECRET1' -and $txt -notmatch [regex]::Escape($env:USERNAME + '\') }
+  # performance on this machine (printed to the CI log; the limits are generous so a slow runner doesn't fail it)
+  Check 'idle CPU and memory' { $p.Refresh(); $c0 = $p.TotalProcessorTime.TotalMilliseconds; Start-Sleep 30; $p.Refresh(); $cpu = ($p.TotalProcessorTime.TotalMilliseconds - $c0) / 30000 / [Environment]::ProcessorCount * 100
+    $mb = [Math]::Round($p.WorkingSet64 / 1MB, 1); $script:perf = "idle: CPU $([Math]::Round($cpu, 2))% of all $([Environment]::ProcessorCount) cores over 30 s, RAM $mb MB"; Write-Host "    PERF $script:perf"; $cpu -lt 3 -and $mb -lt 300 }
+  Check 'busy chat (300 messages in 30 s) CPU and memory' { $p.Refresh(); $c0 = $p.TotalProcessorTime.TotalMilliseconds; $t0 = Get-Date
+    1..300 | % { Invoke-RestMethod -Method Post "$base/api/chat/inject" -Body (@{ platform = @('twitch', 'kick', 'youtube')[$_ % 3]; id = "perf$_"; name = "Viewer$($_ % 40)"; text = "message number $_ with some words" } | ConvertTo-Json) -ContentType 'application/json' | Out-Null; Start-Sleep -Milliseconds 90 }
+    $sec = ((Get-Date) - $t0).TotalSeconds; $p.Refresh(); $cpu = ($p.TotalProcessorTime.TotalMilliseconds - $c0) / ($sec * 1000) / [Environment]::ProcessorCount * 100; $mb = [Math]::Round($p.WorkingSet64 / 1MB, 1)
+    Write-Host "    PERF busy: CPU $([Math]::Round($cpu, 2))% over $([Math]::Round($sec)) s (300 messages + TTS on), RAM $mb MB, CPU model $((Get-CimInstance Win32_Processor | Select -First 1).Name)"; $cpu -lt 25 -and $mb -lt 400 }
   Check 'quit gives exit code 4 (tray supervisor stops too)' { Invoke-RestMethod -Method Post "$base/api/system/quit" -Body '{}' -ContentType 'application/json' | Out-Null; $p.WaitForExit(8000) | Out-Null; $p.ExitCode -eq 4 }
 } finally { if (-not $p.HasExited) { $p.Kill() } }
+
+Write-Host '2b) Start and stop with OBS (tray supervisor, a stand-in obs64.exe process)'
+$cfg2 = "$tmp\data2\config.json"; New-Item -ItemType Directory "$tmp\data2", "$tmp\fakeobs" | Out-Null
+@{ helper = @{ port = 28768 }; obs = @{ websocketUrl = 'ws://127.0.0.1:1/' }; platforms = @{ streamerbot = @{ mode = 'off' } }; general = @{ firstRunDone = $true; checkUpdates = $false; followObs = $true; obsGraceSec = 3 } } | ConvertTo-Json -Depth 5 | Set-Content $cfg2
+Copy-Item "$env:SystemRoot\System32\PING.EXE" "$tmp\fakeobs\obs64.exe"
+$b2 = 'http://127.0.0.1:28768'; function Up2 { (Status "$b2/api/ping") -eq 200 }
+function Mine { @(Get-CimInstance Win32_Process -Filter "Name='ixc-core.exe'" | ? { $_.CommandLine -like "*$tmp\data2*" }) }
+function WaitFor([scriptblock]$cond, $sec) { for ($i = 0; $i -lt $sec * 2; $i++) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 500 }; $false }
+try {
+  $sup = Start-Process "$tmp\app\core\ixc-core.exe" -ArgumentList "--background --config `"$cfg2`"" -PassThru
+  Check 'signed in, OBS closed: only the tray runs, IXC waits' { Start-Sleep 6; Write-Host "    tray alive: $(-not $sup.HasExited), IXC answering: $(Up2), processes: $(@(Mine).Count)"; -not $sup.HasExited -and -not (Up2) -and @(Mine).Count -eq 1 }
+  $obs = Start-Process "$tmp\fakeobs\obs64.exe" -ArgumentList '-n 120 127.0.0.1' -WindowStyle Hidden -PassThru
+  Check 'OBS opens -> IXC starts by itself' { WaitFor { Up2 } 25 }
+  Check 'one IXC only (tray + worker)' { @(Mine).Count -eq 2 }
+  Stop-Process -Id $obs.Id -Force
+  Check 'OBS closes -> IXC stops after the grace time, the tray stays' { (WaitFor { -not (Up2) } 30) -and -not $sup.HasExited -and @(Mine).Count -eq 1 }
+  Start-Process "$tmp\app\core\ixc-core.exe" -ArgumentList "--config `"$cfg2`"" | Out-Null
+  Check 'opening IXC yourself starts it without OBS (no second copy)' { (WaitFor { Up2 } 25) -and @(Mine).Count -eq 2 }
+  Check 'supervisor log says what happened' { $l = Get-Content -Raw "$tmp\data2\logs\supervisor.log"; $l -match 'OBS opened' -and $l -match 'OBS closed' -and $l -match 'opened by you' }
+} finally { Mine | % { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }; Get-Process obs64 -EA SilentlyContinue | ? { $_.Path -like "$tmp*" } | Stop-Process -Force -EA SilentlyContinue }
 
 if ($Install) {
   Write-Host '3) Install, update and uninstall with scripts\install.ps1 (into a temporary user profile)'

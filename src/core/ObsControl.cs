@@ -55,6 +55,12 @@ namespace IXC {
         Log.Info("obs", (on ? "showed" : "hid") + " \"" + source + "\" in \"" + scene + "\""); return null; }
       catch (Exception e) { return "OBS: " + U.Plain(e); } }
 
+    // saves OBS's replay buffer (Settings > Output > Replay Buffer, started); null when OBS saved it
+    public static string SaveReplay() {
+      if (!Obs.Link.Ready) return "OBS isn't connected";
+      try { if (!J.Bool(Obs.Link.Call("GetReplayBufferStatus", null).Result, "outputActive", false)) return "OBS's replay buffer isn't running";
+        Obs.Link.Call("SaveReplayBuffer", null).Wait(); Log.Info("obs", "saved the replay buffer"); return null; }
+      catch (Exception e) { return "OBS: " + U.Plain(e); } }
     // ---------- OBS action of a chat command: { type: scene|show|hide|toggle, scene, source } ----------
     public static Dictionary<string, object> ValidateAction(object v, out string err) {
       err = null; var d = v as Dictionary<string, object>; if (d == null) return null;

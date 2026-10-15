@@ -66,11 +66,12 @@ Unregister-ScheduledTask -TaskName 'IXC for OBS' -Confirm:$false -EA SilentlyCon
 $startupLnk = "$([Environment]::GetFolderPath('Startup'))\IXC for OBS.lnk"; if (Test-Path $startupLnk) { Remove-Item -LiteralPath $startupLnk -Force }
 $ws = New-Object -ComObject WScript.Shell
 if (-not $NoStartup) {
-  $act = New-ScheduledTaskAction -Execute $exe -WorkingDirectory (Split-Path $exe)
+  # --background: at sign-in only the tray starts; IXC itself starts when OBS opens (unless 'Start and stop with OBS' is off)
+  $act = New-ScheduledTaskAction -Execute $exe -Argument '--background' -WorkingDirectory (Split-Path $exe)
   $trg = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"; $trg.Delay = 'PT10S'
   $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
   try { Register-ScheduledTask -TaskName 'IXC for OBS' -Action $act -Trigger $trg -Settings $set -Principal (New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited) -Force | Out-Null; Step 'starts with Windows' }
-  catch { $sc = $ws.CreateShortcut($startupLnk); $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Save(); Step 'starts with Windows (Startup folder)' } }
+  catch { $sc = $ws.CreateShortcut($startupLnk); $sc.TargetPath = $exe; $sc.Arguments = '--background'; $sc.WorkingDirectory = (Split-Path $exe); $sc.Save(); Step 'starts with Windows (Startup folder)' } }
 $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'IXC for OBS'
 if (Test-Path $menu) { Remove-Item -LiteralPath $menu -Recurse -Force }
 New-Item -ItemType Directory -Force $menu | Out-Null
