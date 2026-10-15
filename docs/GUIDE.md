@@ -141,7 +141,20 @@ Replace `8767` if IXC uses another port.
 | **Kick** | Type your channel name | **Connect** → sign in to Kick in the browser |
 | **YouTube** | Type your channel (`@name`, channel link or a live video link) | **Connect** → sign in with Google |
 | **Rumble** | Paste your **Live Stream API** link (rumble.com > Account > Live Stream API) | Rumble doesn't allow apps to send messages |
-| **Streamer.bot** *(optional)* | Auto: used if it's running with its WebSocket server on | – |
+| **Streamer.bot** *(not needed)* | Optional bridge: used only if it's running. Set it to **Never** to keep IXC fully standalone | – |
+
+**Your apps (needed to reply, once per platform, about 5 minutes each).** Twitch, YouTube and Kick only let an app send messages if you
+create a free developer app with your own account. IXC can't do this for you. Open **Platforms & accounts > Your apps**; each platform
+has the steps and the exact address to register:
+- **Twitch:** dev.twitch.tv/console/apps > Register Your Application > Category *Broadcaster Suite*, Client Type **Public** > copy the
+  **Client ID** (there is no secret).
+- **YouTube:** console.cloud.google.com > enable **YouTube Data API v3** > OAuth consent screen (External, add yourself as a test
+  user) > Credentials > OAuth client ID, type **Desktop app** > copy the **Client ID** and **Client secret**.
+- **Kick:** kick.com/settings/developer > Create new app > Redirect URL exactly as IXC shows it > scopes *Read user*, *Read channel*,
+  *Write to Chat feed*, *Moderate* > copy the **Client ID** and **Client Secret**.
+
+Secrets are saved encrypted on your PC (Windows DPAPI), never shown again, and never leave your PC except to the platform itself.
+Then press **Connect** on each platform. Nothing else is needed: no relay, no Streamer.bot.
 
 Each platform shows its own status, such as **Connected**, **Reconnecting…**, **Not live**, **Offline** or **Sign-in required**. If one platform has a
 problem, the others keep working. YouTube chat appears when you go live; IXC checks every 30 seconds.
@@ -150,11 +163,12 @@ problem, the others keep working. YouTube chat appears when you go live; IXC che
 In the **IXC ChatBox** panel or the **Chat** page:
 1. Messages from all platforms appear in one list, tagged **TWITCH**, **KICK**, **YT**, **RUMBLE**. Click a tag at the top to hide or show that platform.
 2. **Reply:** type at the bottom. The button on the left picks where it goes: **ALL** or one platform. Type `!` for every command (IXC's and
-   Streamer.bot's, each labelled), `@` for names. Replies go out with your signed-in account, or through **Streamer.bot** when it's running
-   and you haven't signed in to that platform in IXC.
+   Streamer.bot's, each labelled), `@` for names. Replies go out with your connected account (see **Your apps** above).
 3. The top bar shows **👁 watching** (viewers on all platforms right now) and **💬 chatting** (people who wrote in the last 10 minutes).
 4. **Click a message** to reply to that person, choose a voice for them, never read them out loud, hide them everywhere, or copy the message.
    Messages deleted by moderators on the platform disappear from IXC too.
+   **Moderation** (with your connected account, as the streamer or a moderator): **Delete this message**, **Time out (10 min)**, **Ban**.
+   Twitch: all three. YouTube: all three while live. Kick: time out and ban (Kick doesn't let apps delete single messages). Rumble: none.
 5. Messages caught by a filter stay in your panel, dimmed with the reason, but are hidden on stream.
 
 ## 7. Chat voice (TTS)
@@ -199,9 +213,28 @@ Turn each on/off, edit the answer, or click **+ New command**:
 | Who | Everyone, followers, subscribers, VIPs, moderators, only you |
 | Cooldown | For everyone and per person (moderators skip cooldowns) |
 | Platforms | Where it works |
+| Different answer per platform | Optional: e.g. a Kick-only text, or answer on one platform only |
+| OBS action | Switch scene, or show / hide / toggle a source (e.g. `!brb` for moderators switches to your BRB scene) |
+
+**Import from Streamer.bot:** lists the Streamer.bot commands IXC doesn't have yet (Streamer.bot must be open once). Streamer.bot only
+shares the names, so type each answer once and they're added.
+
+**Event messages** (same page): a chat message when someone follows, subscribes, gifts subs, raids, sends a Super Chat / Rant or becomes a
+YouTube member, on the platform where it happened. `{user}` is the person, `{amount}` the amount. A burst (follow bots, gift bombs)
+posts once per event type and platform per cooldown.
 
 **Chat filters** page: links, caps, repeated characters, long messages, repeating people, copy-paste spam, weird characters, banned words
 (`*` wildcard), always-hide / never-filter people. Each filter: **Off**, **Don't read it out**, or **Hide on stream**.
+
+### Timers (repeating messages)
+**Timers** page > **+ New timer**: message (e.g. *Follow me everywhere: kick.com/… | youtube.com/@…*), every N minutes, at least N chat
+messages in between (so it never talks to an empty chat), platforms, **only while live** (only where you're live). Each timer shows
+why it's waiting. **Send now** posts it at once. Timers never repeat after a reconnect or restart, and two timers never post back to back.
+
+### OBS
+**OBS** page: connection status, OBS version, **Streaming / Recording**, scene buttons and show / hide for the sources of the current scene.
+IXC finds OBS and its WebSocket password by itself; fill in **Address** and **Password** only for OBS on another PC or a changed port
+(OBS > Tools > WebSocket Server Settings > Show Connect Info), then **Save & test connection**. OBS 28 or newer.
 
 ## 11. Overlays
 1. **Overlays** page > pick one: Now Playing, Queue, Chat, Viewer counter, Chat voice, Alerts, Status.

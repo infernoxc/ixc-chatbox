@@ -86,7 +86,10 @@ namespace IXC {
     public static string SetRumbleUrl(string url) {
       url = (url ?? "").Trim(); if (url.Length == 0) { Secrets.Set("rumble.apiUrl", null); Platforms.Rumble.Restart(); Changed("rumble"); return null; }
       Uri u; if (!Uri.TryCreate(url, UriKind.Absolute, out u) || u.Scheme != "https" || !(u.Host == "rumble.com" || u.Host.EndsWith(".rumble.com"))) return "That doesn't look like a Rumble Live Stream API link (it starts with https://rumble.com/-livestream-api/...).";
-      Secrets.Set("rumble.apiUrl", url); Settings.Set("platforms.rumble.enabled", true); Platforms.Rumble.Restart(); Changed("rumble"); return null; }
+      Secrets.Set("rumble.apiUrl", url);
+      // one restart only: switching Rumble on restarts it by itself (two quick restarts could mark a new message as "old")
+      if (Settings.Bool("platforms.rumble.enabled")) Platforms.Rumble.Restart(); else Settings.Set("platforms.rumble.enabled", true);
+      Changed("rumble"); return null; }
 
     // ---------- tokens ----------
     public static string AccessToken(string p, string needScope) {
