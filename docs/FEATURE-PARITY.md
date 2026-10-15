@@ -114,6 +114,7 @@ already running, and **Never** turns it off completely. Every feature in section
 | | Playlists, history | ✅ 3.2.0 | auto (mock + browser) `17`, `ui` |
 | Commands | `!commands` `!followage` `!clip` `!discord` `!socials` presets | ✅ 3.2.0 | auto (mock Helix + OBS) `18`, `ui` |
 | Accounts | Last message time, reply ability, expired sign-in shown | ✅ 3.2.0 | auto (browser) |
+| Kick | Chat connection after Kick retired its old chat key (4001) | ✅ 3.2.0 new key, fallbacks, lifecycle hardening | auto (mock) `19`; live (CI): **connected to real Kick chat** 2026-10-15; receiving real messages **not seen** (test channel offline); sending: manual **not done** |
 | Performance | idle / busy CPU and RAM | measured on the CI Windows runner (see the CI log, `PERF` lines) | auto (Windows) |
 
 ### Platforms that were asked for but are not added (and why)
