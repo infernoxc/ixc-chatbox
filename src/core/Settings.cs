@@ -51,6 +51,8 @@ namespace IXC {
       L("chat.hiddenCommands", 200); S("chat.extraCommandsFile", "", 400); Adv("chat.extraCommandsFile");
       // commands
       B("commands.enabled", true); All["commands.list"] = new Spec { Key = "commands.list", Kind = "commands", Def = new ArrayList() };
+      // timed messages
+      B("timers.enabled", true); I("timers.gapSec", 60, 0, 600); All["timers.list"] = new Spec { Key = "timers.list", Kind = "timers", Def = new ArrayList() };
       // song requests
       B("songRequests.enabled", false); L("songRequests.commands", 10, "!sr", "!song");
       E("songRequests.permission", "everyone", Roles); I("songRequests.minAccountAgeDays", 0, 0, 3650);
@@ -136,6 +138,7 @@ namespace IXC {
         case "obj": { var d = v as Dictionary<string, object>; if (d == null) { err = Name(s) + " must be a group of settings"; return null; } return FlatStyle(d, out err); }
         case "voices": { var d = v as Dictionary<string, object>; if (d == null) { err = "voices must be a list"; return null; } return VoiceMap(d, out err); }
         case "commands": return Commands.ValidateList(v, out err);
+        case "timers": return Timers.ValidateList(v, out err);
       }
       err = "can't change " + s.Key; return null; }
     static string Name(Spec s) { return s.Key; }

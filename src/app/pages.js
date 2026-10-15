@@ -250,6 +250,40 @@
   });
 
   // ======================= COMMANDS =======================
+  page('timers', 'Timers', (main) => {
+    // repeating chat messages, e.g. "Follow me everywhere" every 15 minutes (replaces Streamer.bot timers)
+    let list = [], view = [];
+    async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['timers.list'] || []).map(x => Object.assign({}, x)); await refresh(); }
+    async function refresh() { const v = await IXC.api('/api/timers'); view = v.timers || []; paint(); }
+    const st = (id) => (view.find(x => x.id === id) || {}).status || '';
+    function paint() { if (App.current !== 'timers') return;
+      main.innerHTML = card('⏱️ Timers', ctl.toggle('timers.enabled', 'Timers on') + ctl.range('timers.gapSec', 'At least this long between two timer messages', '', 's') +
+        (list.length ? `<table class="t"><tr><th>On</th><th>Timer</th><th>Every</th><th>Needs</th><th>Status</th><th></th></tr>${list.map((t, i) => `<tr>
+          <td><label class="switch"><input type="checkbox" data-en="${i}" ${t.enabled !== false ? 'checked' : ''} aria-label="On"><i></i></label></td>
+          <td><b>${esc(t.name)}</b><div class="small muted">${esc(t.message)}</div><div class="tiny muted">${t.platforms && t.platforms.length ? t.platforms.map(p => P[p] ? P[p].name : p).join(', ') : 'All platforms'}${t.liveOnly ? ' · only while live' : ''}</div></td>
+          <td class="small">${t.intervalMin} min</td><td class="small">${t.minLines ? t.minLines + ' chat msgs' : '-'}</td><td class="small">${esc(st(t.id))}</td>
+          <td><button class="small" data-now="${i}">Send now</button> <button class="small" data-ed="${i}">Edit</button> <button class="small" data-rm="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="muted">No timers yet.</p>') +
+        `<div class="actions"><button class="primary" id="tAdd">+ New timer</button></div>
+        <div class="hint" style="margin-top:10px">A timer posts its message every few minutes, but only after enough people have chatted since its last message (so it never talks to an empty chat), and, with <b>only while live</b>, only on platforms where you are live. Messages can use {uptime} {viewers} {song}. IXC posts with your connected accounts (Platforms & accounts). A new timer waits one full interval before its first message.</div>`); }
+    async function store() { const r = await IXC.api('/api/settings', { patch: { 'timers.list': list } }); if (!r.ok) { toast(r.error, true); await load(); return false; } S.values = r.values; list = r.values['timers.list'].map(x => Object.assign({}, x)); await refresh(); toast('Saved'); return true; }
+    function edit(i) { const t = i < 0 ? { name: '', message: '', intervalMin: 15, minLines: 5, liveOnly: true, platforms: [], enabled: true } : Object.assign({}, list[i]);
+      App.modal(`<h3>${i < 0 ? 'New timer' : 'Edit timer'}</h3>
+        <div class="field"><label class="lbl">Name</label><div class="val"><input type="text" id="tN" value="${esc(t.name)}" placeholder="Socials"></div></div>
+        <div class="field"><label class="lbl">Message</label><div class="val"><textarea id="tM" style="font-family:inherit" maxlength="450" placeholder="Follow me everywhere: kick.com/... | youtube.com/@...">${esc(t.message)}</textarea></div></div>
+        <div class="field"><label class="lbl">Every (minutes)</label><div class="val"><input type="number" id="tI" min="1" max="240" value="${t.intervalMin}"></div></div>
+        <div class="field"><label class="lbl">At least this many chat messages in between</label><div class="val"><input type="number" id="tL" min="0" max="500" value="${t.minLines}"></div></div>
+        <div class="field"><label class="lbl">Only while live</label><div class="val"><label class="switch"><input type="checkbox" id="tLive" ${t.liveOnly ? 'checked' : ''} aria-label="Only while live"><i></i></label></div></div>
+        <div class="field"><label class="lbl">Platforms</label><div class="val chipset" id="tPl">${App.PLAT_OPTS.filter(([v]) => v !== 'rumble').map(([v, n]) => `<label><input type="checkbox" value="${v}" ${!t.platforms.length || t.platforms.includes(v) ? 'checked' : ''}>${n}</label>`).join('')}</div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="tSave">Save</button></div>`);
+      $('tSave').onclick = async () => { t.name = $('tN').value.trim(); t.message = $('tM').value.trim(); t.intervalMin = +$('tI').value; t.minLines = +$('tL').value; t.liveOnly = $('tLive').checked;
+        const pl = [...document.querySelectorAll('#tPl input:checked')].map(x => x.value); t.platforms = pl.length === 3 ? [] : pl;
+        if (i < 0) list.push(t); else list[i] = t; if (await store()) App.closeModal(); else if (i < 0) list.pop(); }; }
+    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'tAdd') edit(-1); if (d.ed) edit(+d.ed);
+      if (d.now) { const r = await IXC.api('/api/timers/send', { id: list[+d.now].id }); toast(r.ok ? 'Sent to ' + r.sentTo.map(p => P[p].name).join(', ') : r.error, !r.ok); refresh(); }
+      if (d.rm && await UI.confirmBox('Delete the timer "' + list[+d.rm].name + '"?', 'Delete')) { list.splice(+d.rm, 1); store(); } };
+    main.onchange = (e) => { const i = e.target.dataset.en; if (i != null) { list[+i].enabled = e.target.checked; store(); } };
+    load(); const iv = setInterval(() => { if (App.current !== 'timers') return clearInterval(iv); refresh(); }, 5000);
+  });
   page('commands', 'Commands', (main) => {
     let list = [];
     async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['commands.list'] || []).map(x => Object.assign({}, x)); paint(); }

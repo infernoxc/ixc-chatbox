@@ -61,6 +61,7 @@ namespace IXC {
       Hub.Publish("chat", J.D("type", "chat.msg", "m", m.View()));
       if (m.Kind != "chat") { AddAlert(m); return; }
       if (m.Old) return;
+      Timers.OnChat(m);
       Log.Debug("chat", m.Platform + " " + m.Name + ": " + U.Trunc(m.Text, 200));
       try { if (Commands.Handle(m)) return; } catch (Exception e) { Log.Err("chat", "command: " + e.Message); }
       if (!m.NoTts) { try { Tts.OnChat(m); } catch (Exception e) { Log.Err("tts", "chat to TTS: " + e.Message); } } }
@@ -93,7 +94,7 @@ namespace IXC {
       var res = new List<Dictionary<string, object>>(); message = Regex.Replace((message ?? "").Trim(), "[\\r\\n]+", " "); if (message.Length == 0) return res; if (message.Length > 480) message = message.Substring(0, 480);
       platform = (platform ?? "all").ToLowerInvariant();
       var targets = platform == "all" ? Platforms.SendTargets() : new List<string> { platform };
-      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", Accounts.Available("twitch") || Accounts.Available("kick") || Accounts.Available("youtube") ? "IXC can't reply anywhere yet: open Streamer.bot (IXC replies through it), or connect your account under Platforms & accounts." : "IXC can't reply anywhere yet: open Streamer.bot with its WebSocket server on - IXC replies through it.")); return res; }
+      if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", Accounts.Available("twitch") || Accounts.Available("kick") || Accounts.Available("youtube") ? "IXC can't reply anywhere yet: connect your accounts under Platforms & accounts (add Your apps first)" : "IXC can't reply anywhere yet: add Your apps under Platforms & accounts, then connect your accounts")); return res; }
       var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } return J.D("platform", p, "ok", err == null, "error", err ?? ""); }).ToList();
       foreach (var t in tasks) res.Add(await t);
       // "ALL" also tries, through Streamer.bot, platforms you haven't set up in IXC: a failure there (Streamer.bot isn't connected to it)

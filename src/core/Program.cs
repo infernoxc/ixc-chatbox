@@ -75,6 +75,7 @@ namespace IXC {
       Safe("phone", () => Remote.Init());
       Safe("status", () => Status.Init());
       Safe("updates", () => Updates.Init());
+      Safe("timers", () => { if (HasChat) Timers.Init(); });
       WatchFiles();
       AppDomain.CurrentDomain.ProcessExit += (s, e) => SaveAll();
       Thread.Sleep(Timeout.Infinite); GC.KeepAlive(mutex); return 0;
@@ -143,7 +144,7 @@ namespace IXC {
       if (path == "/api/obs/remove" && m == "POST") { Http.Json(ctx, Obs.RemoveAll().Result); return; }
       if (path == "/api/obs/overlay" && m == "POST") { var b = Http.BodyJson(ctx); try { Http.Json(ctx, Obs.AddOverlay(J.Str(b, "name", "Overlay"), BaseUrl + J.Str(b, "path", "/overlay/"), J.Int(b, "width", 800), J.Int(b, "height", 200)).Result); } catch (Exception e) { Http.Json(ctx, 400, J.D("ok", false, "error", U.Plain(e))); } return; }
       if (path == "/api/firstrun/done" && m == "POST") { Settings.Set("general.firstRunDone", true); Http.Json(ctx, J.D("ok", true)); return; }
-      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path)) return;
+      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
       if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;
       if (Remote.LocalApi(ctx, path, m)) return;
