@@ -330,17 +330,24 @@
   page('commands', 'Commands', (main) => {
     let list = [];
     async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['commands.list'] || []).map(x => Object.assign({}, x)); paint(); }
-    const BUILT = { np: 'Says what\'s playing', queue: 'Says what\'s next', skip: 'Skips the song', uptime: 'How long you\'ve been live', wrongsong: 'Removes your last request', ttsskip: 'Skips the chat voice message', ttson: 'Turns the chat voice on', ttsoff: 'Turns the chat voice off', viewers: 'Says the viewer count', pause: 'Pauses music', resume: 'Resumes music', songs: 'Custom text' };
+    const BUILT = { np: 'Says what\'s playing', queue: 'Says what\'s next', skip: 'Skips the song', uptime: 'How long you\'ve been live', wrongsong: 'Removes your last request', ttsskip: 'Skips the chat voice message', commands: 'Lists the commands', followage: 'How long the chatter has followed (Twitch)', clip: 'Makes a clip (Twitch) or saves the OBS replay buffer', ttson: 'Turns the chat voice on', ttsoff: 'Turns the chat voice off', viewers: 'Says the viewer count', pause: 'Pauses music', resume: 'Resumes music', songs: 'Custom text' };
     function paint() { main.innerHTML = card('⌨️ Chat commands', ctl.toggle('commands.enabled', 'Commands on') + `<table class="t"><tr><th>On</th><th>Command</th><th>Answer</th><th>Who</th><th>Cooldown</th><th></th></tr>${list.map((c, i) => `<tr><td><label class="switch"><input type="checkbox" data-en="${i}" ${c.enabled ? 'checked' : ''} aria-label="On"><i></i></label></td>
         <td><b>${esc(c.trigger)}</b>${c.aliases && c.aliases.length ? '<div class="tiny muted">' + esc(c.aliases.join(' ')) + '</div>' : ''}</td><td class="small">${c.builtin ? '<span class="muted">' + esc(BUILT[c.builtin] || '') + '</span>' + (c.response ? ' · ' : '') : ''}${esc(c.response)}</td>
         <td class="small">${esc(c.permission)}</td><td class="small">${c.cooldownSec ? c.cooldownSec + ' s' : '-'}</td><td><button class="small" data-ed="${i}">Edit</button> <button class="small" data-rm="${i}">✕</button></td></tr>`).join('')}</table>
-        <div class="actions"><button class="primary" id="cAdd">+ New command</button><button id="cImport">Import from Streamer.bot</button><button id="cReset">Restore default commands</button></div>
+        <div class="actions"><button class="primary" id="cAdd">+ New command</button><button id="cPresets">+ Ready-made commands</button><button id="cImport">Import from Streamer.bot</button><button id="cReset">Restore default commands</button></div>
         <div class="hint" style="margin-top:10px">In answers you can use {user} {name} {target} {args} {song} {title} {artist} {queue} {uptime} {viewers} {count} {platform}. Answers need IXC to be able to reply on that platform (Platforms & accounts).</div>`) +
         `<div style="height:14px"></div>` + card('🎉 Event messages', `<div class="hint" style="margin-bottom:8px">A chat message when something happens, posted on the platform where it happened. {user} is the person, {amount} the Super Chat amount.</div>` +
           EVENTS.map(([k, t]) => ctl.toggle('events.' + k + '.on', t) + ctl.text('events.' + k + '.message', 'Message')).join('') +
           ctl.range('events.cooldownSec', 'At most one message per event type and platform every', 'stops floods from follow bots and gift bombs', 's') +
           `<div class="hint">Follows: Twitch needs your connected Twitch account; Kick and Rumble work without. Subs, gifts and raids: Twitch and Kick. Super Chats and members: YouTube.</div>`); }
     const EVENTS = [['follow', 'New follower'], ['sub', 'New subscriber'], ['gift', 'Gifted subs'], ['raid', 'Raid / host'], ['superchat', 'Super Chat / Rant'], ['member', 'New YouTube member']];
+    async function presets() { const r = await IXC.api('/api/commands/presets'); const todo = r.presets.filter(p => !p.present);
+      if (!todo.length) { toast('You already have every ready-made command'); return; }
+      App.modal(`<h3>Ready-made commands</h3><p class="small muted">Tick the ones you want. You can edit them afterwards.</p>
+        ${todo.map(p => `<label class="row" style="gap:10px;align-items:flex-start;margin:8px 0"><input type="checkbox" data-pre="${esc(p.trigger)}" checked><span><b>${esc(p.trigger)}</b> <span class="small">${esc(p.response)}</span><div class="tiny muted">${esc(p.note)}</div></span></label>`).join('')}
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="preSave">Add</button></div>`);
+      $('preSave').onclick = async () => { const t = [...document.querySelectorAll('[data-pre]:checked')].map(x => x.dataset.pre); const a = await IXC.api('/api/commands/presets', { triggers: t });
+        if (!a.ok) { toast(a.error, true); return; } App.closeModal(); toast(a.added.length + ' command' + (a.added.length === 1 ? '' : 's') + ' added'); load(); }; }
     async function importSb() { const r = await IXC.api('/api/commands/streamerbot');
       if (!r.connected) { toast('Streamer.bot isn\'t connected - open it once (with its WebSocket server on) to import its commands', true); return; }
       if (!r.commands.length) { toast('Every Streamer.bot command is already in IXC'); return; }
@@ -365,7 +372,7 @@
       $('eSave').onclick = async () => { c.trigger = $('eT').value.trim(); c.aliases = $('eA').value.split(/[\s,]+/).filter(Boolean); c.response = $('eR').value.trim(); c.responses = {}; document.querySelectorAll('[data-resp]').forEach(el => { if (el.value.trim()) c.responses[el.dataset.resp] = el.value.trim(); }); c.permission = $('eP').value; c.obs = $('eO').value ? { type: $('eO').value, scene: $('eOS').value.trim(), source: $('eOX').value.trim() } : null; c.cooldownSec = +$('eC').value; c.userCooldownSec = +$('eU').value;
         const pl = [...document.querySelectorAll('#ePl input:checked')].map(x => x.value); c.platforms = pl.length === 4 ? [] : pl;
         if (i < 0) list.push(c); else list[i] = c; if (await store()) App.closeModal(); else if (i < 0) list.pop(); }; }
-    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'cAdd') edit(-1); if (e.target.id === 'cImport') importSb(); if (d.ed) edit(+d.ed);
+    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'cAdd') edit(-1); if (e.target.id === 'cImport') importSb(); if (e.target.id === 'cPresets') presets(); if (d.ed) edit(+d.ed);
       if (d.rm && await UI.confirmBox('Delete ' + list[+d.rm].trigger + '?', 'Delete')) { list.splice(+d.rm, 1); store(); }
       if (e.target.id === 'cReset' && await UI.confirmBox('Put back the default commands? Your own commands stay.', 'Restore')) { const own = list.filter(c => !c.builtin); const r = await IXC.api('/api/settings', { patch: { 'commands.list': null } }); list = (r.values ? r.values['commands.list'] : []).concat(own); store(); } };
     main.onchange = (e) => { const i = e.target.dataset.en; if (i != null) { list[+i].enabled = e.target.checked; store(); } };

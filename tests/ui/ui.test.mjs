@@ -42,6 +42,10 @@ test('every dashboard page renders with live data and no script errors', async (
   await until(() => obs.st.tracks['IXC Music Player'][2] === false && obs.st.tracks['IXC Music Player'][1] === true, 5000, 'kick track off in OBS');
   assert.equal(obs.st.tracks['IXC TTS'][2], true); await p.waitForTimeout(400); await shot(p, '10-page-audio-routing');
   await api(c, '/api/music/route', { mode: 'all' });
+  // Commands: add the ready-made !followage and !clip
+  await p.evaluate(() => { location.hash = '#commands'; }); await p.waitForSelector('#cPresets'); await p.click('#cPresets'); await p.waitForSelector('#preSave');
+  await shot(p, '10-page-commands-presets'); await p.click('#preSave');
+  await until(async () => { const l = (await api(c, '/api/settings')).body.values['commands.list']; return l.some(x => x.trigger === '!followage') && l.some(x => x.trigger === '!discord' && !x.enabled); }, 4000, 'presets added');
   // Timers: create one through the form; it is saved and shows its status
   await p.evaluate(() => { location.hash = '#timers'; }); await p.waitForTimeout(600);
   await p.click('#tAdd'); await p.fill('#tN', 'Socials'); await p.fill('#tM', 'Follow me everywhere!'); await p.fill('#tI', '10'); await p.fill('#tL', '3'); await p.click('#tSave');

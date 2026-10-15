@@ -145,7 +145,7 @@ namespace IXC {
     static ChatMsg FromTest(Dictionary<string, object> b) {
       var cm = new ChatMsg { Platform = J.Str(b, "platform", "twitch"), Id = J.Str(b, "id", null), Name = J.Str(b, "name", "Tester"), Login = J.Str(b, "login", null), Text = J.Str(b, "text", ""),
         Kind = J.Str(b, "kind", "chat"), Mod = J.Bool(b, "mod", false), Vip = J.Bool(b, "vip", false), Sub = J.Bool(b, "sub", false), Broadcaster = J.Bool(b, "broadcaster", false),
-        Via = J.Str(b, "via", "ixc"), Amount = J.Str(b, "amount", "") };
+        Via = J.Str(b, "via", "ixc"), Amount = J.Str(b, "amount", ""), UserId = J.Str(b, "userId", null) };
       if (J.Get(b, "follower") is bool) cm.Follower = J.Bool(b, "follower", false);
       foreach (var e in J.Objs(b, "emotes")) { cm.EmoteNames.Add(J.Str(e, "name", "")); if (J.Get(e, "start") != null) cm.EmoteSpans.Add(new KeyValuePair<int, int>(J.Int(e, "start", 0), J.Int(e, "end", 0))); }
       cm.Login = cm.Login ?? cm.Name.ToLowerInvariant(); return cm; }
