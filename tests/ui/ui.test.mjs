@@ -81,6 +81,19 @@ test('docks and the phone page', async () => {
   const pr = (await api(c, '/api/remote/pair', {})).body; const ph = await b.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
   ph.on('pageerror', e => errors.push('phone: ' + e.message)); await ph.goto(pr.url); await ph.waitForSelector('#conn.ok', { timeout: 15000 });
   await ph.waitForTimeout(800); await shot(ph, '22-phone-music');
+  // routing on the phone: a mixed choice made on the PC shows as such, a tap on the phone changes OBS, music and voice stay separate
+  await until(async () => (await api(c, '/api/music/route')).body.ok, 8000, 'route applied');
+  await api(c, '/api/music/route', { platform: 'kick', on: false });
+  const sel = async () => ph.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-rp],[data-r]')].map(b => [b.dataset.rp || b.dataset.r, b.classList.contains('sel')])));
+  await until(async () => { const v = await sel(); return v.twitch && !v.kick && v.youtube && !v.all && !v.off; }, 5000, 'phone shows Twitch + YouTube');
+  await shot(ph, '22-phone-music-mixed');
+  await ph.click('[data-rp="youtube"]');
+  await until(() => obs.st.tracks['IXC Music Player'][3] === false && obs.st.tracks['IXC Music Player'][1] === true && obs.st.tracks['IXC Music Player'][2] === false, 5000, 'youtube music off in OBS from the phone');
+  await until(async () => { const v = await sel(); return v.twitch && !v.kick && !v.youtube; }, 5000, 'phone shows Twitch only');
+  assert.equal((await api(c, '/api/music/route')).body.mode, 'twitch', 'the PC sees the change');
+  const tts = (await api(c, '/api/tts/route')).body; assert.equal(tts.mode, 'all'); assert.equal(obs.st.tracks['IXC TTS'][3], true, 'chat voice not touched');
+  await ph.click('[data-r="all"]'); await until(() => [1, 2, 3].every(k => obs.st.tracks['IXC Music Player'][k] === true), 5000, 'ALL from the phone');
+  await until(async () => { const v = await sel(); return v.all && v.twitch && v.kick && v.youtube; }, 5000, 'phone shows ALL');
   for (const t of ['chat', 'voice', 'status']) { await ph.click(`#tabs button[data-t="${t}"]`); await ph.waitForTimeout(500); await shot(ph, '23-phone-' + t); }
   assert.equal((await api(c, '/api/remote/status')).body.devices.length, 1, 'phone paired from the real page');
   await ph.close();

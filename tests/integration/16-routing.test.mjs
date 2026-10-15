@@ -43,6 +43,10 @@ test('Routing: music and TTS ON/OFF per platform, applied in OBS and read back',
   obs.st.tracks['IXC TTS'][1] = false; obs.event('InputAudioTracksChanged', { inputName: 'IXC TTS', inputAudioTracks: obs.st.tracks['IXC TTS'] });
   await until(async () => /by hand/.test((await api(c, '/api/tts/route')).body.status), 5000, 'hand change reported');
 
-  // settings survive a restart and are re-applied when OBS connects
-  // (restart persistence is covered by the settings tests in 01-core)
+  // settings survive a restart and are re-applied to OBS when IXC connects again (OBS was changed meanwhile)
+  await api(c, '/api/music/route', { platform: 'kick', on: false });
+  let c2 = await c.restart(); cleanup.push(() => c2.stop());
+  for (const k of [1, 2, 3]) obs.st.tracks['IXC Music Player'][k] = true;
+  await until(async () => { const r2 = (await api(c2, '/api/music/route')).body; return r2.ok && r2.mode === 'custom' && T('IXC Music Player') === '101' ? r2 : null; }, 15000, 'music route kept and re-applied after restart');
+  const t2 = (await api(c2, '/api/tts/route')).body; assert.deepEqual(t2.on, { twitch: true, kick: true, youtube: false }, 'TTS choice kept separately');
 });

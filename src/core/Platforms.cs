@@ -438,8 +438,23 @@ namespace IXC {
     bool FindLive() {
       bool found = false; Exception err = null;
       try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
+      if (!found && ApiFindLive()) return true;
       if (!found && sbVideo.Length > 0 && !JustEnded(sbVideo)) { VideoId = sbVideo; started = null; Log.Info("chat", "YouTube: the channel page shows no live stream, using the one Streamer.bot names (" + VideoId + ")"); return true; }
       if (err != null) throw err; return found; }
+    // with the YouTube account connected: YouTube's official Data API names your active broadcast (liveBroadcasts.list, 1 quota
+    // unit, at most once a minute). Used when the channel page doesn't show the stream, e.g. YouTube's bot check on this network.
+    DateTime apiCheckedAt = DateTime.MinValue;
+    bool ApiFindLive() {
+      if (!Accounts.Has("youtube") || Accounts.IsInvalid("youtube") || (DateTime.Now - apiCheckedAt).TotalSeconds < 60) return false;
+      apiCheckedAt = DateTime.Now;
+      var r = Accounts.GoogleApi("GET", "liveBroadcasts?part=snippet,status&broadcastStatus=active&broadcastType=all&mine=true&maxResults=5", null);
+      if (r == null || !r.Ok) { Log.Info("chat", "YouTube API: couldn't list your live broadcasts (" + (r == null ? "not signed in" : r.Code + " " + U.Trunc(r.Body ?? r.Error ?? "", 160)) + ")"); return false; }
+      foreach (var b in J.Objs(J.Parse(r.Body), "items")) {
+        var id = J.Str(b, "id", ""); if (!Regex.IsMatch(id, "^[\\w-]{11}$") || JustEnded(id) || J.Str(b, "status.lifeCycleStatus", "live") != "live") continue;
+        VideoId = id; LiveChatId = J.Str(b, "snippet.liveChatId", ""); DateTime t; var st = J.Str(b, "snippet.actualStartTime", "");
+        started = DateTime.TryParse(st, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
+        Log.Info("chat", "YouTube: the channel page doesn't show the stream (" + notLiveWhy + "); YouTube's API says you're live (" + id + ")"); return true; }
+      return false; }
     bool FindLiveOnPage() {
       notLiveWhy = "not live right now";
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
