@@ -265,33 +265,40 @@ namespace IXC {
   }
 
   public class KickPusher : WsLink {
-    readonly KickSource src; readonly ManualResetEventSlim established = new ManualResetEventSlim(false);
+    readonly KickSource src; readonly ManualResetEventSlim established = new ManualResetEventSlim(false), refused = new ManualResetEventSlim(false);
     public KickPusher(KickSource s) { src = s; Name = "Kick chat"; Area = "chat"; IdleTimeoutSec = 150; }
     protected override bool Wanted() { return src.Configured; }
     protected override string WhyNotWanted() { return src.Enabled ? "add your Kick channel name" : "turned off"; }
     protected override void StateChanged() { Hub.Publish("chat", J.D("type", "chat.status", "platforms", Platforms.StatusAll())); Hub.Publish("status", Status.Msg()); }
     protected override string Url() {
       if (src.ChatroomId.Length == 0 && !src.Resolve()) { var e = src.ResolveError; if (e.StartsWith("Kick has no channel")) SetState("unavailable", e); throw new Exception(e); }
-      var key = Key; var cluster = Cluster;
+      var key = Key; var cluster = Cluster; connGen = gen;
       var tpl = Ep.Get("kick_pusher", "wss://ws-{cluster}.pusher.com/app/{key}");   // tests: a fake server, with or without the placeholders
       return tpl.Replace("{cluster}", cluster).Replace("{key}", key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
     // Kick's chat runs on Pusher with a key and cluster that Kick's own website uses. Kick has changed them before; when Pusher
     // answers "App key ... not in this cluster" (4001), IXC tries the other Pusher clusters, then reads the current key and cluster
     // from kick.com's own web app, and saves what works. Nothing is guessed silently: each step is in the log.
     static readonly string[] Clusters = { "us2", "us3", "us1", "mt1", "eu", "ap1", "ap2", "ap3", "ap4", "sa1" };
-    string key, cluster; int tried; volatile bool fixing; DateTime discoveredAt = DateTime.MinValue;
-    string Key { get { return key ?? J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); } }
+    // keys kick.com has used, newest first (34bf... since 2026-10, as used by the KickLib library; 32cbd... before)
+    static readonly string[] KnownKeys = { "34bf7a0ff419a2a775b9", "32cbd69e4b950bf97679" };
+    string key, cluster; int tried, keysTried; volatile int gen, connGen; volatile bool fixing; DateTime discoveredAt = DateTime.MinValue;
+    static string SavedKey { get { return J.Str(Cfg.D, "platforms.kick.pusherKey", KnownKeys[0]); } }
+    string Key { get { return key ?? SavedKey; } }
     string Cluster { get { return cluster ?? J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); } }
     void WrongKey(string raw) {
-      if (fixing) return; fixing = true;
+      if (fixing || connGen != gen) return; fixing = true;   // a refusal from an attempt before the last change is old news
       Task.Run(() => {
         try {
+          // 1. the other keys Kick is known to have used
+          var otherKeys = KnownKeys.Where(k => k != SavedKey).ToList();
+          if (keysTried < otherKeys.Count) { var nk = otherKeys[keysTried++]; Log.Warn("chat", "Kick chat: key " + Key + " was refused - trying " + nk); key = nk; cluster = null; gen++; Restart(); return; }
+          // 2. what kick.com's own web app uses, 3. the other clusters
           if ((DateTime.Now - discoveredAt).TotalMinutes >= 10) {
             discoveredAt = DateTime.Now; string k, c; var why = Discover(out k, out c);
             if (why != null) Log.Warn("chat", "Kick chat: couldn't read the current chat settings from kick.com (" + why + ")");
-            else if (k != Key || c != Cluster) { Log.Info("chat", "Kick chat: kick.com now uses key " + k + " on cluster " + c + " - reconnecting"); key = k; cluster = c; tried = 0; Restart(); return; } }
+            else if (k != Key || c != Cluster) { Log.Info("chat", "Kick chat: kick.com now uses key " + k + " on cluster " + c + " - reconnecting"); key = k; cluster = c; tried = 0; gen++; Restart(); return; } }
           var saved = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); var others = Clusters.Where(x => x != saved).ToList();
-          if (tried < others.Count) { var next = others[tried++]; Log.Warn("chat", "Kick chat: Pusher says the key isn't on cluster " + Cluster + " - trying " + next); cluster = next; Restart(); return; }
+          if (tried < others.Count) { key = null; var next = others[tried++]; Log.Warn("chat", "Kick chat: Pusher says the key isn't on cluster " + Cluster + " - trying " + next); cluster = next; gen++; Restart(); return; }
           SetState("unavailable", "Kick changed its chat server settings and IXC couldn't find the new ones - check for an IXC update"); }
         catch (Exception e) { Log.Warn("chat", "Kick chat settings check: " + e.Message); }
         finally { fixing = false; } }); }
@@ -310,7 +317,7 @@ namespace IXC {
         var mk = Regex.Match(t, "(?:PUSHER_APP_KEY|pusherKey|pusher_key|appKey)[\"']?\\s*[:=]\\s*[\"']([0-9a-f]{20})[\"']"); var mc = Regex.Match(t, "(?:PUSHER_APP_CLUSTER|pusherCluster|pusher_cluster)[\"']?\\s*[:=]\\s*[\"']([a-z]{2,3}\\d{0,2})[\"']");
         if (mk.Success && mc.Success) { key = mk.Groups[1].Value; cluster = mc.Groups[1].Value; return null; } }
       return "no Pusher settings found in " + texts.Count + " files"; }
-    protected override void BeforeConnect() { established.Reset(); }
+    protected override void BeforeConnect() { established.Reset(); refused.Reset(); }
     // Pusher expects the client to ping when the room is quiet. Without it a quiet chat looked dead after 150 s and IXC dropped
     // and re-opened the connection again and again (each time risking messages in the gap). The pong also resets the idle timer.
     protected override void OnConnected() {
@@ -321,7 +328,7 @@ namespace IXC {
           if (ws != mine) break;
           try { await Tx("{\"event\":\"pusher:ping\",\"data\":{}}"); } catch (Exception) { break; } } }); }
     protected override async Task Handshake() {
-      if (!await Task.Run(() => established.Wait(10000))) throw new Exception("Kick chat did not answer");
+      var got = await Task.Run(() => WaitHandle.WaitAny(new[] { established.WaitHandle, refused.WaitHandle }, 10000)); if (got == 1) throw new Exception("Kick refused the chat key"); if (got != 0) throw new Exception("Kick chat did not answer");
       foreach (var ch in new[] { "chatrooms." + src.ChatroomId + ".v2", "chatroom_" + src.ChatroomId, "channel." + src.ChannelId, "channel_" + src.ChannelId })
         if (!ch.EndsWith(".") && !ch.EndsWith("_")) await Tx(J.Ser(J.D("event", "pusher:subscribe", "data", J.D("auth", "", "channel", ch)))); }
     protected override void OnText(string raw) {
@@ -329,9 +336,9 @@ namespace IXC {
       var data = dataRaw is string ? J.Parse((string)dataRaw) : dataRaw as Dictionary<string, object> ?? new Dictionary<string, object>();
       switch (ev) {
         case "pusher:connection_established": established.Set();
-          if (key != null || cluster != null) { if (key != null) Cfg.Set("platforms.kick.pusherKey", key); if (cluster != null) Cfg.Set("platforms.kick.pusherCluster", cluster); Cfg.SaveNow(); Log.Info("chat", "Kick chat works with key " + Key + " on cluster " + Cluster + " - saved"); key = null; cluster = null; } tried = 0; return;
+          if (key != null || cluster != null) { if (key != null) Cfg.Set("platforms.kick.pusherKey", key); if (cluster != null) Cfg.Set("platforms.kick.pusherCluster", cluster); Cfg.SaveNow(); Log.Info("chat", "Kick chat works with key " + Key + " on cluster " + Cluster + " - saved"); key = null; cluster = null; } tried = 0; keysTried = 0; return;
         case "pusher:ping": var t = Tx("{\"event\":\"pusher:pong\",\"data\":{}}"); return;
-        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); if (J.Int(data, "code", 0) == 4001 || raw.Contains("not in this cluster")) WrongKey(raw); return;
+        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); if ((J.Int(data, "code", 0) == 4001 || raw.Contains("not in this cluster")) && !established.IsSet) { refused.Set(); WrongKey(raw); } return;   // only a refusal while connecting counts
         case "App\\Events\\ChatMessageEvent": Chat.Ingest(Msg(data)); return;
         case "App\\Events\\MessageDeletedEvent": Chat.Delete("kick", J.Str(data, "message.id", null), null); return;
         case "App\\Events\\UserBannedEvent": Chat.Delete("kick", null, J.Str(data, "user.username", J.Str(data, "user.slug", null))); return;

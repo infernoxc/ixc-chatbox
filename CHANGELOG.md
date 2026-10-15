@@ -11,7 +11,7 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 - **Playlists** (save the queue, play or add a playlist) and **Recently played** on the Music page.
 - Platforms page: last chat message time and whether IXC can reply, per platform.
 ### Fixed
-- **Kick chat stopped connecting** ("App key ... not in this cluster" from Kick's chat server, seen 2026-10-15). IXC now reads Kick's current chat settings from kick.com's own web app, or tries the other chat clusters, reconnects and remembers what works.
+- **Kick chat stopped connecting** ("App key ... not in this cluster", seen 2026-10-15): Kick retired the chat key IXC used. IXC now uses Kick's current key (the one the KickLib library uses), falls back to the old key, then to the settings in kick.com's own web app, then to the other chat clusters, and remembers what works. A refusal from an older attempt can no longer undo a newer working connection, and a silent chat server is retried after 10 s.
 - **Songs repeating**: Shuffle picked any random song, so the same few songs came back again and again. Now every song in the queue plays once before any song repeats, and never the same song twice in a row.
 - Autoplay could add a song that had just played under another upload (lyrics video, "official audio"); it now skips those.
 ### Changed
