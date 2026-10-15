@@ -101,7 +101,7 @@ namespace IXC {
         List<int> ok; lock (L) { Func<int, bool> good = k => k != cur && !J.Bool(queue[k], "bad", false);
           ok = Enumerable.Range(0, n).Where(k => good(k) && !round.Contains(J.Str(queue[k], "uid", ""))).ToList();
           // everything played once: a new round only with Repeat (or when the user presses Next), never the same song twice in a row
-          if (ok.Count == 0 && (Settings.Bool("music.repeat") || reason == "user")) { round.Clear(); if (cur >= 0 && cur < n) round.Add(J.Str(queue[cur], "uid", "")); ok = Enumerable.Range(0, n).Where(good).ToList(); } }
+          if (ok.Count == 0 && (Settings.Bool("music.repeat") || reason == "user")) { round.Clear(); ok = Enumerable.Range(0, n).Where(good).ToList(); } }
         if (ok.Count > 0) { Load(ok[U.Rand(ok.Count)], true, 0); return; }
         if (Settings.Bool("music.autoplay")) { AutoFill(); return; } Stop("End of queue (every song played once)"); return; }
       bool wrap = Settings.Bool("music.repeat") && !(Settings.Bool("music.autoplay") && reason != "user");
