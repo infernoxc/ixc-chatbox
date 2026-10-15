@@ -272,8 +272,44 @@ namespace IXC {
     protected override void StateChanged() { Hub.Publish("chat", J.D("type", "chat.status", "platforms", Platforms.StatusAll())); Hub.Publish("status", Status.Msg()); }
     protected override string Url() {
       if (src.ChatroomId.Length == 0 && !src.Resolve()) { var e = src.ResolveError; if (e.StartsWith("Kick has no channel")) SetState("unavailable", e); throw new Exception(e); }
-      var key = J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); var cluster = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2");
-      return Ep.Get("kick_pusher", "wss://ws-" + cluster + ".pusher.com/app/" + key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
+      var key = Key; var cluster = Cluster;
+      var tpl = Ep.Get("kick_pusher", "wss://ws-{cluster}.pusher.com/app/{key}");   // tests: a fake server, with or without the placeholders
+      return tpl.Replace("{cluster}", cluster).Replace("{key}", key) + "?protocol=7&client=js&version=8.4.0&flash=false"; }
+    // Kick's chat runs on Pusher with a key and cluster that Kick's own website uses. Kick has changed them before; when Pusher
+    // answers "App key ... not in this cluster" (4001), IXC tries the other Pusher clusters, then reads the current key and cluster
+    // from kick.com's own web app, and saves what works. Nothing is guessed silently: each step is in the log.
+    static readonly string[] Clusters = { "us2", "us3", "us1", "mt1", "eu", "ap1", "ap2", "ap3", "ap4", "sa1" };
+    string key, cluster; int tried; volatile bool fixing; DateTime discoveredAt = DateTime.MinValue;
+    string Key { get { return key ?? J.Str(Cfg.D, "platforms.kick.pusherKey", "32cbd69e4b950bf97679"); } }
+    string Cluster { get { return cluster ?? J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); } }
+    void WrongKey(string raw) {
+      if (fixing) return; fixing = true;
+      Task.Run(() => {
+        try {
+          if ((DateTime.Now - discoveredAt).TotalMinutes >= 10) {
+            discoveredAt = DateTime.Now; string k, c; var why = Discover(out k, out c);
+            if (why != null) Log.Warn("chat", "Kick chat: couldn't read the current chat settings from kick.com (" + why + ")");
+            else if (k != Key || c != Cluster) { Log.Info("chat", "Kick chat: kick.com now uses key " + k + " on cluster " + c + " - reconnecting"); key = k; cluster = c; tried = 0; Restart(); return; } }
+          var saved = J.Str(Cfg.D, "platforms.kick.pusherCluster", "us2"); var others = Clusters.Where(x => x != saved).ToList();
+          if (tried < others.Count) { var next = others[tried++]; Log.Warn("chat", "Kick chat: Pusher says the key isn't on cluster " + Cluster + " - trying " + next); cluster = next; Restart(); return; }
+          SetState("unavailable", "Kick changed its chat server settings and IXC couldn't find the new ones - check for an IXC update"); }
+        catch (Exception e) { Log.Warn("chat", "Kick chat settings check: " + e.Message); }
+        finally { fixing = false; } }); }
+    // the key and cluster in kick.com's own JavaScript (the same values the website's chat uses)
+    static string Discover(out string key, out string cluster) {
+      key = cluster = null; var web = Ep.Get("kick_web", "https://kick.com");
+      var h = Http.Request("GET", web + "/", null, null, new Dictionary<string, string> { { "Accept", "text/html" } }, 15000); if (!h.Ok) return "kick.com answered " + (h.Code > 0 ? h.Code.ToString() : h.Error);
+      var texts = new List<string> { h.Body ?? "" };
+      foreach (var src in Regex.Matches(h.Body ?? "", "<script[^>]+src=\"([^\"]+\\.js[^\"]*)\"").Cast<Match>().Select(m => m.Groups[1].Value).Distinct().Take(60)) {
+        var u = src.StartsWith("http") ? src : src.StartsWith("//") ? "https:" + src : web + (src.StartsWith("/") ? "" : "/") + src;
+        if (!u.StartsWith(web) && !Regex.IsMatch(u, "^https://([\\w-]+\\.)*kick\\.com/")) continue;   // only Kick's own files
+        var r = Http.Request("GET", u, null, null, null, 15000); if (r.Ok && r.Body != null) texts.Add(r.Body); }
+      foreach (var t in texts) {
+        var m = Regex.Match(t, "Pusher\\(\\s*[\"']([0-9a-f]{20})[\"']\\s*,\\s*\\{[^}]{0,400}?cluster\\s*:\\s*[\"']([a-z]{2,3}\\d{0,2})[\"']");
+        if (m.Success) { key = m.Groups[1].Value; cluster = m.Groups[2].Value; return null; }
+        var mk = Regex.Match(t, "(?:PUSHER_APP_KEY|pusherKey|pusher_key|appKey)[\"']?\\s*[:=]\\s*[\"']([0-9a-f]{20})[\"']"); var mc = Regex.Match(t, "(?:PUSHER_APP_CLUSTER|pusherCluster|pusher_cluster)[\"']?\\s*[:=]\\s*[\"']([a-z]{2,3}\\d{0,2})[\"']");
+        if (mk.Success && mc.Success) { key = mk.Groups[1].Value; cluster = mc.Groups[1].Value; return null; } }
+      return "no Pusher settings found in " + texts.Count + " files"; }
     protected override void BeforeConnect() { established.Reset(); }
     // Pusher expects the client to ping when the room is quiet. Without it a quiet chat looked dead after 150 s and IXC dropped
     // and re-opened the connection again and again (each time risking messages in the gap). The pong also resets the idle timer.
@@ -292,9 +328,10 @@ namespace IXC {
       var m = J.Parse(raw); var ev = J.Str(m, "event", ""); var dataRaw = J.Get(m, "data");
       var data = dataRaw is string ? J.Parse((string)dataRaw) : dataRaw as Dictionary<string, object> ?? new Dictionary<string, object>();
       switch (ev) {
-        case "pusher:connection_established": established.Set(); return;
+        case "pusher:connection_established": established.Set();
+          if (key != null || cluster != null) { if (key != null) Cfg.Set("platforms.kick.pusherKey", key); if (cluster != null) Cfg.Set("platforms.kick.pusherCluster", cluster); Cfg.SaveNow(); Log.Info("chat", "Kick chat works with key " + Key + " on cluster " + Cluster + " - saved"); key = null; cluster = null; } tried = 0; return;
         case "pusher:ping": var t = Tx("{\"event\":\"pusher:pong\",\"data\":{}}"); return;
-        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); return;
+        case "pusher:error": Log.Warn("chat", "Kick chat error: " + raw); if (J.Int(data, "code", 0) == 4001 || raw.Contains("not in this cluster")) WrongKey(raw); return;
         case "App\\Events\\ChatMessageEvent": Chat.Ingest(Msg(data)); return;
         case "App\\Events\\MessageDeletedEvent": Chat.Delete("kick", J.Str(data, "message.id", null), null); return;
         case "App\\Events\\UserBannedEvent": Chat.Delete("kick", null, J.Str(data, "user.username", J.Str(data, "user.slug", null))); return;
