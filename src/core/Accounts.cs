@@ -10,6 +10,7 @@ using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,15 +22,45 @@ namespace IXC {
     static readonly object L = new object();
     static readonly Dictionary<string, Dictionary<string, object>> Flows = new Dictionary<string, Dictionary<string, object>>();   // sign-ins in progress
 
-    static string TwitchId { get { return Program.Default("twitchClientId"); } }
-    static string GoogleId { get { return Program.Default("googleClientId"); } }
-    static string KickId { get { return Program.Default("kickClientId"); } }
+    // app IDs: the streamer's own developer apps (entered in IXC, kept in the encrypted store) come first, then the ones built in.
+    // A client secret is only ever the streamer's own, on their own PC: none ships inside the installer.
+    static string Own(string app, string part) { return (Secrets.Str("apps." + app + "." + part) ?? "").Trim(); }
+    static string IdOf(string app, string builtIn) { var o = Own(app, "id"); return o.Length > 0 ? o : Program.Default(builtIn); }
+    static string TwitchId { get { return IdOf("twitch", "twitchClientId"); } }
+    static string GoogleId { get { return IdOf("google", "googleClientId"); } }
+    static string KickId { get { return IdOf("kick", "kickClientId"); } }
+    static string SecretOf(string p) { var app = p == "youtube" ? "google" : p; var o = Own(app, "secret"); return o.Length > 0 && Own(app, "id").Length > 0 ? o : Program.Default(p == "youtube" ? "googleClientSecret" : "kickClientSecret"); }
     static string Relay { get { return Remote.RelayUrl; } }
     public static bool Available(string p) {
       if (p == "twitch") return TwitchId.Length > 0;
-      if (p == "youtube") return GoogleId.Length > 0 && (Relay.Length > 0 || Program.Default("googleClientSecret").Length > 0);
-      if (p == "kick") return KickId.Length > 0 && (Relay.Length > 0 || Program.Default("kickClientSecret").Length > 0);
+      if (p == "youtube") return GoogleId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
+      if (p == "kick") return KickId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
       return false; }
+    public static string RedirectUri(string p) { return (p == "youtube" ? "http://127.0.0.1:" : "http://localhost:") + Program.Port + "/oauth/" + p; }
+    // what the "Your apps" form shows: IDs (public) and whether a secret is saved, never the secret
+    public static Dictionary<string, object> Apps() {
+      Func<string, string, Dictionary<string, object>> one = (app, p) => J.D("id", Own(app, "id"), "secretSet", Own(app, "secret").Length > 0, "own", Own(app, "id").Length > 0,
+        "builtIn", Program.Default(app == "google" ? "googleClientId" : app + "ClientId").Length > 0, "available", Available(p), "redirect", p == "twitch" ? "" : RedirectUri(p));
+      return J.D("twitch", one("twitch", "twitch"), "google", one("google", "youtube"), "kick", one("kick", "kick")); }
+    static readonly Dictionary<string, string> IdPattern = new Dictionary<string, string> {
+      { "twitch", "^[a-z0-9]{20,40}$" }, { "google", "^[\\w.-]{3,120}\\.apps\\.googleusercontent\\.com$" }, { "kick", "^[A-Za-z0-9]{10,64}$" } };
+    // patch: { twitch: { id }, google: { id, secret }, kick: { id, secret } }. A missing field is left as it is, "" clears it.
+    // Returns null when saved, otherwise the problem (then nothing is saved).
+    public static string SetApps(Dictionary<string, object> patch) {
+      if (patch == null) return "nothing to save";
+      var todo = new List<KeyValuePair<string, string>>();
+      foreach (var app in new[] { "twitch", "google", "kick" }) {
+        var d = J.Obj(patch, app); if (d == null) continue;
+        if (d.ContainsKey("id")) { var id = (J.Str(d, "id", "") ?? "").Trim();
+          if (id.Length > 0 && !Regex.IsMatch(id, IdPattern[app])) return app == "google" ? "That doesn't look like a Google client ID (it ends with .apps.googleusercontent.com)" : "That doesn't look like a " + (app == "twitch" ? "Twitch" : "Kick") + " Client ID - copy it again from the developer page";
+          todo.Add(new KeyValuePair<string, string>("apps." + app + ".id", id)); }
+        if (d.ContainsKey("secret") && app != "twitch") { var sec = (J.Str(d, "secret", "") ?? "").Trim();
+          if (sec.Length > 0 && (sec.Length < 10 || sec.Length > 200 || Regex.IsMatch(sec, "\\s"))) return "That doesn't look like a client secret - copy it again";
+          todo.Add(new KeyValuePair<string, string>("apps." + app + ".secret", sec)); } }
+      if (todo.Count == 0) return "nothing to save";
+      foreach (var kv in todo) Secrets.Set(kv.Key, kv.Value.Length == 0 ? null : kv.Value);
+      Log.Info("auth", "your app settings were saved (" + string.Join(", ", todo.Select(kv => kv.Key.Split('.')[1] + " " + kv.Key.Split('.')[2] + (kv.Value.Length == 0 ? " cleared" : ""))) + ")");
+      Changed("twitch"); return null; }
 
     // ---------- stored accounts ----------
     static Dictionary<string, object> Raw(string p) { return Secrets.Obj("account." + p); }
@@ -49,7 +80,7 @@ namespace IXC {
       var d = new Dictionary<string, object>();
       foreach (var p in new[] { "twitch", "youtube", "kick" }) { Dictionary<string, object> flow; lock (L) Flows.TryGetValue(p, out flow);
         d[p] = J.D("available", Available(p), "account", Info(p), "flow", flow == null ? null : J.D("state", flow["state"], "message", flow["message"], "userCode", J.Str(flow, "userCode", ""), "url", J.Str(flow, "url", ""))); }
-      d["rumble"] = J.D("available", true, "account", RumbleUrl().Length > 0 ? J.D("login", "API link saved") : null);
+      d["apps"] = Apps(); d["rumble"] = J.D("available", true, "account", RumbleUrl().Length > 0 ? J.D("login", "API link saved") : null);
       return d; }
     public static string RumbleUrl() { var u = Secrets.Str("rumble.apiUrl") ?? ""; return u.Length > 0 ? Ep.Get("rumble_api", u) : ""; }
     public static string SetRumbleUrl(string url) {
@@ -79,8 +110,8 @@ namespace IXC {
       a["expiresAt"] = U.Now() + J.Long(t, "expires_in", 3600) * 1000; a["invalid"] = false; a["reason"] = "";
       var sc = J.Get(t, "scope"); if (sc is string) a["scopes"] = ((string)sc).Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).ToList(); else if (sc is ArrayList) a["scopes"] = ((ArrayList)sc).Cast<object>().Select(x => x.ToString()).ToList(); }
     static Http.Resp Broker(string p, Dictionary<string, object> body) {
-      var secret = Program.Default(p == "youtube" ? "googleClientSecret" : "kickClientSecret");
-      if (secret.Length > 0) {   // developer builds with their own secret: talk to the provider directly
+      var secret = SecretOf(p);
+      if (secret.Length > 0) {   // the streamer's own app (or a developer build): talk to the provider directly, no relay
         body["client_id"] = p == "youtube" ? GoogleId : KickId; body["client_secret"] = secret;
         var form = string.Join("&", body.Select(kv => kv.Key + "=" + Uri.EscapeDataString(Convert.ToString(kv.Value))));
         return Http.Request("POST", p == "youtube" ? Ep.Get("google_token", "https://oauth2.googleapis.com/token") : Ep.Get("kick_id", "https://id.kick.com") + "/oauth/token", form, "application/x-www-form-urlencoded", null, 15000); }
@@ -104,10 +135,10 @@ namespace IXC {
       var f = J.D("state", state, "message", message, "at", DateTime.Now); if (extra != null) foreach (var kv in extra) f[kv.Key] = kv.Value;
       lock (L) Flows[p] = f; Changed(p); }
     public static Dictionary<string, object> Begin(string p) {
-      if (!Available(p)) return J.D("ok", false, "error", p == "twitch" ? "This build of IXC has no Twitch app ID (see docs/DEVELOPER-SETUP.md)." : "Signing in to " + p + " needs the IXC relay and app ID (see docs/DEVELOPER-SETUP.md).");
+      if (!Available(p)) return J.D("ok", false, "error", "Add your " + (p == "twitch" ? "Twitch" : p == "youtube" ? "Google (YouTube)" : "Kick") + " app first (Platforms & accounts > Your apps), then connect.");
       if (p == "twitch") return BeginTwitch();
       var verifier = U.Token(48); string challenge; using (var h = SHA256.Create()) challenge = Convert.ToBase64String(h.ComputeHash(Encoding.ASCII.GetBytes(verifier))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-      var state = U.Token(16); var redirect = (p == "youtube" ? "http://127.0.0.1:" : "http://localhost:") + Program.Port + "/oauth/" + p;
+      var state = U.Token(16); var redirect = RedirectUri(p);
       string url = p == "youtube"
         ? Ep.Get("google_auth", "https://accounts.google.com/o/oauth2/v2/auth") + "?client_id=" + Uri.EscapeDataString(GoogleId) + "&redirect_uri=" + Uri.EscapeDataString(redirect) + "&response_type=code&scope=" + Uri.EscapeDataString(GoogleScope) + "&access_type=offline&prompt=consent&code_challenge=" + challenge + "&code_challenge_method=S256&state=" + state
         : Ep.Get("kick_id", "https://id.kick.com") + "/oauth/authorize?response_type=code&client_id=" + Uri.EscapeDataString(KickId) + "&redirect_uri=" + Uri.EscapeDataString(redirect) + "&scope=" + Uri.EscapeDataString(string.Join(" ", KickScopes)) + "&code_challenge=" + challenge + "&code_challenge_method=S256&state=" + state;

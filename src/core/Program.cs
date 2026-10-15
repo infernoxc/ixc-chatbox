@@ -134,6 +134,7 @@ namespace IXC {
       if (path == "/api/system/quit" && m == "POST") { Http.Json(ctx, J.D("ok", true)); Log.Info("app", "quit from the dashboard"); Task.Delay(500).ContinueWith(_ => Exit(4)); return; }
       if (path == "/api/update/check") { Http.Json(ctx, Updates.Check()); return; }
       if (path == "/api/accounts") { Http.Json(ctx, Accounts.All()); return; }
+      if (path == "/api/accounts/apps" && m == "POST") { var err = Accounts.SetApps(Http.BodyJson(ctx)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "apps", Accounts.Apps())); return; }
       if (path.StartsWith("/api/accounts/") && m == "POST") { var parts = path.Split('/'); if (parts.Length == 5) { var p = parts[3]; var act = parts[4];
           if (act == "connect") { Http.Json(ctx, Accounts.Begin(p)); return; } if (act == "signout") { Accounts.SignOut(p); Http.Json(ctx, Accounts.All()); return; } if (act == "cancel") { Accounts.Cancel(p); Http.Json(ctx, Accounts.All()); return; }
           if (act == "rumble") { var err = Accounts.SetRumbleUrl(J.Str(Http.BodyJson(ctx), "url", "")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return; } } }

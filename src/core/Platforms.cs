@@ -345,7 +345,7 @@ namespace IXC {
       if (state != "connected") wake.Set(); }
     public void StreamerBotEnded() { sbVideo = ""; }
     public override bool CanSend { get { return Accounts.Has("youtube") && !Accounts.IsInvalid("youtube") && VideoId.Length > 0; } }
-    public override string SendNote { get { return !Accounts.Has("youtube") ? "Sign in to YouTube (Accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
+    public override string SendNote { get { return !Accounts.Has("youtube") ? "Connect your YouTube account (Platforms & accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
     string Base { get { return Ep.Get("youtube_web", "https://www.youtube.com"); } }
     static Dictionary<string, string> Hdr() { return new Dictionary<string, string> { { "Cookie", "SOCS=CAI; CONSENT=YES+1" }, { "Accept-Language", "en-US,en;q=0.9" } }; }
     void Loop() {
