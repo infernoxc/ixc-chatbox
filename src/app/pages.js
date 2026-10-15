@@ -91,16 +91,36 @@
       $('acc').innerHTML = plats.map(p => { const s = st[p] || {}, a = acc[p] || {}, ac = a.account, fl = a.flow;
         const chan = p === 'rumble' ? `<div class="field"><label class="lbl">Live Stream API link</label><div class="val"><input type="url" id="rumbleUrl" placeholder="${ac ? '(saved - paste a new one to replace it)' : 'https://rumble.com/-livestream-api/get-data?key=…'}"><button id="rumbleSave">Save</button></div></div><div class="actions"><button data-open-url="https://rumble.com/account/livestream-api">Open rumble.com to copy it</button></div>`
           : ctl.text('platforms.' + p + '.channel', p === 'youtube' ? 'Your channel' : 'Your channel name', p === 'youtube' ? '@yourhandle or channel link' : p === 'twitch' ? 'yourname' : 'your-name');
-        const account = p === 'rumble' ? '' : !a.available ? `<div class="hint">Signing in isn't available in this build.</div>` : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
+        const account = p === 'rumble' ? '' : !a.available ? `<div class="hint">To reply here, add your ${P[p].name} app under <b>Your apps</b> below.</div>` : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
           : fl && fl.state === 'waiting' ? `<div class="banner info" style="margin-top:6px">${esc(fl.message)}${fl.userCode ? ` - code <b style="font-size:18px;letter-spacing:2px">${esc(fl.userCode)}</b>` : ''}<span class="grow"></span>${fl.url ? `<button data-open-url="${esc(fl.url)}">Open again</button>` : ''}<button data-cancel="${p}">Cancel</button></div>`
           : `<div class="actions"><button class="primary" data-connect="${p}">Connect ${P[p].name} account</button></div>${fl && fl.state === 'failed' ? `<div class="err small">${esc(fl.message)}</div>` : ''}`;
         return `<div class="card"><div class="plat"><span class="logo2 ${p}">${P[p].tag.slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${P[p].name}</h3><div class="small muted">${esc(s.configured ? s.detail || '' : '')}</div></div>${UI.pill(s.configured ? s.state : 'off')}</div>
-          ${ctl.toggle('platforms.' + p + '.enabled', 'Use ' + P[p].name)}${chan}${account}<div class="hint" style="margin-top:8px">${NOTE[p]}${s.configured && s.sendVia === 'streamerbot' ? '<br>Replies: sent through Streamer.bot ✓' : s.configured && !s.canSend && p !== 'rumble' ? '<br>Replies: ' + esc(s.sendNote) + ' - or run Streamer.bot (connected to ' + P[p].name + ') to reply through it' : ''}</div></div>`; }).join('') +
-        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
+          ${ctl.toggle('platforms.' + p + '.enabled', 'Use ' + P[p].name)}${chan}${account}<div class="hint" style="margin-top:8px">${NOTE[p]}${s.configured && s.sendVia === 'streamerbot' ? '<br>Replies: sent through Streamer.bot ✓' : s.configured && !s.canSend && p !== 'rumble' ? '<br>Replies: ' + esc(s.sendNote) : ''}</div></div>`; }).join('') +
+        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional bridge, not needed)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
           ${ctl.select('platforms.streamerbot.mode', 'Use Streamer.bot', [['auto', 'Automatically, when it\'s running'], ['on', 'Always (keep trying)'], ['off', 'Never']])}
-          <div class="hint">You don't need Streamer.bot. If you already use it, IXC reads its chat and can reply through it for platforms you haven't connected here.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
+          <div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
+      $('acc').innerHTML += appsCard(acc.apps || {});
       const rs = $('rumbleSave'); if (rs) rs.onclick = async () => { const r = await IXC.api('/api/accounts/rumble/rumble', { url: $('rumbleUrl').value }); toast(r.ok ? 'Rumble connected' : r.error, !r.ok); }; };
-    main.onclick = async (e) => { const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+    // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
+    const APPS = [
+      ['twitch', 'Twitch', 'dev.twitch.tv/console/apps', ['Click <b>Register Your Application</b>.', 'Name: anything (e.g. <i>IXC yourname</i>). OAuth Redirect URL: <code>http://localhost</code> (not used). Category: <b>Broadcaster Suite</b>. Client Type: <b>Public</b>.', 'Click <b>Create</b>, then <b>Manage</b>, and copy the <b>Client ID</b> here. Public apps have no secret.']],
+      ['google', 'YouTube (Google)', 'console.cloud.google.com/apis/library/youtube.googleapis.com', ['Create a project and click <b>Enable</b> for <b>YouTube Data API v3</b>.', '<b>OAuth consent screen</b>: External, add yourself under <b>Test users</b>.', '<b>Credentials > Create credentials > OAuth client ID</b>, type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> here.']],
+      ['kick', 'Kick', 'kick.com/settings/developer', ['Click <b>Create new app</b>.', 'Redirect URL: <code>{redirect}</code> (exactly this). Scopes: <b>Read user information</b>, <b>Read channel information</b>, <b>Write to Chat feed</b>, <b>Moderate</b>.', 'Copy the <b>Client ID</b> and <b>Client Secret</b> here.']]];
+    function appsCard(apps) {
+      const anyMissing = APPS.some(([k]) => !(apps[k] || {}).available);
+      return `<div class="card" style="grid-column:1/-1"><h3>🔑 Your apps <span class="tiny muted">(for replies, alerts and viewer counts)</span></h3>
+        <div class="hint">To send messages, Twitch, YouTube and Kick need a free developer app that belongs to you. Create it once (about 5 minutes each), paste the IDs here, then press <b>Connect</b> above. Secrets are stored encrypted on this PC only and are never shown again. ${anyMissing ? '' : '<b>All set ✓</b>'}</div>
+        ${APPS.map(([k, name, url, steps]) => { const a = apps[k] || {};
+          return `<details style="margin-top:8px" ${a.available ? '' : 'open'}><summary><b>${name}</b> ${a.available ? '<span class="ok small">✓ ready</span>' : '<span class="muted small">not set up</span>'}${a.own ? '' : a.builtIn ? ' <span class="tiny muted">(using the built-in app)</span>' : ''}</summary>
+            <ol class="small" style="margin:6px 0 8px 18px;padding:0"><li>Open <a href="#" data-open-url="https://${url}">${url}</a> and sign in.</li>${steps.map(x => `<li>${x.replace('{redirect}', esc(a.redirect || ''))}</li>`).join('')}</ol>
+            <div class="field"><label class="lbl">Client ID</label><div class="val"><input id="app_${k}_id" value="${esc(a.id || '')}" autocomplete="off" spellcheck="false"></div></div>
+            ${k === 'twitch' ? '' : `<div class="field"><label class="lbl">Client secret</label><div class="val"><input id="app_${k}_secret" type="password" autocomplete="new-password" placeholder="${a.secretSet ? '(saved - paste a new one to replace it)' : ''}"></div></div>`}
+            <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div></details>`; }).join('')}</div>`; }
+    main.onclick = async (e) => { const b = e.target.closest('button,a[data-open-url]'); if (!b) return; const d = b.dataset;
+      if (d.appSave) { const k = d.appSave, body = { [k]: { id: $('app_' + k + '_id').value.trim() } }; const se = $('app_' + k + '_secret'); if (se && se.value.trim()) body[k].secret = se.value.trim();
+        const r = await IXC.api('/api/accounts/apps', body); if (se) se.value = ''; toast(r.ok ? 'Saved - now press Connect above' : r.error, !r.ok); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
+      if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
+      if (d.openUrl) { e.preventDefault(); window.open(d.openUrl, '_blank'); return; }
       if (d.connect) { b.disabled = true; const r = await IXC.api('/api/accounts/' + d.connect + '/connect', {}); b.disabled = false; if (!r.ok) toast(r.error, true); else toast('Your browser opened - finish signing in there'); }
       if (d.signout && await UI.confirmBox('Sign out of ' + P[d.signout].name + '? IXC keeps reading chat but can\'t reply there.', 'Sign out')) await IXC.api('/api/accounts/' + d.signout + '/signout', {});
       if (d.cancel) await IXC.api('/api/accounts/' + d.cancel + '/cancel', {});
@@ -230,6 +250,62 @@
   });
 
   // ======================= COMMANDS =======================
+  page('obs', 'OBS', (main) => {
+    // direct OBS connection (obs-websocket 5, built into OBS 28+): no Streamer.bot or plugin needed
+    let scenes = null, sources = null, busy = false;
+    const pill = (on, t) => `<span class="pill ${on ? 'st-connected' : ''}"><i></i>${t}</span>`;
+    async function load() { const st = await IXC.api('/api/obs/state'); if (st.connected) { scenes = await IXC.api('/api/obs/scenes'); sources = scenes.ok ? await IXC.api('/api/obs/sources?scene=' + encodeURIComponent(scenes.current)) : null; } else { scenes = sources = null; } paint(st); }
+    function paint(st) { if (App.current !== 'obs') return;
+      main.innerHTML = card('🎬 Connection', `<div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(st.connected ? 'connected' : st.state)} ${st.connected ? `<span class="small">OBS ${esc(st.version)} · WebSocket ${esc(st.websocketVersion)}</span>` : `<span class="small muted">${esc(st.detail || '')}</span>`}</div>
+        ${st.connected ? `<div class="row" style="gap:8px;margin-top:8px">${pill(st.streaming, st.streaming ? 'Streaming' : 'Not streaming')} ${pill(st.recording, st.recording ? 'Recording' : 'Not recording')}</div>` : ''}
+        <div class="field" style="margin-top:10px"><label class="lbl">Address</label><div class="val"><input type="text" id="oAddr" value="${esc(st.address === 'auto' ? '' : (st.address || '').replace(/^ws:\/\//, '').replace(/\/$/, ''))}" placeholder="automatic (from OBS's settings) - or 127.0.0.1:4455"></div></div>
+        <div class="field"><label class="lbl">Password</label><div class="val"><input type="password" id="oPw" autocomplete="new-password" placeholder="${st.passwordSet ? '(saved - type a new one to replace it)' : 'automatic (from OBS\'s settings)'}"></div></div>
+        <div class="actions"><button class="primary" id="oTest">${busy ? 'Testing…' : 'Save & test connection'}</button></div>
+        <div class="hint">IXC finds OBS and its WebSocket password by itself. Only fill these in if OBS is on another PC or you changed the port: OBS > Tools > WebSocket Server Settings > Show Connect Info. OBS 28 or newer is needed.</div>`) +
+        (scenes && scenes.ok ? `<div style="height:14px"></div>` + card('🎞️ Scenes', `<div class="row" style="gap:8px;flex-wrap:wrap">${scenes.scenes.map(n => `<button class="${n === scenes.current ? 'primary' : ''}" data-scene="${esc(n)}">${esc(n)}</button>`).join('')}</div>`) : '') +
+        (sources && sources.ok ? `<div style="height:14px"></div>` + card('👁️ Sources in "' + esc(sources.scene) + '"', `<table class="t">${sources.sources.map(x => `<tr><td>${esc(x.name)}</td><td style="text-align:right"><button class="small ${x.visible ? '' : 'primary'}" data-src="${esc(x.name)}" data-vis="${x.visible ? 'hide' : 'show'}">${x.visible ? 'Hide' : 'Show'}</button></td></tr>`).join('')}</table>
+          <div class="hint">Chat commands can do this too: Commands > edit a command > OBS action (e.g. !brb switches to your BRB scene).</div>`) : ''); }
+    main.onclick = async (e) => { const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+      if (b.id === 'oTest') { busy = true; b.textContent = 'Testing…'; const body = { address: $('oAddr').value.trim() || 'auto' }; if ($('oPw').value) body.password = $('oPw').value;
+        const r = await IXC.api('/api/obs/connection', body); busy = false; toast(r.ok ? 'Connected to OBS ' + r.version : r.error, !r.ok); load(); }
+      if (d.scene) { const r = await IXC.api('/api/obs/scene', { scene: d.scene }); if (!r.ok) toast(r.error, true); setTimeout(load, 300); }
+      if (d.src) { const r = await IXC.api('/api/obs/source', { scene: sources.scene, source: d.src, visible: d.vis }); if (!r.ok) toast(r.error, true); load(); } };
+    load(); on('status', () => { if (App.current === 'obs' && !busy) load(); });
+  });
+  page('timers', 'Timers', (main) => {
+    // repeating chat messages, e.g. "Follow me everywhere" every 15 minutes (replaces Streamer.bot timers)
+    let list = [], view = [];
+    async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['timers.list'] || []).map(x => Object.assign({}, x)); await refresh(); }
+    async function refresh() { const v = await IXC.api('/api/timers'); view = v.timers || []; paint(); }
+    const st = (id) => (view.find(x => x.id === id) || {}).status || '';
+    function paint() { if (App.current !== 'timers') return;
+      main.innerHTML = card('⏱️ Timers', ctl.toggle('timers.enabled', 'Timers on') + ctl.range('timers.gapSec', 'At least this long between two timer messages', '', 's') +
+        (list.length ? `<table class="t"><tr><th>On</th><th>Timer</th><th>Every</th><th>Needs</th><th>Status</th><th></th></tr>${list.map((t, i) => `<tr>
+          <td><label class="switch"><input type="checkbox" data-en="${i}" ${t.enabled !== false ? 'checked' : ''} aria-label="On"><i></i></label></td>
+          <td><b>${esc(t.name)}</b><div class="small muted">${esc(t.message)}</div><div class="tiny muted">${t.platforms && t.platforms.length ? t.platforms.map(p => P[p] ? P[p].name : p).join(', ') : 'All platforms'}${t.liveOnly ? ' · only while live' : ''}</div></td>
+          <td class="small">${t.intervalMin} min</td><td class="small">${t.minLines ? t.minLines + ' chat msgs' : '-'}</td><td class="small">${esc(st(t.id))}</td>
+          <td><button class="small" data-now="${i}">Send now</button> <button class="small" data-ed="${i}">Edit</button> <button class="small" data-rm="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="muted">No timers yet.</p>') +
+        `<div class="actions"><button class="primary" id="tAdd">+ New timer</button></div>
+        <div class="hint" style="margin-top:10px">A timer posts its message every few minutes, but only after enough people have chatted since its last message (so it never talks to an empty chat), and, with <b>only while live</b>, only on platforms where you are live. Messages can use {uptime} {viewers} {song}. IXC posts with your connected accounts (Platforms & accounts). A new timer waits one full interval before its first message.</div>`); }
+    async function store() { const r = await IXC.api('/api/settings', { patch: { 'timers.list': list } }); if (!r.ok) { toast(r.error, true); await load(); return false; } S.values = r.values; list = r.values['timers.list'].map(x => Object.assign({}, x)); await refresh(); toast('Saved'); return true; }
+    function edit(i) { const t = i < 0 ? { name: '', message: '', intervalMin: 15, minLines: 5, liveOnly: true, platforms: [], enabled: true } : Object.assign({}, list[i]);
+      App.modal(`<h3>${i < 0 ? 'New timer' : 'Edit timer'}</h3>
+        <div class="field"><label class="lbl">Name</label><div class="val"><input type="text" id="tN" value="${esc(t.name)}" placeholder="Socials"></div></div>
+        <div class="field"><label class="lbl">Message</label><div class="val"><textarea id="tM" style="font-family:inherit" maxlength="450" placeholder="Follow me everywhere: kick.com/... | youtube.com/@...">${esc(t.message)}</textarea></div></div>
+        <div class="field"><label class="lbl">Every (minutes)</label><div class="val"><input type="number" id="tI" min="1" max="240" value="${t.intervalMin}"></div></div>
+        <div class="field"><label class="lbl">At least this many chat messages in between</label><div class="val"><input type="number" id="tL" min="0" max="500" value="${t.minLines}"></div></div>
+        <div class="field"><label class="lbl">Only while live</label><div class="val"><label class="switch"><input type="checkbox" id="tLive" ${t.liveOnly ? 'checked' : ''} aria-label="Only while live"><i></i></label></div></div>
+        <div class="field"><label class="lbl">Platforms</label><div class="val chipset" id="tPl">${App.PLAT_OPTS.filter(([v]) => v !== 'rumble').map(([v, n]) => `<label><input type="checkbox" value="${v}" ${!t.platforms.length || t.platforms.includes(v) ? 'checked' : ''}>${n}</label>`).join('')}</div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="tSave">Save</button></div>`);
+      $('tSave').onclick = async () => { t.name = $('tN').value.trim(); t.message = $('tM').value.trim(); t.intervalMin = +$('tI').value; t.minLines = +$('tL').value; t.liveOnly = $('tLive').checked;
+        const pl = [...document.querySelectorAll('#tPl input:checked')].map(x => x.value); t.platforms = pl.length === 3 ? [] : pl;
+        if (i < 0) list.push(t); else list[i] = t; if (await store()) App.closeModal(); else if (i < 0) list.pop(); }; }
+    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'tAdd') edit(-1); if (d.ed) edit(+d.ed);
+      if (d.now) { const r = await IXC.api('/api/timers/send', { id: list[+d.now].id }); toast(r.ok ? 'Sent to ' + r.sentTo.map(p => P[p].name).join(', ') : r.error, !r.ok); refresh(); }
+      if (d.rm && await UI.confirmBox('Delete the timer "' + list[+d.rm].name + '"?', 'Delete')) { list.splice(+d.rm, 1); store(); } };
+    main.onchange = (e) => { const i = e.target.dataset.en; if (i != null) { list[+i].enabled = e.target.checked; store(); } };
+    load(); const iv = setInterval(() => { if (App.current !== 'timers') return clearInterval(iv); refresh(); }, 5000);
+  });
   page('commands', 'Commands', (main) => {
     let list = [];
     async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['commands.list'] || []).map(x => Object.assign({}, x)); paint(); }
@@ -237,22 +313,38 @@
     function paint() { main.innerHTML = card('⌨️ Chat commands', ctl.toggle('commands.enabled', 'Commands on') + `<table class="t"><tr><th>On</th><th>Command</th><th>Answer</th><th>Who</th><th>Cooldown</th><th></th></tr>${list.map((c, i) => `<tr><td><label class="switch"><input type="checkbox" data-en="${i}" ${c.enabled ? 'checked' : ''} aria-label="On"><i></i></label></td>
         <td><b>${esc(c.trigger)}</b>${c.aliases && c.aliases.length ? '<div class="tiny muted">' + esc(c.aliases.join(' ')) + '</div>' : ''}</td><td class="small">${c.builtin ? '<span class="muted">' + esc(BUILT[c.builtin] || '') + '</span>' + (c.response ? ' · ' : '') : ''}${esc(c.response)}</td>
         <td class="small">${esc(c.permission)}</td><td class="small">${c.cooldownSec ? c.cooldownSec + ' s' : '-'}</td><td><button class="small" data-ed="${i}">Edit</button> <button class="small" data-rm="${i}">✕</button></td></tr>`).join('')}</table>
-        <div class="actions"><button class="primary" id="cAdd">+ New command</button><button id="cReset">Restore default commands</button></div>
-        <div class="hint" style="margin-top:10px">In answers you can use {user} {name} {target} {args} {song} {title} {artist} {queue} {uptime} {viewers} {count} {platform}. Answers need IXC to be able to reply on that platform (Platforms & accounts).</div>`); }
+        <div class="actions"><button class="primary" id="cAdd">+ New command</button><button id="cImport">Import from Streamer.bot</button><button id="cReset">Restore default commands</button></div>
+        <div class="hint" style="margin-top:10px">In answers you can use {user} {name} {target} {args} {song} {title} {artist} {queue} {uptime} {viewers} {count} {platform}. Answers need IXC to be able to reply on that platform (Platforms & accounts).</div>`) +
+        `<div style="height:14px"></div>` + card('🎉 Event messages', `<div class="hint" style="margin-bottom:8px">A chat message when something happens, posted on the platform where it happened. {user} is the person, {amount} the Super Chat amount.</div>` +
+          EVENTS.map(([k, t]) => ctl.toggle('events.' + k + '.on', t) + ctl.text('events.' + k + '.message', 'Message')).join('') +
+          ctl.range('events.cooldownSec', 'At most one message per event type and platform every', 'stops floods from follow bots and gift bombs', 's') +
+          `<div class="hint">Follows: Twitch needs your connected Twitch account; Kick and Rumble work without. Subs, gifts and raids: Twitch and Kick. Super Chats and members: YouTube.</div>`); }
+    const EVENTS = [['follow', 'New follower'], ['sub', 'New subscriber'], ['gift', 'Gifted subs'], ['raid', 'Raid / host'], ['superchat', 'Super Chat / Rant'], ['member', 'New YouTube member']];
+    async function importSb() { const r = await IXC.api('/api/commands/streamerbot');
+      if (!r.connected) { toast('Streamer.bot isn\'t connected - open it once (with its WebSocket server on) to import its commands', true); return; }
+      if (!r.commands.length) { toast('Every Streamer.bot command is already in IXC'); return; }
+      App.modal(`<h3>Import from Streamer.bot</h3><p class="small muted">Streamer.bot only shares the command names, not what its actions do - type each answer once. Empty ones are skipped.</p>
+        ${r.commands.map((t, i) => `<div class="field"><label class="lbl"><b>${esc(t)}</b></label><div class="val"><input type="text" data-imp="${i}" placeholder="What IXC answers"></div></div>`).join('')}
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="impSave">Add commands</button></div>`);
+      $('impSave').onclick = async () => { let n = 0; document.querySelectorAll('[data-imp]').forEach(el => { const v = el.value.trim(); if (v) { list.push({ trigger: r.commands[+el.dataset.imp], response: v, permission: 'everyone', cooldownSec: 10, userCooldownSec: 0, platforms: [], enabled: true, aliases: [] }); n++; } });
+        if (!n) { App.closeModal(); return; } if (await store()) { App.closeModal(); toast(n + ' command' + (n === 1 ? '' : 's') + ' added'); } }; }
     async function store() { const r = await IXC.api('/api/settings', { patch: { 'commands.list': list } }); if (!r.ok) { toast(r.error, true); await load(); return false; } S.values = r.values; list = r.values['commands.list'].map(x => Object.assign({}, x)); paint(); toast('Saved'); return true; }
     function edit(i) { const c = i < 0 ? { trigger: '!', response: '', permission: 'everyone', cooldownSec: 10, userCooldownSec: 0, platforms: [], enabled: true, aliases: [] } : Object.assign({}, list[i]);
       App.modal(`<h3>${i < 0 ? 'New command' : 'Edit ' + esc(c.trigger)}</h3><div class="field"><label class="lbl">Command</label><div class="val"><input type="text" id="eT" value="${esc(c.trigger)}" ${c.builtin ? 'disabled' : ''}></div></div>
         <div class="field"><label class="lbl">Other names</label><div class="val"><input type="text" id="eA" value="${esc((c.aliases || []).join(' '))}" placeholder="!dc !disc"></div></div>
         <div class="field"><label class="lbl">Answer</label><div class="val"><textarea id="eR" style="font-family:inherit">${esc(c.response)}</textarea></div></div>
+        <details ${Object.keys(c.responses || {}).length ? 'open' : ''}><summary class="small">Different answer per platform (optional)</summary>${App.PLAT_OPTS.map(([v, n]) => `<div class="field"><label class="lbl">${n}</label><div class="val"><input type="text" data-resp="${v}" value="${esc((c.responses || {})[v] || '')}" placeholder="(same as above)"></div></div>`).join('')}</details>
+        <div class="field"><label class="lbl">OBS action</label><div class="val"><select id="eO">${[['', 'None'], ['scene', 'Switch to scene'], ['show', 'Show a source'], ['hide', 'Hide a source'], ['toggle', 'Show / hide a source']].map(([v, t]) => `<option value="${v}" ${((c.obs || {}).type || '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <input type="text" id="eOS" placeholder="Scene" value="${esc((c.obs || {}).scene || '')}" style="margin-top:6px"><input type="text" id="eOX" placeholder="Source (for show / hide)" value="${esc((c.obs || {}).source || '')}" style="margin-top:6px"></div></div>
         <div class="field"><label class="lbl">Who can use it</label><div class="val"><select id="eP">${App.ROLE_OPTS.map(([v, t]) => `<option value="${v}" ${c.permission === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div></div>
         <div class="field"><label class="lbl">Cooldown (s)</label><div class="val"><input type="number" id="eC" min="0" max="3600" value="${c.cooldownSec}"></div></div>
         <div class="field"><label class="lbl">Per person cooldown (s)</label><div class="val"><input type="number" id="eU" min="0" max="3600" value="${c.userCooldownSec}"></div></div>
         <div class="field"><label class="lbl">Platforms</label><div class="val chipset" id="ePl">${App.PLAT_OPTS.map(([v, t]) => `<label><input type="checkbox" value="${v}" ${!c.platforms.length || c.platforms.includes(v) ? 'checked' : ''}>${t}</label>`).join('')}</div></div>
         <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="eSave">Save</button></div>`);
-      $('eSave').onclick = async () => { c.trigger = $('eT').value.trim(); c.aliases = $('eA').value.split(/[\s,]+/).filter(Boolean); c.response = $('eR').value.trim(); c.permission = $('eP').value; c.cooldownSec = +$('eC').value; c.userCooldownSec = +$('eU').value;
+      $('eSave').onclick = async () => { c.trigger = $('eT').value.trim(); c.aliases = $('eA').value.split(/[\s,]+/).filter(Boolean); c.response = $('eR').value.trim(); c.responses = {}; document.querySelectorAll('[data-resp]').forEach(el => { if (el.value.trim()) c.responses[el.dataset.resp] = el.value.trim(); }); c.permission = $('eP').value; c.obs = $('eO').value ? { type: $('eO').value, scene: $('eOS').value.trim(), source: $('eOX').value.trim() } : null; c.cooldownSec = +$('eC').value; c.userCooldownSec = +$('eU').value;
         const pl = [...document.querySelectorAll('#ePl input:checked')].map(x => x.value); c.platforms = pl.length === 4 ? [] : pl;
         if (i < 0) list.push(c); else list[i] = c; if (await store()) App.closeModal(); else if (i < 0) list.pop(); }; }
-    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'cAdd') edit(-1); if (d.ed) edit(+d.ed);
+    main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'cAdd') edit(-1); if (e.target.id === 'cImport') importSb(); if (d.ed) edit(+d.ed);
       if (d.rm && await UI.confirmBox('Delete ' + list[+d.rm].trigger + '?', 'Delete')) { list.splice(+d.rm, 1); store(); }
       if (e.target.id === 'cReset' && await UI.confirmBox('Put back the default commands? Your own commands stay.', 'Restore')) { const own = list.filter(c => !c.builtin); const r = await IXC.api('/api/settings', { patch: { 'commands.list': null } }); list = (r.values ? r.values['commands.list'] : []).concat(own); store(); } };
     main.onchange = (e) => { const i = e.target.dataset.en; if (i != null) { list[+i].enabled = e.target.checked; store(); } };

@@ -81,7 +81,7 @@ export async function fakeTwitch(port) {
   return s; }
 // obs-websocket 5
 export async function fakeObs(opts = {}) {
-  const st = { scenes: opts.scenes || ['Main', 'BRB'], inputs: {}, items: {}, tracks: {}, current: 'Main', calls: [] }; for (const sc of st.scenes) st.items[sc] = [];
+  const st = { scenes: opts.scenes || ['Main', 'BRB'], inputs: {}, items: {}, tracks: {}, current: 'Main', calls: [], hidden: new Set() }; for (const sc of st.scenes) st.items[sc] = [];
   const s = await wsServer((c) => {
     c.send({ op: 0, d: { obsWebSocketVersion: '5.5.0', rpcVersion: 1, authentication: opts.password ? { challenge: 'ch', salt: 'sa' } : undefined } });
     c.ws.on('message', async (d) => { const m = JSON.parse(d.toString());
@@ -101,10 +101,16 @@ export async function fakeObs(opts = {}) {
         case 'CreateSceneItem': if (!st.items[q.sceneName]) fail('no scene'); else { st.items[q.sceneName].push(q.sourceName); data = { sceneItemId: st.items[q.sceneName].length }; } break;
         case 'SetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found by the name of `' + q.inputName + '`.'); else { if (opts.notReadyOnce && !st.nr) { st.nr = 1; ok = false; comment = 'OBS is not ready to perform the request.'; break; } Object.assign(st.tracks[q.inputName], q.inputAudioTracks); } break;
         case 'GetInputAudioTracks': if (!st.tracks[q.inputName]) fail('No source was found'); else data = { inputAudioTracks: st.tracks[q.inputName] }; break;
+        case 'SetCurrentProgramScene': if (!st.scenes.includes(q.sceneName)) fail('No source was found by the name of `' + q.sceneName + '`.'); else { st.current = q.sceneName; for (const cl of s.live()) cl.send({ op: 5, d: { eventType: 'CurrentProgramSceneChanged', eventIntent: 4, eventData: { sceneName: q.sceneName } } }); } break;
+        case 'GetSceneItemList': if (!st.items[q.sceneName]) fail('No source was found by the name of `' + q.sceneName + '`.'); else data = { sceneItems: st.items[q.sceneName].map((n, i) => ({ sceneItemId: i + 1, sourceName: n, sceneItemEnabled: !st.hidden.has(q.sceneName + '|' + n) })) }; break;
+        case 'GetSceneItemEnabled': { const n = (st.items[q.sceneName] || [])[q.sceneItemId - 1]; if (!n) fail('No scene item'); else data = { sceneItemEnabled: !st.hidden.has(q.sceneName + '|' + n) }; } break;
+        case 'SetSceneItemEnabled': { const n = (st.items[q.sceneName] || [])[q.sceneItemId - 1]; if (!n) fail('No scene item'); else if (q.sceneItemEnabled) st.hidden.delete(q.sceneName + '|' + n); else st.hidden.add(q.sceneName + '|' + n); } break;
         case 'GetStreamStatus': data = { outputActive: !!st.streaming }; break;
         case 'GetRecordStatus': data = { outputActive: !!st.recording }; break;
         default: fail('unknown request ' + t); }
       c.send({ op: 7, d: { requestType: t, requestId: id, requestStatus: { result: ok, code: ok ? 100 : 600, comment }, responseData: data } }); }); });
+  // push an OBS event to IXC (e.g. StreamStateChanged), the way OBS does
+  s.event = (eventType, eventData) => { for (const cl of s.live()) cl.send({ op: 5, d: { eventType, eventIntent: 64, eventData } }); };
   s.st = st; return s; }
 // Cloudflare Worker relay in Cloudflare's local runtime (wrangler dev)
 export async function startRelay() {

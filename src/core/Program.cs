@@ -75,6 +75,7 @@ namespace IXC {
       Safe("phone", () => Remote.Init());
       Safe("status", () => Status.Init());
       Safe("updates", () => Updates.Init());
+      Safe("timers", () => { if (HasChat) Timers.Init(); });
       WatchFiles();
       AppDomain.CurrentDomain.ProcessExit += (s, e) => SaveAll();
       Thread.Sleep(Timeout.Infinite); GC.KeepAlive(mutex); return 0;
@@ -134,15 +135,20 @@ namespace IXC {
       if (path == "/api/system/quit" && m == "POST") { Http.Json(ctx, J.D("ok", true)); Log.Info("app", "quit from the dashboard"); Task.Delay(500).ContinueWith(_ => Exit(4)); return; }
       if (path == "/api/update/check") { Http.Json(ctx, Updates.Check()); return; }
       if (path == "/api/accounts") { Http.Json(ctx, Accounts.All()); return; }
+      // Streamer.bot commands that IXC doesn't have yet (names only: Streamer.bot doesn't share what its actions do)
+      if (path == "/api/commands/streamerbot") { var have = new HashSet<string>(Commands.Triggers(), StringComparer.OrdinalIgnoreCase); var sb = Platforms.Sb.Ready ? Platforms.Sb.Commands().Result : new List<string>();
+        Http.Json(ctx, J.D("connected", Platforms.Sb.Ready, "commands", sb.Where(x => x.StartsWith("!") && !have.Contains(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList())); return; }
+      if (path == "/api/accounts/apps" && m == "POST") { var err = Accounts.SetApps(Http.BodyJson(ctx)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "apps", Accounts.Apps())); return; }
       if (path.StartsWith("/api/accounts/") && m == "POST") { var parts = path.Split('/'); if (parts.Length == 5) { var p = parts[3]; var act = parts[4];
           if (act == "connect") { Http.Json(ctx, Accounts.Begin(p)); return; } if (act == "signout") { Accounts.SignOut(p); Http.Json(ctx, Accounts.All()); return; } if (act == "cancel") { Accounts.Cancel(p); Http.Json(ctx, Accounts.All()); return; }
           if (act == "rumble") { var err = Accounts.SetRumbleUrl(J.Str(Http.BodyJson(ctx), "url", "")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return; } } }
+      if (ObsControl.Api(ctx, path, m)) return;
       if (path == "/api/obs/detect") { Http.Json(ctx, Obs.Detect()); return; }
       if (path == "/api/obs/check") { Http.Json(ctx, Obs.Check().Result); return; }
       if (path == "/api/obs/remove" && m == "POST") { Http.Json(ctx, Obs.RemoveAll().Result); return; }
       if (path == "/api/obs/overlay" && m == "POST") { var b = Http.BodyJson(ctx); try { Http.Json(ctx, Obs.AddOverlay(J.Str(b, "name", "Overlay"), BaseUrl + J.Str(b, "path", "/overlay/"), J.Int(b, "width", 800), J.Int(b, "height", 200)).Result); } catch (Exception e) { Http.Json(ctx, 400, J.D("ok", false, "error", U.Plain(e))); } return; }
       if (path == "/api/firstrun/done" && m == "POST") { Settings.Set("general.firstRunDone", true); Http.Json(ctx, J.D("ok", true)); return; }
-      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path)) return;
+      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
       if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;
       if (Remote.LocalApi(ctx, path, m)) return;

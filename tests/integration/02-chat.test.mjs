@@ -63,7 +63,9 @@ test('Kick + YouTube + Rumble together; one platform failing never stops the oth
   assert.ok(old.old, 'messages already in chat are marked old (not read out)');
   const sc = (await p.wait((x) => x.type === 'chat.msg' && x.m.id === 'p1', 6000)).m; assert.equal(sc.kind, 'superchat'); assert.equal(sc.amount, '₹200.00');
   await p.wait((x) => x.type === 'chat.del' && x.id === 'y1', 8000);
-  const rm = (await p.wait((x) => x.type === 'chat.msg' && x.m.text === 'new rumble msg', 15000)).m; assert.equal(rm.platform, 'rumble');
+  // the new Rumble message arrives live, or (when its poll ran before this page connected) in the history - never as old
+  const rm = await until(async () => p.msgs.find(x => x.type === 'chat.msg' && x.m.text === 'new rumble msg')?.m || (await api(c, '/api/chat/history')).body.messages.find(m => m.text === 'new rumble msg'), 15000, 'new rumble message');
+  assert.equal(rm.platform, 'rumble'); assert.equal(rm.old, false, 'a new message is not marked old');
   const v = await until(async () => { const s = (await api(c, '/api/viewers')).body; return s.platforms.kick.count === 102 && s.platforms.youtube.count === 731 && s.platforms.rumble.count === 55 ? s : null; }, 15000, 'viewer counts');
   assert.equal(v.total, 102 + 731 + 55); assert.equal(v.platforms.twitch.count, null, 'Twitch has no number (not signed in)'); assert.equal(v.partial, true);
   const st = (await api(c, '/api/chat/status')).body.platforms; assert.equal(st.twitch.state, 'reconnecting', 'the failing platform shows its own state'); assert.equal(st.kick.state, 'connected'); assert.equal(st.youtube.state, 'connected'); assert.equal(st.rumble.state, 'connected');

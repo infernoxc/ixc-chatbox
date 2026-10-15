@@ -38,7 +38,11 @@ That's all. You never edit files, ports, JSON or firewall rules.
 | 🎚 **Music ducking** | Music fades down smoothly while the voice speaks, then comes back to exactly where it was. |
 | 🎵 **Music** | YouTube search and links, Spotify links (matched on YouTube), your own MP3/FLAC/… folders. Queue, shuffle, repeat, autoplay. Send the music to **all platforms or only one** (for example, YouTube only). |
 | 🙋 **Song requests** | `!sr song name` from chat, with who-can-request, cooldowns, limits, banned songs/artists and a maximum length. `!wrongsong` removes your last request. |
-| ⌨️ **Commands** | `!np` `!queue` `!skip` `!uptime` `!viewers` and your own (`!discord`, `!socials`…) with permissions, cooldowns and platforms. |
+| ⌨️ **Commands** | `!np` `!queue` `!skip` `!uptime` `!viewers` and your own (`!discord`, `!socials`…) with permissions, cooldowns, platforms, a different answer per platform and OBS actions (`!brb` → BRB scene). Import from Streamer.bot. |
+| ⏱ **Timers** | Repeating messages ("Follow me everywhere…") every N minutes, only after enough chat, only while live. Never repeats after a reconnect or restart. |
+| 🎉 **Event messages** | Thank-you in chat for follows, subs, gifts, raids, Super Chats and members, with flood protection. |
+| 🎬 **OBS control** | Direct OBS WebSocket connection: streaming / recording state, scene switching, show / hide sources, connection test. |
+| 🛡 **Moderation** | Delete, time out and ban from the chat panel through each platform's official API. |
 | 🛡 **Chat filters** | Links, caps, spam, copy-paste waves, banned words, block and allow lists, "subscribers only" on stream. You still see everything in your panel. |
 | 👁 **Viewer counter** | Per platform and total. A number that's out of date is never shown as current. |
 | 🖼 **Overlays** | Now Playing (full / compact / minimal), Up Next, Chat, Viewers, Alerts (follows, subs, raids, Super Chats), chat-voice indicator and a "Live on" badge. Style them in IXC and press **Add to OBS**. |
@@ -49,7 +53,9 @@ That's all. You never edit files, ports, JSON or firewall rules.
 - **Windows 10 (1903 or newer) or Windows 11.** Everything else IXC needs is built into Windows.
 - **OBS Studio 30 or newer** (free, [obsproject.com](https://obsproject.com)).
 - **Internet** for the platforms, neural voices, YouTube and the phone remote. Local music and the offline voice work without it.
-- **Streamer.bot is optional.** If you already use it, IXC uses it too, for example to reply on platforms you haven't connected in IXC.
+- **No Streamer.bot and no plugins needed.** IXC does chat, replies, commands, timers, event messages, chat voice, music and OBS by itself.
+  To reply on Twitch, YouTube and Kick, create a free developer app once per platform with your own account (steps inside IXC, about
+  5 minutes each). Streamer.bot still works as an optional bridge if you run it.
 
 ## Honest limitations
 - **Neural voices** use Microsoft Edge's "Read aloud" service, which isn't an official API. If it ever stops, IXC switches to the offline Windows voice by itself and tells you.

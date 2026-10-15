@@ -6,8 +6,8 @@ window.App = (() => {
   const S = { status: null, values: {}, schema: {}, voices: [], accounts: null, remote: null, music: null, route: null, tts: null, viewers: null, up: false, outputFolder: '', dataFolder: '' };
   const pages = {}; let current = null, listeners = [];
   const DOCK = new URLSearchParams(location.search).get('dock') === '1'; if (DOCK) document.body.classList.add('dock');
-  const NAV = [['home', '🏠', 'Home'], ['', '', 'Live'], ['chat', '💬', 'Chat'], ['music', '🎵', 'Music'], ['requests', '🙋', 'Song requests'], ['', '', 'Setup'], ['accounts', '🔗', 'Platforms & accounts'], ['overlays', '🖼️', 'Overlays'], ['phone', '📱', 'Phone remote'],
-    ['', '', 'Chat tools'], ['tts', '🔊', 'Chat voice (TTS)'], ['voices', '🎙️', 'Voices for people'], ['commands', '⌨️', 'Commands'], ['filters', '🛡️', 'Chat filters'], ['', '', 'System'], ['check', '🩺', 'System check'], ['settings', '⚙️', 'Settings']];
+  const NAV = [['home', '🏠', 'Home'], ['', '', 'Live'], ['chat', '💬', 'Chat'], ['music', '🎵', 'Music'], ['requests', '🙋', 'Song requests'], ['', '', 'Setup'], ['accounts', '🔗', 'Platforms & accounts'], ['obs', '🎬', 'OBS'], ['overlays', '🖼️', 'Overlays'], ['phone', '📱', 'Phone remote'],
+    ['', '', 'Chat tools'], ['tts', '🔊', 'Chat voice (TTS)'], ['voices', '🎙️', 'Voices for people'], ['commands', '⌨️', 'Commands'], ['timers', '⏱️', 'Timers'], ['filters', '🛡️', 'Chat filters'], ['', '', 'System'], ['check', '🩺', 'System check'], ['settings', '⚙️', 'Settings']];
   function navHtml() { $('navList').innerHTML = NAV.map(([id, ic, t]) => id ? `<a href="#${id}" data-p="${id}"><span class="ic" aria-hidden="true">${ic}</span>${esc(t)}<span class="badge" hidden></span></a>` : `<div class="grp">${esc(t)}</div>`).join(''); }
   // ---------- live state ----------
   const link = IXC.connect({ role: 'app', topics: ['status', 'music.state', 'tts', 'remote', 'accounts', 'viewers', 'settings', 'reload'], onState, on: onMsg });

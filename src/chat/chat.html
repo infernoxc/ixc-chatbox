@@ -88,7 +88,7 @@
   function add(m) {
     const el = document.createElement('div'); const alert = m.kind && m.kind !== 'chat';
     el.className = 'msg ' + (P[m.platform] ? m.platform : 'test') + (alert ? ' alert' : '') + (m.hidden ? ' dim' : '') + (m.me ? ' me' : '');
-    el.dataset.p = m.platform; el.dataset.id = m.id || ''; el.dataset.login = (m.login || m.name || '').toLowerCase(); el.dataset.name = m.name || '';
+    el.dataset.p = m.platform; el.dataset.id = m.id || ''; el.dataset.uid = m.userId || ''; if (m.me) el.dataset.me = '1'; el.dataset.login = (m.login || m.name || '').toLowerCase(); el.dataset.name = m.name || '';
     const r = m.roles || {}; const role = (r.broadcaster ? '👑' : '') + (r.mod ? '🛡️' : '') + (r.vip ? '💎' : '') + (r.sub ? '⭐' : '');
     const av = m.avatar && /^https:/.test(m.avatar) ? `<img src="${esc(m.avatar)}" alt="" loading="lazy" onerror="this.remove()">` : esc((m.name || '?')[0].toUpperCase());
     const text = alert ? esc((m.text || m.kind) + (m.amount ? ' · ' + m.amount : '')) : UI.msgHtml(m);
@@ -139,10 +139,12 @@
   // ---------- click a message: reply / voice / never read / hide ----------
   const menu = $('menu'); let menuFor = null;
   list.addEventListener('click', (e) => { const el = e.target.closest('.msg'); if (!el || el.classList.contains('sys') || el.classList.contains('alert')) return;
-    menuFor = { p: el.dataset.p, name: el.dataset.name, login: el.dataset.login, text: el.querySelector('.text') ? el.querySelector('.text').textContent : '' };
+    menuFor = { p: el.dataset.p, name: el.dataset.name, login: el.dataset.login, id: el.dataset.id, uid: el.dataset.uid, text: el.querySelector('.text') ? el.querySelector('.text').textContent : '' };
+    const mc = (plats[menuFor.p] || {}).mod || {}, own = el.dataset.me === '1';
+    const modBtns = own ? '' : (mc.delete && menuFor.id ? '<button data-a="mdel">🗑 Delete this message</button>' : '') + (mc.timeout ? '<button data-a="mto">⏱ Time out ' + esc(menuFor.name) + ' (10 min)</button>' : '') + (mc.ban ? '<button data-a="mban">⛔ Ban ' + esc(menuFor.name) + '</button>' : '');
     menu.innerHTML = `<div class="h">${esc(P[menuFor.p] ? P[menuFor.p].name : '')} · <b>${esc(menuFor.name)}</b></div>
       <button data-a="reply">↩ Reply to ${esc(menuFor.name)}</button><button data-a="voice">🎙 Choose a voice for ${esc(menuFor.name)}…</button>
-      <button data-a="never">🔇 Never read ${esc(menuFor.name)} out loud</button><button data-a="hide">🚫 Hide ${esc(menuFor.name)} everywhere</button><button data-a="copy">📋 Copy message</button>`;
+      <button data-a="never">🔇 Never read ${esc(menuFor.name)} out loud</button><button data-a="hide">🚫 Hide ${esc(menuFor.name)} everywhere</button><button data-a="copy">📋 Copy message</button>${modBtns}`;
     const r = el.getBoundingClientRect(); menu.classList.add('show'); const mw = menu.offsetWidth, mh = menu.offsetHeight;
     menu.style.left = Math.max(6, Math.min(window.innerWidth - mw - 6, e.clientX - 20)) + 'px'; menu.style.top = Math.max(6, Math.min(window.innerHeight - mh - 6, r.bottom + 4)) + 'px'; });
   document.addEventListener('click', (e) => { if (!e.target.closest('#menu') && !e.target.closest('.msg')) menu.classList.remove('show'); });
@@ -151,6 +153,10 @@
     else if (a === 'voice') openApp('#voices?user=' + encodeURIComponent(f.name) + '&p=' + f.p);
     else if (a === 'never') { const l = (settings['tts.neverSpeak'] || []).concat([f.name]); const r = await IXC.api('/api/settings', { patch: { 'tts.neverSpeak': l } }); toast(r.ok ? f.name + ' will never be read out' : r.error, !r.ok); if (r.ok) settings = r.values; }
     else if (a === 'hide') { if (!await UI.confirmBox('Hide ' + f.name + ' from this panel, the overlay and the voice?', 'Hide')) return; const l = (settings['chat.filters.blacklist'] || []).concat([f.name]); const r = await IXC.api('/api/settings', { patch: { 'chat.filters.blacklist': l } }); toast(r.ok ? f.name + ' is hidden (undo in IXC > Chat filters)' : r.error, !r.ok); if (r.ok) settings = r.values; }
+    else if (a === 'mdel' || a === 'mto' || a === 'mban') {
+      if (a === 'mban' && !await UI.confirmBox('Ban ' + f.name + ' on ' + P[f.p].name + '? They can no longer chat on your channel there.', 'Ban')) return;
+      const r = await IXC.api('/api/chat/moderate', { platform: f.p, action: a === 'mdel' ? 'delete' : a === 'mto' ? 'timeout' : 'ban', id: f.id, userId: f.uid, login: f.login, seconds: 600 });
+      toast(r.ok ? (a === 'mdel' ? 'Message deleted' : a === 'mto' ? f.name + ' timed out for 10 minutes' : f.name + ' banned') : r.error, !r.ok); }
     else if (a === 'copy') { try { await navigator.clipboard.writeText(f.text); toast('Copied'); } catch { toast('Copy is not allowed here', true); } } };
   // ---------- reply box with ! and @ suggestions ----------
   let CMDS = [], FROM = {}, USERS = [], sugItems = [], sel = 0, sugAt = 0; const input = $('msgIn'), sug = $('sug');

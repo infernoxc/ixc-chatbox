@@ -3,6 +3,21 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-15
+IXC now does everything Streamer.bot did for it: **Streamer.bot is no longer needed for anything**.
+### Added
+- **Your apps** (Platforms & accounts): enter your own free Twitch, Google (YouTube) and Kick developer apps to reply, get follower alerts and viewer counts. Step-by-step guides inside IXC; secrets stored encrypted on your PC; no relay, nothing secret in the installer.
+- **Timers**: repeating messages every N minutes, only after enough chat, only while live, per platform, Send now. Never repeated after a reconnect or restart; never two timer messages back to back.
+- **Event messages**: a chat thank-you for follows, subs, gifted subs, raids, Super Chats / Rants and new members, on the platform where it happened, with flood protection.
+- **Commands**: a different answer per platform; OBS actions (switch scene, show / hide / toggle a source, e.g. `!brb`); **Import from Streamer.bot** (names; you type the answers once).
+- **OBS page**: direct OBS WebSocket connection with Save & test connection, streaming / recording state, scene buttons, show / hide sources.
+- **Moderation** from the chat panel: delete / time out / ban on Twitch (Helix) and YouTube (Data API), time out / ban on Kick (public API). Twitch and Kick sign-in now also ask for the moderation permission (sign in again to use it).
+- docs/FEATURE-PARITY.md: what IXC does, how it's done and how each part is tested.
+### Changed
+- Streamer.bot is labelled an optional bridge; reply hints point to Your apps instead.
+### Fixed
+- Saving the Rumble link restarted the Rumble connection twice; a message arriving in between could be treated as old (not read out).
+
 ## [3.0.4] - 2026-10-06
 ### Fixed
 - YouTube: after a stream ended, IXC could connect to it again and drop it again for several minutes (YouTube's page can keep naming the stream that just ended, and its chat page can still look live). The stream that just ended is no longer taken from the chat or Streamer.bot for 10 minutes; YouTube's own "live" marker still counts.
