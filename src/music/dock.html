@@ -16,8 +16,8 @@
   #times { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: -4px; }
   .ctrl button { padding: 6px 9px; } .ctrl input[type=range] { flex: 1; min-width: 60px; }
   #route { display: grid; grid-template-columns: .7fr 1fr 1fr 1.15fr .6fr; gap: 4px; } #route button { padding: 5px 2px; font-size: 11px; justify-content: center; }
-  #route button.sel[data-m=all] { background: var(--red); border-color: var(--red); color: #fff; } #route button.sel[data-m=twitch] { background: var(--tw); border-color: var(--tw); color: #fff; }
-  #route button.sel[data-m=kick] { background: var(--kick); border-color: var(--kick); color: #0a0a0a; } #route button.sel[data-m=youtube] { background: var(--yt); border-color: var(--yt); color: #fff; } #route button.sel[data-m=off] { background: #555; color: #fff; }
+  #route button.sel[data-p=twitch], #route button.sel[data-p=kick], #route button.sel[data-p=youtube] { color: #fff; } #route button.sel[data-m=all] { background: var(--red); border-color: var(--red); color: #fff; } #route button.sel[data-p=twitch] { background: var(--tw); border-color: var(--tw); color: #fff; }
+  #route button.sel[data-p=kick] { background: var(--kick); border-color: var(--kick); color: #0a0a0a; } #route button.sel[data-p=youtube] { background: var(--yt); border-color: var(--yt); color: #fff; } #route button.sel[data-m=off] { background: #555; color: #fff; }
   #routeS { font-size: 11px; color: var(--dim); } #routeS.bad { color: var(--warn); }
   #msg { display: none; font-size: 12px; padding: 7px 9px; border-radius: 8px; background: #2a2113; color: #ffe2a6; border: 1px solid #574420; white-space: pre-line; } #msg.ok { background: #102419; color: #bff3d2; border-color: #1f5434; } #msg.show { display: block; }
   #tabs { display: flex; gap: 4px; padding: 6px 10px 0; } #tabs button { flex: 1; justify-content: center; } #tabs button.sel { background: #2c2a36; border-color: #55525f; }
@@ -36,8 +36,8 @@
   <div class="row ctrl"><button id="prev" title="Previous" aria-label="Previous">⏮</button><button id="toggle" title="Play / pause" aria-label="Play or pause">▶</button><button id="next" title="Next" aria-label="Next">⏭</button>
     <button id="shuf" title="Shuffle" aria-label="Shuffle">🔀</button><button id="rep" title="Repeat the queue" aria-label="Repeat">🔁</button><button id="auto" title="Autoplay: when the queue ends, keep playing similar songs">Auto</button>
     <span aria-hidden="true">🔊</span><input id="vol" type="range" min="0" max="100" aria-label="Music volume"></div>
-  <div class="small muted">Music goes to</div>
-  <div id="route"><button data-m="all" title="All your stream outputs">ALL</button><button data-m="twitch" title="Only viewers on Twitch hear the music">TWITCH</button><button data-m="kick" title="Only viewers on Kick hear the music">KICK</button><button data-m="youtube" title="Only viewers on YouTube hear the music">YOUTUBE</button><button data-m="off" title="Nobody hears the music on stream">OFF</button></div>
+  <div class="small muted">Music goes to <span class="muted">(tap a platform to switch it on or off)</span></div>
+  <div id="route"><button data-m="all" title="All your stream outputs">ALL</button><button data-p="twitch" aria-pressed="false" title="Twitch viewers hear the music: on/off">TWITCH</button><button data-p="kick" aria-pressed="false" title="Kick viewers hear the music: on/off">KICK</button><button data-p="youtube" aria-pressed="false" title="YouTube viewers hear the music: on/off">YOUTUBE</button><button data-m="off" title="Nobody hears the music on stream">OFF</button></div>
   <div id="routeS">checking OBS…</div>
 </header>
 <div id="status"></div>
@@ -74,7 +74,7 @@
   $('shuf').onclick = () => cmd('shuffle', { on: !S.shuffle }); $('rep').onclick = () => cmd('repeat', { on: !S.repeat }); $('auto').onclick = () => cmd('autoplay', { on: !S.autoplay });
   let volT; $('vol').oninput = () => { clearTimeout(volT); volT = setTimeout(() => cmd('volume', { v: +$('vol').value }), 120); };
   $('bar').onclick = (e) => { if (!S.dur) return; const r = $('bar').getBoundingClientRect(); cmd('seek', { t: Math.max(0, (e.clientX - r.left) / r.width * S.dur) }); };
-  document.querySelectorAll('#route button').forEach(b => b.onclick = async () => { $('routeS').textContent = 'Switching…'; const r = await link.ask({ type: 'music.route', mode: b.dataset.m }, 'music.routed'); if (!r.result || !r.result.ok) toast((r.result && (r.result.error || r.result.status)) || 'Could not switch', true); });
+  document.querySelectorAll('#route button').forEach(b => b.onclick = async () => { $('routeS').textContent = 'Switching…'; const q = b.dataset.p ? { type: 'music.route', platform: b.dataset.p, on: !(route.on && route.on[b.dataset.p]) } : { type: 'music.route', mode: b.dataset.m }; const r = await link.ask(q, 'music.routed'); if (r.result && r.result.on) { route = r.result; paint(); } if (!r.result || !r.result.ok) toast((r.result && (r.result.error || r.result.status)) || 'Could not switch', true); });
   function setTab(t) { tab = t; $('tQueue').classList.toggle('sel', t === 'queue'); $('tResults').classList.toggle('sel', t === 'results'); if (t === 'queue') renderQueue(true); else renderResults(); }
   $('tQueue').onclick = () => setTab('queue'); $('tResults').onclick = () => setTab('results'); $('tApp').onclick = () => window.open('/app/#music', 'ixc-app', 'width=1240,height=860');
   function renderResults(err) {
@@ -102,7 +102,7 @@
     $('toggle').textContent = S.playing ? '⏸' : '▶'; $('shuf').classList.toggle('on', !!S.shuffle); $('rep').classList.toggle('on', !!S.repeat); $('auto').classList.toggle('on', !!S.autoplay);
     if (document.activeElement !== $('vol') && S.volume != null) $('vol').value = S.volume;
     $('duck').textContent = S.ducked ? '🔉 lowered while the chat voice speaks' : '';
-    document.querySelectorAll('#route button').forEach(b => b.classList.toggle('sel', b.dataset.m === route.mode));
+    document.querySelectorAll('#route button').forEach(b => { const on = b.dataset.p ? !!(route.on ? route.on[b.dataset.p] : route.mode === 'all' || route.mode === b.dataset.p) : b.dataset.m === route.mode; b.classList.toggle('sel', on); if (b.dataset.p) b.setAttribute('aria-pressed', on); });
     $('routeS').textContent = route.status || ''; $('routeS').className = route.ok ? '' : 'bad';
     $('status').classList.toggle('show', up && S.playerConnected === false); $('status').textContent = 'The music player isn\'t running in OBS. Open OBS - IXC adds the player by itself (IXC > System check).'; }
   setInterval(() => { const p = S.playing ? (S.pos || 0) + (Date.now() - stateAt) / 1000 : S.pos || 0; const d = S.dur || 0;

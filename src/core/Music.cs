@@ -24,13 +24,17 @@ namespace IXC {
     static List<Dictionary<string, object>> queue = new List<Dictionary<string, object>>();
     static int index = -1; static bool playing, userPaused; static double pos, dur; static string note = "", liveTitle = ""; static DateTime posAt = DateTime.Now;
     static readonly List<string> history = new List<string>(); static int autoChain, errorsInRow; static volatile bool autoBusy;
+    // what really played (newest last, max 100): history page, "!song" answers and duplicate avoidance by title
+    static readonly List<Dictionary<string, object>> played = new List<Dictionary<string, object>>();
+    // shuffle without repeats: every song of the queue plays once before any song plays again
+    static readonly HashSet<string> round = new HashSet<string>();
     static string stateFile; static Timer saveT, progressT; static DateTime lastPlayerMsg = DateTime.MinValue;
-    static bool ducked; static string routeStatus = "not applied yet", routeActual = ""; static bool routeOk;
+    static bool ducked;
     public static int Searches, Resolves;
 
     public static void Init() {
       Enabled = true; stateFile = Path.Combine(Cfg.DataDir, "music.json"); LoadState();
-      Settings.Changed += k => { if (k.StartsWith("music.routing")) { var t = ApplyRoute(Settings.Str("music.routing.mode")); } if (k == "music.volume") Ctl(J.D("op", "volume", "v", Settings.Int("music.volume"))); if (k.StartsWith("music.") || k.StartsWith("nowPlaying.")) Changed(); if (k == "music.localFolders") Local.Rescan(); };
+      Settings.Changed += k => { if (k == "music.volume") Ctl(J.D("op", "volume", "v", Settings.Int("music.volume"))); if (k.StartsWith("music.") || k.StartsWith("nowPlaying.")) Changed(); if (k == "music.localFolders") Local.Rescan(); };
       // while playing, the player reports its position every few seconds; if it goes silent, it was closed or crashed
       progressT = new Timer(_ => Watchdog(), null, 5000, 5000);
       Local.Init(); }
@@ -38,11 +42,11 @@ namespace IXC {
     // ---------- persistence ----------
     static void LoadState() {
       try { if (!File.Exists(stateFile)) return; var d = J.Parse(File.ReadAllText(stateFile, Encoding.UTF8));
-        lock (L) { queue = J.Objs(d, "queue").Select(Clean).Where(x => x != null).ToList(); index = Math.Min(J.Int(d, "index", -1), queue.Count - 1); pos = J.Num(d, "pos", 0); history.AddRange(J.List(d, "history")); } }
+        lock (L) { queue = J.Objs(d, "queue").Select(Clean).Where(x => x != null).ToList(); index = Math.Min(J.Int(d, "index", -1), queue.Count - 1); pos = J.Num(d, "pos", 0); history.AddRange(J.List(d, "history")); played.AddRange(J.Objs(d, "played").Take(100)); foreach (var u in J.List(d, "round")) round.Add(u); } }
       catch (Exception e) { Log.Err("music", "music.json unreadable (" + e.Message + ") - starting with an empty queue"); try { File.Copy(stateFile, stateFile + ".damaged", true); } catch { } } }
     static void Save() { if (saveT == null) saveT = new Timer(_ => SaveNow()); saveT.Change(800, Timeout.Infinite); }
     public static void SaveNow() {
-      string json; lock (L) json = J.Ser(J.D("queue", queue, "index", index, "pos", Math.Round(pos, 1), "history", history.Skip(Math.Max(0, history.Count - 60)).ToList()));
+      string json; lock (L) json = J.Ser(J.D("queue", queue, "index", index, "pos", Math.Round(pos, 1), "history", history.Skip(Math.Max(0, history.Count - 60)).ToList(), "played", played.ToList(), "round", round.ToList()));
       try { var tmp = stateFile + ".tmp"; File.WriteAllText(tmp, json, new UTF8Encoding(false)); if (File.Exists(stateFile)) File.Replace(tmp, stateFile, stateFile + ".bak"); else File.Move(tmp, stateFile); }
       catch (Exception e) { Log.Err("music", "could not save the queue: " + e.Message); } }
     static Dictionary<string, object> Clean(Dictionary<string, object> it) {
@@ -68,7 +72,7 @@ namespace IXC {
         return J.D("type", "music.state", "s", J.D("queue", queue, "index", index, "playing", playing, "paused", !playing && cur != null, "pos", Math.Round(Position(), 1), "dur", Math.Round(dur, 1),
           "title", cur == null ? "" : (liveTitle.Length > 0 ? liveTitle : J.Str(cur, "title", "")), "artist", cur == null ? "" : J.Str(cur, "artist", ""), "note", note,
           "volume", Settings.Int("music.volume"), "shuffle", Settings.Bool("music.shuffle"), "repeat", Settings.Bool("music.repeat"), "autoplay", Settings.Bool("music.autoplay"), "autostart", Settings.Bool("music.autostart"),
-          "ducked", ducked, "playerConnected", Hub.Count("player") > 0, "ready", Hub.Count("player") > 0, "t", U.Now()), "route", RouteInfo()); } }
+          "ducked", ducked, "playerConnected", Hub.Count("player") > 0, "ready", Hub.Count("player") > 0, "t", U.Now()), "route", Routing.Info("music")); } }
     static Timer pubT;
     public static void Changed() { if (pubT == null) pubT = new Timer(_ => { Hub.Publish("music.state", State()); NowPlaying.Update(); }); pubT.Change(60, Timeout.Infinite); }
     static void SetNote(string n) { note = n ?? ""; Changed(); }
@@ -84,6 +88,8 @@ namespace IXC {
           if (mt != null) Load(want, autoplay, startAt); else { SetNote("Skipped: " + Describe(it) + " (no match on YouTube)"); Next("error"); } }); return; }
       userPaused = !autoplay; if (autoplay) playing = true;
       if (J.Str(it, "kind", "") == "yt" || J.Str(it, "kind", "") == "local") { var key = J.Str(it, "id", J.Str(it, "local", "")); lock (L) { history.Remove(key); history.Add(key); if (history.Count > 80) history.RemoveAt(0); } }
+      if (autoplay) lock (L) { round.Add(J.Str(it, "uid", "")); var title = Describe(it); var last = played.LastOrDefault();
+        if (last == null || J.Str(last, "uid", "") != J.Str(it, "uid", "") || U.Now() - J.Long(last, "at", 0) > 60000) { played.Add(J.D("uid", J.Str(it, "uid", ""), "title", title, "key", Norm(title), "id", J.Str(it, "id", J.Str(it, "local", "")), "by", J.Str(it, "by", null), "at", U.Now())); if (played.Count > 100) played.RemoveAt(0); } }
       var item = J.Clone(it); if (J.Str(it, "kind", "") == "local") item["url"] = "/api/music/local/" + J.Str(it, "local", "");
       ToPlayer(J.D("type", "music.play", "item", item, "startAt", Math.Floor(startAt), "autoplay", autoplay, "volume", Settings.Int("music.volume"), "duck", DuckLevel(), "shuffle", Settings.Bool("music.shuffle")));
       note = ""; Log.Info("music", (autoplay ? "playing " : "loaded ") + Describe(it)); Save(); Changed(); }
@@ -91,7 +97,13 @@ namespace IXC {
     static void Next(string reason) {
       int n; int cur; lock (L) { n = queue.Count; cur = index; }
       if (n == 0) { Stop("Queue is empty"); return; }
-      if (Settings.Bool("music.shuffle") && n > 1) { List<int> ok; lock (L) ok = Enumerable.Range(0, n).Where(k => k != cur && !J.Bool(queue[k], "bad", false)).ToList(); if (ok.Count > 0) { Load(ok[U.Rand(ok.Count)], true, 0); return; } }
+      if (Settings.Bool("music.shuffle") && n > 1) {
+        List<int> ok; lock (L) { Func<int, bool> good = k => k != cur && !J.Bool(queue[k], "bad", false);
+          ok = Enumerable.Range(0, n).Where(k => good(k) && !round.Contains(J.Str(queue[k], "uid", ""))).ToList();
+          // everything played once: a new round only with Repeat (or when the user presses Next), never the same song twice in a row
+          if (ok.Count == 0 && (Settings.Bool("music.repeat") || reason == "user")) { round.Clear(); if (cur >= 0 && cur < n) round.Add(J.Str(queue[cur], "uid", "")); ok = Enumerable.Range(0, n).Where(good).ToList(); } }
+        if (ok.Count > 0) { Load(ok[U.Rand(ok.Count)], true, 0); return; }
+        if (Settings.Bool("music.autoplay")) { AutoFill(); return; } Stop("End of queue (every song played once)"); return; }
       bool wrap = Settings.Bool("music.repeat") && !(Settings.Bool("music.autoplay") && reason != "user");
       for (int step = 1; step <= n; step++) { int k = cur + step; if (k >= n && !wrap) break; bool bad; lock (L) bad = J.Bool(queue[k % n], "bad", false); if (!bad) { Load(k % n, true, 0); return; } }
       if (Settings.Bool("music.autoplay")) { AutoFill(); return; }
@@ -104,12 +116,46 @@ namespace IXC {
           string seed = null; lock (L) { for (int k = index; k >= 0 && seed == null; k--) { if (k < queue.Count && J.Str(queue[k], "kind", "") == "yt" && !J.Bool(queue[k], "bad", false)) seed = J.Str(queue[k], "id", null); } if (seed == null) seed = history.LastOrDefault(h => Regex.IsMatch(h, "^[\\w-]{11}$")); }
           if (seed == null) { Stop("Autoplay: nothing to base it on - add a song"); return; }
           string exclude; lock (L) exclude = string.Join(",", history.Concat(queue.Select(q => J.Str(q, "id", ""))).Where(x => x.Length > 0).Distinct());
-          var rel = Related(seed, exclude); if (rel.Count == 0) { Stop("Autoplay: no similar songs found"); return; }
+          HashSet<string> recent; lock (L) recent = new HashSet<string>(played.Skip(Math.Max(0, played.Count - 60)).Select(x => J.Str(x, "key", "")).Concat(queue.Select(q => Norm(Describe(q)))).Where(x => x.Length > 0));
+          // the same song uploaded again (lyrics video, "official audio", another channel) counts as a repeat too
+          var rel = Related(seed, exclude).Where(r => !recent.Contains(Norm((string)r["title"]))).GroupBy(r => Norm((string)r["title"])).Select(g => g.First()).ToList();
+          if (rel.Count == 0) { Stop("Autoplay: no new similar songs found - add a song"); return; }
           int first; lock (L) { first = queue.Count; foreach (var r in rel.Take(3)) queue.Add(J.D("uid", U.Token(6), "kind", "yt", "id", r["id"], "title", r["title"], "durationSec", Secs((string)r["length"]), "auto", true));
             while (queue.Count > 80 && index > 0) { queue.RemoveAt(0); index--; first--; } }
           Log.Info("music", "autoplay added " + Math.Min(3, rel.Count) + " similar songs"); Load(first, true, 0); }
         catch (Exception e) { Stop("Autoplay: couldn't reach YouTube"); Log.Warn("music", "autoplay: " + e.Message); }
         finally { autoBusy = false; } }); }
+
+    // "Song A (Official Video) [HD]" and "song a - lyrics" are the same song
+    public static string Norm(string t) {
+      t = (t ?? "").ToLowerInvariant(); t = Regex.Replace(t, "\\(.*?\\)|\\[.*?\\]", " ");
+      t = Regex.Replace(t, "\\b(official|music|video|audio|lyrics?|lyric video|hd|hq|4k|mv|visuali[sz]er|remastered|topic)\\b", " ");
+      t = Regex.Replace(t, "\\b(ft|feat|featuring)\\b.*$", " "); t = Regex.Replace(t, "[^\\p{L}\\p{N}]+", " ").Trim();
+      return t.Length > 60 ? t.Substring(0, 60) : t; }
+    public static List<Dictionary<string, object>> History(int n) { lock (L) return played.AsEnumerable().Reverse().Take(n).Select(J.Clone).ToList(); }
+
+    // ---------- saved playlists (music-playlists.json) ----------
+    static string PlFile { get { return Path.Combine(Cfg.DataDir, "music-playlists.json"); } }
+    static Dictionary<string, object> PlLoad() { try { if (File.Exists(PlFile)) return J.Parse(File.ReadAllText(PlFile, Encoding.UTF8)) ?? new Dictionary<string, object>(); } catch (Exception e) { Log.Warn("music", "playlists file unreadable: " + e.Message); try { File.Copy(PlFile, PlFile + ".damaged", true); } catch { } } return new Dictionary<string, object>(); }
+    static void PlSave(Dictionary<string, object> d) { var tmp = PlFile + ".tmp"; File.WriteAllText(tmp, J.Ser(d), new UTF8Encoding(false)); if (File.Exists(PlFile)) File.Replace(tmp, PlFile, PlFile + ".bak"); else File.Move(tmp, PlFile); }
+    public static Dictionary<string, object> Playlists(Dictionary<string, object> b) {
+      var op = J.Str(b, "op", "list"); var name = Regex.Replace(J.Str(b, "name", "").Trim(), "\\s+", " "); var all = PlLoad();
+      Func<object> list = () => all.Select(kv => (object)J.D("name", kv.Key, "songs", ((J.Get(J.Obj(all, kv.Key) ?? new Dictionary<string, object>(), "items") as ArrayList) ?? new ArrayList()).Count)).ToList();
+      if (op == "list") return J.D("ok", true, "playlists", list());
+      if (name.Length == 0 || name.Length > 60) return J.D("ok", false, "error", "give the playlist a name (up to 60 characters)");
+      var key = all.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+      if (op == "save") { List<Dictionary<string, object>> items; lock (L) items = queue.Where(q => !J.Bool(q, "bad", false)).Select(q => { var c = Clean(q); c.Remove("uid"); c.Remove("auto"); c.Remove("by"); c.Remove("platform"); return c; }).ToList();
+        if (items.Count == 0) return J.D("ok", false, "error", "the queue is empty - add songs first"); if (key == null && all.Count >= 50) return J.D("ok", false, "error", "at most 50 playlists");
+        all[key ?? name] = J.D("items", items, "saved", U.Now()); PlSave(all); Log.Info("music", "saved playlist \"" + name + "\" (" + items.Count + " songs)"); return J.D("ok", true, "songs", items.Count, "playlists", list()); }
+      if (key == null) return J.D("ok", false, "error", "no playlist called \"" + name + "\"");
+      if (op == "delete") { all.Remove(key); PlSave(all); Log.Info("music", "deleted playlist \"" + key + "\""); return J.D("ok", true, "playlists", list()); }
+      if (op == "load") { var items = J.Objs(J.Obj(all, key), "items").Select(Clean).Where(x => x != null).ToList(); if (items.Count == 0) return J.D("ok", false, "error", "that playlist is empty");
+        bool replace = J.Str(b, "mode", "append") == "replace"; if (J.Bool(b, "shuffle", false)) items = items.OrderBy(_ => U.Rand(1000000)).ToList();
+        if (replace) { lock (L) { queue.Clear(); index = -1; round.Clear(); } }
+        int first = -1; foreach (var it in items) { it["uid"] = U.Token(6); it["from"] = "playlist " + key; var at = AddItem(it, "add"); if (first < 0) first = at; }
+        if (replace && first >= 0) Load(first, true, 0);
+        Log.Info("music", (replace ? "playing" : "added") + " playlist \"" + key + "\" (" + items.Count + " songs)"); return J.D("ok", true, "songs", items.Count); }
+      return J.D("ok", false, "error", "unknown playlist action " + op); }
 
     // ---------- commands from docks / phones / chat ----------
     public static string Command(string cmd, Dictionary<string, object> c) {
@@ -127,7 +173,7 @@ namespace IXC {
           break; }
         case "move": { int f = J.Int(c, "from", -1), t = J.Int(c, "to", -1); lock (L) { if (f < 0 || f >= queue.Count || t < 0 || t >= queue.Count) return "can't move there"; var it = queue[f]; queue.RemoveAt(f); queue.Insert(t, it);
             if (index == f) index = t; else if (f < index && t >= index) index--; else if (f > index && t <= index) index++; } break; }
-        case "clear": lock (L) { queue.Clear(); index = -1; } Stop(""); break;
+        case "clear": lock (L) { queue.Clear(); index = -1; round.Clear(); } Stop(""); break;
         case "clearPlayed": lock (L) { if (index > 0) { queue.RemoveRange(0, index); index = 0; } } break;
         case "volume": return Settings.Set("music.volume", J.Int(c, "v", 40));
         case "shuffle": return Settings.Set("music.shuffle", J.Bool(c, "on", false));
@@ -209,44 +255,10 @@ namespace IXC {
       if (!ducked) return 1.0; var vol = Math.Max(1, Settings.Int("music.volume")); double lvl = Settings.Int("music.ducking.level") / 100.0;
       double min = Settings.Int("music.ducking.minVolume") / (double)vol; return Math.Round(Math.Min(1.0, Math.Max(lvl, Math.Min(min, 1.0))), 3); }
 
-    // ---------- audio destination (which OBS audio tracks carry the music) ----------
-    static readonly string[] Plats = { "twitch", "kick", "youtube" };
-    static string InputName() { return Settings.Str("music.routing.inputName"); }
-    static bool InputMatches(string n) { return string.Equals(n, InputName(), StringComparison.OrdinalIgnoreCase); }
-    public static List<int> Tracks(string p) { var t = Settings.List("music.routing.tracks." + p).Select(s => { int n; return int.TryParse(s, out n) ? n : 0; }).Where(n => n >= 1 && n <= 6).Distinct().ToList(); if (t.Count == 0) t.Add(p == "twitch" ? 1 : p == "kick" ? 2 : 3); return t; }
-    static string TrackText(Dictionary<string, object> tr) { if (tr == null) return "?"; var on = tr.Where(kv => kv.Value is bool && (bool)kv.Value).Select(kv => kv.Key).ToList(); return on.Count == 0 ? "no tracks" : "track " + string.Join("+", on); }
-    static string ModeFor(Dictionary<string, object> tr) {
-      if (tr == null) return "?"; Func<int, bool> on = n => J.Bool(tr, n.ToString(), false);
-      var hit = Plats.Where(p => Tracks(p).All(on)).ToList(); var managed = Plats.SelectMany(Tracks).Distinct().ToList();
-      if (hit.Count == 3) return "all"; if (hit.Count == 1 && managed.Count(on) == Tracks(hit[0]).Count) return hit[0]; if (managed.All(n => !on(n))) return "off"; return "custom"; }
-    public static void OnObsReady() { var t = ApplyRoute(Settings.Str("music.routing.mode")); }
-    public static void OnObsEvent(string type, Dictionary<string, object> d) {
-      if ((type == "InputAudioTracksChanged" || type == "InputCreated" || type == "InputNameChanged") && InputMatches(J.Str(d, "inputName", J.Str(d, "oldInputName", "")))) {
-        if (type == "InputAudioTracksChanged") { var tr = J.Obj(d, "inputAudioTracks"); routeActual = TrackText(tr); if (ModeFor(tr) != Settings.Str("music.routing.mode")) { routeStatus = "tracks were changed in OBS by hand: now " + routeActual; routeOk = false; Log.Info("obs", "music tracks changed in OBS by hand: " + routeActual); } Changed(); }
-        else { var t = ApplyRoute(Settings.Str("music.routing.mode")); } } }
-    public static async Task<Dictionary<string, object>> ApplyRoute(string mode) {
-      if (!Obs.Link.Ready) { routeOk = false; routeStatus = "saved - applies when OBS connects"; Changed(); return J.D("ok", false, "pending", true, "mode", mode, "error", routeStatus); }
-      // right after OBS opens its WebSocket it can still be loading the scene collection ("not ready"): retry briefly
-      for (int attempt = 1; ; attempt++) { var r = await RouteOnce(mode); var e = J.Str(r, "error", "");
-        if (!J.Bool(r, "ok", false) && e.IndexOf("not ready", StringComparison.OrdinalIgnoreCase) >= 0 && attempt < 10) { await Task.Delay(500); continue; } return r; } }
-    static async Task<Dictionary<string, object>> RouteOnce(string mode) {
-      try {
-        var want = new Dictionary<string, object>(); var managed = Plats.SelectMany(Tracks).Distinct().ToList();
-        var mine = mode == "all" ? managed : mode == "off" ? new List<int>() : Tracks(mode);
-        foreach (var n in managed) want[n.ToString()] = mine.Contains(n);   // tracks no platform uses (recording etc.) are left alone
-        await Obs.Link.Call("SetInputAudioTracks", J.D("inputName", InputName(), "inputAudioTracks", want));
-        var got = J.Obj(await Obs.Link.Call("GetInputAudioTracks", J.D("inputName", InputName())), "inputAudioTracks");   // verify what OBS really has now
-        routeActual = TrackText(got); routeOk = managed.All(n => J.Bool(got, n.ToString(), false) == mine.Contains(n));
-        routeStatus = routeOk ? "applied and checked in OBS: " + routeActual : "OBS did not take the change: " + routeActual;
-        Log.Info("obs", "music destination " + mode.ToUpperInvariant() + ": " + routeStatus); Changed();
-        return J.D("ok", routeOk, "mode", mode, "tracks", routeActual, "status", routeStatus); }
-      catch (Exception e) {
-        routeOk = false; var msg = U.Plain(e);
-        routeStatus = msg.Contains("No source was found") || msg.Contains("not found") ? "OBS has no source called \"" + InputName() + "\" - run System check > Repair OBS" : "OBS: " + msg;
-        Log.Warn("obs", "music routing: " + routeStatus); Changed(); return J.D("ok", false, "mode", mode, "error", routeStatus); } }
-    static Dictionary<string, object> RouteInfo() {
-      return J.D("mode", Settings.Str("music.routing.mode"), "ok", routeOk && Obs.Link.Ready, "status", Obs.Link.Ready ? routeStatus : "applies when OBS is open", "tracks", routeActual,
-        "obs", Obs.Link.Ready ? "connected" : Obs.Link.State, "input", InputName(), "map", J.D("twitch", Tracks("twitch"), "kick", Tracks("kick"), "youtube", Tracks("youtube"))); }
+    // ---------- audio destination: see Routing.cs (kept here for older callers) ----------
+    public static List<int> Tracks(string p) { return Routing.Tracks(p); }
+    public static void OnObsReady() { var t = Routing.Apply("music"); }
+    public static Task<Dictionary<string, object>> ApplyRoute(string mode) { return Routing.Apply("music"); }
 
     // ---------- YouTube search / related (public pages; optional official API key for search) ----------
     static readonly Dictionary<string, KeyValuePair<DateTime, object>> cache = new Dictionary<string, KeyValuePair<DateTime, object>>();
@@ -351,7 +363,7 @@ namespace IXC {
     // ---------- API / WebSocket ----------
     public static Dictionary<string, object> DiagInfo() {
       lock (L) return J.D("playerConnected", Hub.Count("player") > 0, "playing", playing, "title", Current() == null ? "" : Describe(Current()), "queue", queue.Count, "note", note,
-        "destination", Settings.Str("music.routing.mode"), "routing", Obs.Link.Ready ? routeStatus : "applies when OBS is open", "routingOk", routeOk && Obs.Link.Ready, "tracks", routeActual,
+        "destination", Routing.Describe("music"), "routing", J.Str(Routing.Info("music"), "status", ""), "routingOk", J.Bool(Routing.Info("music"), "ok", false), "tracks", J.Str(Routing.Info("music"), "tracks", ""),
         "ducked", ducked, "searches", Searches, "linkChecks", Resolves, "localFiles", Local.Count, "lastPlayerMessage", lastPlayerMsg == DateTime.MinValue ? "never" : lastPlayerMsg.ToString("HH:mm:ss")); }
     public static Dictionary<string, object> Add(string url, string mode, bool force, string by, string platform) {
       if (mode != "add" && mode != "playnow" && mode != "playnext") mode = "add";
@@ -367,9 +379,10 @@ namespace IXC {
         case "/api/music/cmd": case "/api/cmd": if (m != "POST") return false; { var b = Http.BodyJson(ctx); var err = Command(J.Str(b, "cmd", ""), b); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return true; }
         case "/api/search": case "/api/music/search": try { Http.Json(ctx, Search(q["q"])); } catch (Exception e) { Http.Json(ctx, 502, J.D("error", "Search failed: " + U.Plain(e))); } return true;
         case "/api/related": try { Http.Json(ctx, Related(q["id"], q["exclude"])); } catch (Exception e) { Http.Json(ctx, 502, J.D("error", U.Plain(e))); } return true;
+        case "/api/music/history": Http.Json(ctx, J.D("played", History(50))); return true;
+        case "/api/music/playlists": { var r = Playlists(m == "POST" ? Http.BodyJson(ctx) : J.D("op", "list")); Http.Json(ctx, J.Bool(r, "ok", false) ? 200 : 400, r); return true; }
         case "/api/music/resolve": Http.Json(ctx, Resolve(q["url"])); return true;
         case "/api/music/add": if (m != "POST") return false; { var b = Http.BodyJson(ctx); Http.Json(ctx, Add(J.Str(b, "url", ""), J.Str(b, "mode", "add"), J.Bool(b, "force", false), null, null)); return true; }
-        case "/api/music/route": if (m == "POST") { var err = Settings.Set("music.routing.mode", J.Str(Http.BodyJson(ctx), "mode", "all")); if (err != null) { Http.Json(ctx, 400, J.D("ok", false, "error", err)); return true; } Http.Json(ctx, ApplyRoute(Settings.Str("music.routing.mode")).Result); } else Http.Json(ctx, RouteInfo()); return true;
         case "/api/music/spotify-secret": if (m != "POST") return false; { var sec = J.Str(Http.BodyJson(ctx), "secret", "").Trim(); if (sec.Length > 0 && !Regex.IsMatch(sec, "^[A-Za-z0-9]{20,64}$")) { Http.Json(ctx, 400, J.D("ok", false, "error", "That doesn't look like a Spotify Client Secret")); return true; } Secrets.Set("spotify.clientSecret", sec.Length == 0 ? null : sec); Http.Json(ctx, J.D("ok", true)); return true; }
         case "/api/music/folders": if (m == "POST") { var b = Http.BodyJson(ctx); Http.Json(ctx, Local.AddFolder(J.Str(b, "path", null))); } else Http.Json(ctx, Local.Folders()); return true;
         case "/api/obs/call": {   // tests only (--test)
@@ -388,9 +401,6 @@ namespace IXC {
           Task.Run(() => { Dictionary<string, object> r; try { r = Add(url, mode, force, null, null); } catch (Exception e) { r = Fail("error", U.Plain(e)); } var d = new Dictionary<string, object>(r); d["type"] = "music.added"; d["reqId"] = id; d.Remove("items"); Hub.Send(c, d); }); break; }
         case "music.search": { var id = J.Str(msg, "reqId", ""); var qq = J.Str(msg, "q", "");
           Task.Run(() => { object res; try { res = J.D("type", "music.results", "reqId", id, "results", Search(qq)); } catch (Exception e) { res = J.D("type", "music.results", "reqId", id, "results", new object[0], "error", "Search failed: " + U.Plain(e)); } Hub.Send(c, res); }); break; }
-        case "music.route": { var mode = J.Str(msg, "mode", "all"); var id = J.Str(msg, "reqId", ""); var err = Settings.Set("music.routing.mode", mode);
-          if (err != null) { Hub.Send(c, J.D("type", "music.routed", "reqId", id, "result", J.D("ok", false, "error", err))); break; }
-          ApplyRoute(mode).ContinueWith(t => Hub.Send(c, J.D("type", "music.routed", "reqId", id, "result", t.IsFaulted ? J.D("ok", false, "error", U.Plain(t.Exception)) : t.Result))); break; }
         case "music.log": Log.Debug("music", "player: " + J.Str(msg, "ev", "") + " " + U.Trunc(J.Str(msg, "info", ""), 200)); break;
       } }
   }
