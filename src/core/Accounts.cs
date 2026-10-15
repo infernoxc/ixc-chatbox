@@ -16,9 +16,9 @@ using System.Threading.Tasks;
 
 namespace IXC {
   public static class Accounts {
-    public static readonly string[] TwitchScopes = { "chat:read", "chat:edit", "moderator:read:followers", "channel:read:subscriptions" };
+    public static readonly string[] TwitchScopes = { "chat:read", "chat:edit", "moderator:read:followers", "channel:read:subscriptions", "moderator:manage:chat_messages", "moderator:manage:banned_users" };
     const string GoogleScope = "https://www.googleapis.com/auth/youtube.force-ssl";
-    static readonly string[] KickScopes = { "user:read", "channel:read", "chat:write" };
+    static readonly string[] KickScopes = { "user:read", "channel:read", "chat:write", "moderation:ban" };
     static readonly object L = new object();
     static readonly Dictionary<string, Dictionary<string, object>> Flows = new Dictionary<string, Dictionary<string, object>>();   // sign-ins in progress
 

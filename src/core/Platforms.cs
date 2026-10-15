@@ -47,7 +47,7 @@ namespace IXC {
     public Dictionary<string, object> Status() {
       var acc = Accounts.Info(Id);
       return J.D("id", Id, "label", Label, "configured", Configured, "enabled", Enabled, "channel", Id == "rumble" ? (Accounts.RumbleUrl().Length > 0 ? "set" : "") : Channel, "state", Configured ? State : "off", "detail", Configured ? Detail : (Enabled ? "add your channel" : "turned off"),
-        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "account", acc, "viewers", global::IXC.Viewers.View(this)); }
+        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "mod", Moderation.Caps(Id), "account", acc, "viewers", global::IXC.Viewers.View(this)); }
     // no IXC sign-in for this platform, but Streamer.bot is connected: replies go through Streamer.bot (Rumble can't send at all)
     public bool ViaSb { get { return !CanSend && Id != "rumble" && Platforms.Sb.Ready; } }
     protected Timer viewerT;
@@ -485,10 +485,15 @@ namespace IXC {
       var m = Regex.Match(r.Body ?? "", "\"originalViewCount\":\"(\\d+)\""); if (!m.Success) m = Regex.Match(r.Body ?? "", "\"text\":\"([\\d,\\.]+) watching");
       if (m.Success) Viewers.Set(int.Parse(m.Groups[1].Value.Replace(",", "").Replace(".", ""), CultureInfo.InvariantCulture), true, "YouTube", started);
       else Viewers.Fail("YouTube didn't report a viewer count"); }
+    // the Data API id of the current stream's chat (sending, bans); "!reason" when there is none
+    public string EnsureLiveChatId() {
+      if (LiveChatId.Length > 0) return LiveChatId; if (VideoId.Length == 0) return "!YouTube: you're not live right now";
+      var r = Accounts.GoogleApi("GET", "videos?part=liveStreamingDetails&id=" + VideoId, null); if (r == null || !r.Ok) return "!YouTube: " + (r == null ? SendNote : r.Code + " " + U.Trunc(r.Body, 160));
+      var items = J.Get(J.Parse(r.Body), "items") as ArrayList; LiveChatId = items != null && items.Count > 0 ? J.Str((Dictionary<string, object>)items[0], "liveStreamingDetails.activeLiveChatId", "") : "";
+      return LiveChatId.Length == 0 ? "!YouTube: this stream has no active chat" : LiveChatId; }
     public override async Task<string> Send(string text) {
       if (!CanSend) return SendNote;
-      if (LiveChatId.Length == 0) { var r = await Task.Run(() => Accounts.GoogleApi("GET", "videos?part=liveStreamingDetails&id=" + VideoId, null)); if (r == null || !r.Ok) return "YouTube: " + (r == null ? SendNote : r.Code + " " + U.Trunc(r.Body, 160));
-        var items = J.Get(J.Parse(r.Body), "items") as ArrayList; LiveChatId = items != null && items.Count > 0 ? J.Str((Dictionary<string, object>)items[0], "liveStreamingDetails.activeLiveChatId", "") : ""; if (LiveChatId.Length == 0) return "YouTube: this stream has no active chat"; }
+      var lc = await Task.Run(() => EnsureLiveChatId()); if (lc.StartsWith("!")) return lc.Substring(1);
       var res = await Task.Run(() => Accounts.GoogleApi("POST", "liveChat/messages?part=snippet", J.Ser(J.D("snippet", J.D("liveChatId", LiveChatId, "type", "textMessageEvent", "textMessageDetails", J.D("messageText", text))))));
       if (res == null) return SendNote; if (res.Code == 403 && (res.Body ?? "").Contains("quota")) return "YouTube's daily sending limit is used up"; if (!res.Ok) return "YouTube: " + res.Code + " " + U.Trunc(res.Body, 160);
       return null; }
