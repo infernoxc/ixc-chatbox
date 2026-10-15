@@ -45,6 +45,7 @@ try {
   $hits = 0
   foreach ($s in @('inline') + @($srcs)) {
     $t = if ($s -eq 'inline') { $kh } else { $u = if ($s -match '^https?:') { $s } elseif ($s -match '^//') { "https:$s" } else { "https://kick.com$s" }; try { (Invoke-WebRequest -UseBasicParsing $u -UserAgent $ua -TimeoutSec 20).Content } catch { '' } }
+    if ($t -match 'accepted_providers|/v1/realtime|viewer/v1') { foreach ($m in [regex]::Matches($t, '(/v1/realtime[^"`'']*|viewer/v1[^"`'']*|accepted_providers|webFetch=|subscribe\(|centrifuge|Centrifuge\()')) { if ($script:rt -ge 60) { break }; $a = [Math]::Max(0, $m.Index - 400); Write-Host "  kick realtime [$([IO.Path]::GetFileName(($s -split '\?')[0]))]: $(($t.Substring($a, [Math]::Min(900, $t.Length - $a))) -replace '\s+', ' ')"; $script:rt++ } }
     foreach ($m in [regex]::Matches($t, '(?i)(pusher|wss://|ws-[a-z0-9]+\.|cluster|websocket|centrifug|ably|soketi|reverb)')) {
       if ($hits -ge 40) { break }; $a = [Math]::Max(0, $m.Index - 90); $snip = $t.Substring($a, [Math]::Min(220, $t.Length - $a)) -replace '\s+', ' '
       Write-Host "  kick probe [$([IO.Path]::GetFileName(($s -split '\?')[0]))]: $snip"; $hits++ } }
