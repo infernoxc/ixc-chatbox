@@ -135,6 +135,9 @@ namespace IXC {
       if (path == "/api/system/quit" && m == "POST") { Http.Json(ctx, J.D("ok", true)); Log.Info("app", "quit from the dashboard"); Task.Delay(500).ContinueWith(_ => Exit(4)); return; }
       if (path == "/api/update/check") { Http.Json(ctx, Updates.Check()); return; }
       if (path == "/api/accounts") { Http.Json(ctx, Accounts.All()); return; }
+      // Streamer.bot commands that IXC doesn't have yet (names only: Streamer.bot doesn't share what its actions do)
+      if (path == "/api/commands/streamerbot") { var have = new HashSet<string>(Commands.Triggers(), StringComparer.OrdinalIgnoreCase); var sb = Platforms.Sb.Ready ? Platforms.Sb.Commands().Result : new List<string>();
+        Http.Json(ctx, J.D("connected", Platforms.Sb.Ready, "commands", sb.Where(x => x.StartsWith("!") && !have.Contains(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList())); return; }
       if (path == "/api/accounts/apps" && m == "POST") { var err = Accounts.SetApps(Http.BodyJson(ctx)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "apps", Accounts.Apps())); return; }
       if (path.StartsWith("/api/accounts/") && m == "POST") { var parts = path.Split('/'); if (parts.Length == 5) { var p = parts[3]; var act = parts[4];
           if (act == "connect") { Http.Json(ctx, Accounts.Begin(p)); return; } if (act == "signout") { Accounts.SignOut(p); Http.Json(ctx, Accounts.All()); return; } if (act == "cancel") { Accounts.Cancel(p); Http.Json(ctx, Accounts.All()); return; }

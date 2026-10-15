@@ -76,7 +76,7 @@ namespace IXC {
     static void AddAlert(ChatMsg m) {
       var a = J.D("type", "alert", "kind", m.Kind, "platform", m.Platform, "name", m.Name, "text", m.Text, "amount", m.Amount, "at", U.Now(), "old", m.Old);
       lock (Alerts) { Alerts.AddLast(a); while (Alerts.Count > 50) Alerts.RemoveFirst(); }
-      if (!m.Old) { Hub.Publish("alerts", a); Log.Info("chat", m.Platform + " " + m.Kind + ": " + m.Name + (m.Amount.Length > 0 ? " " + m.Amount : "")); } }
+      if (!m.Old) { Hub.Publish("alerts", a); Log.Info("chat", m.Platform + " " + m.Kind + ": " + m.Name + (m.Amount.Length > 0 ? " " + m.Amount : "")); try { Events.OnAlert(m); } catch (Exception e) { Log.Err("chat", "event message: " + e.Message); } } }
     public static List<Dictionary<string, object>> RecentAlerts(int n) { lock (Alerts) return Alerts.Reverse().Take(n).ToList(); }
 
     // moderation from the platform: hide deleted messages / messages of banned users everywhere

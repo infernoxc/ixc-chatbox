@@ -51,6 +51,8 @@ namespace IXC {
       L("chat.hiddenCommands", 200); S("chat.extraCommandsFile", "", 400); Adv("chat.extraCommandsFile");
       // commands
       B("commands.enabled", true); All["commands.list"] = new Spec { Key = "commands.list", Kind = "commands", Def = new ArrayList() };
+      // event messages (thank-you on follow, sub, ...)
+      foreach (var k in Events.Kinds) { B("events." + k + ".on", false); S("events." + k + ".message", Events.Defaults[k], 300); } I("events.cooldownSec", 5, 0, 300);
       // timed messages
       B("timers.enabled", true); I("timers.gapSec", 60, 0, 600); All["timers.list"] = new Spec { Key = "timers.list", Kind = "timers", Def = new ArrayList() };
       // song requests

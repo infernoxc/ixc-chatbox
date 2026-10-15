@@ -51,12 +51,15 @@ namespace IXC {
         var aliases = J.List(d, "aliases").Select(Trig).Where(x => x != null && seen.Add(x)).Take(10).ToList();
         var builtin = J.Str(d, "builtin", null); if (builtin != null && !Builtins.Contains(builtin)) builtin = null;
         var resp = J.Str(d, "response", "").Trim(); if (resp.Length > 450) resp = resp.Substring(0, 450); resp = Regex.Replace(resp, "[\\r\\n]+", " ");
-        if (builtin == null && resp.Length == 0) { err = trig + " needs a response"; return null; }
+        // optional different answer per platform (empty = the normal answer)
+        var per = new Dictionary<string, object>(); var pd = J.Obj(d, "responses");
+        if (pd != null) foreach (var p in Settings.PlatformIds) { var x = Regex.Replace(J.Str(pd, p, "").Trim(), "[\\r\\n]+", " "); if (x.Length > 450) x = x.Substring(0, 450); if (x.Length > 0) per[p] = x; }
+        if (builtin == null && resp.Length == 0 && per.Count == 0) { err = trig + " needs a response"; return null; }
         var perm = J.Str(d, "permission", "everyone"); if (!Settings.Roles.Contains(perm)) perm = "everyone";
         var plats = J.List(d, "platforms").Where(x => Settings.PlatformIds.Contains(x)).Distinct().ToList();
         outp.Add(J.D("id", Regex.IsMatch(J.Str(d, "id", ""), "^[\\w-]{1,20}$") ? J.Str(d, "id", "") : U.Token(5), "trigger", trig, "aliases", aliases, "response", resp, "permission", perm,
           "cooldownSec", Math.Max(0, Math.Min(3600, J.Int(d, "cooldownSec", 0))), "userCooldownSec", Math.Max(0, Math.Min(3600, J.Int(d, "userCooldownSec", 0))),
-          "platforms", plats, "enabled", J.Bool(d, "enabled", true), "builtin", builtin)); }
+          "platforms", plats, "enabled", J.Bool(d, "enabled", true), "builtin", builtin, "responses", per)); }
       foreach (var sr in Settings.List("songRequests.commands")) if (seen.Contains(sr.StartsWith("!") ? sr : "!" + sr)) { err = sr + " is already the song request command"; return null; }
       return outp; }
     static string Trig(string t) { t = (t ?? "").Trim().ToLowerInvariant(); if (!t.StartsWith("!")) t = "!" + t; return Regex.IsMatch(t, "^![\\p{L}\\p{N}_-]{1,30}$") ? t : null; }
@@ -78,7 +81,7 @@ namespace IXC {
         if (ucd > 0 && lastUse.TryGetValue(id + "|" + m.Key, out t) && (now - t).TotalSeconds < ucd) return true;
         lastUse[id] = now; lastUse[id + "|" + m.Key] = now; if (lastUse.Count > 5000) lastUse.Clear(); }
       Used++; lock (counts) { int n; counts.TryGetValue(id, out n); counts[id] = n + 1; }
-      string reply = null; var builtin = J.Str(cmd, "builtin", null); var resp = J.Str(cmd, "response", "");
+      string reply = null; var builtin = J.Str(cmd, "builtin", null); var resp = J.Str(J.Obj(cmd, "responses") ?? new Dictionary<string, object>(), m.Platform, ""); if (resp.Length == 0) resp = J.Str(cmd, "response", "");
       try { reply = builtin != null ? Builtin(builtin, m, args, resp) : Fill(resp, m, args, id); } catch (Exception e) { Log.Err("chat", word + ": " + e.Message); }
       if (!string.IsNullOrEmpty(reply)) Chat.Reply(m, reply);
       Log.Info("chat", m.Platform + " " + m.Name + " used " + word);
@@ -114,6 +117,7 @@ namespace IXC {
           case "target": return target.TrimStart('@');
           case "args": return args;
           case "platform": return m == null ? "" : m.Platform;
+          case "amount": return m == null ? "" : m.Amount ?? "";
           case "song": return cur == null ? "nothing" : Music.Describe(cur);
           case "title": return cur == null ? "" : J.Str(cur, "title", "");
           case "artist": return cur == null ? "" : J.Str(cur, "artist", "");
