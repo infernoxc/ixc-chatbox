@@ -3,6 +3,19 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.2.0] - test build, not released yet
+### Added
+- **Audio routing** page: switch the music and the chat voice (TTS) on or off **per platform** (Twitch / Kick / YouTube), independently. Works through OBS audio tracks and is read back from OBS; your other sources and unused tracks are never touched. The music dock's platform buttons are now on/off switches.
+- **Start and stop with OBS** (on by default, Settings): at sign-in only the tray icon starts; IXC opens when OBS opens and closes 20 s after OBS closes. Opening IXC yourself starts it at once.
+- **Ready-made commands**: `!commands`, `!followage` (Twitch), `!clip` (Twitch clip, or OBS's replay buffer elsewhere / when offline), `!discord`, `!socials` (start switched off until you add your links). Twitch sign-in now also asks for the clips permission.
+- **Playlists** (save the queue, play or add a playlist) and **Recently played** on the Music page.
+- Platforms page: last chat message time and whether IXC can reply, per platform.
+### Fixed
+- **Songs repeating**: Shuffle picked any random song, so the same few songs came back again and again. Now every song in the queue plays once before any song repeats, and never the same song twice in a row.
+- Autoplay could add a song that had just played under another upload (lyrics video, "official audio"); it now skips those.
+### Changed
+- Navigation: "Overlays & docks", "Audio routing", "Updates & diagnostics".
+
 ## [3.1.0] - 2026-10-15
 IXC now does everything Streamer.bot did for it: **Streamer.bot is no longer needed for anything**.
 ### Added

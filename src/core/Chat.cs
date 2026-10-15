@@ -49,6 +49,7 @@ namespace IXC {
       if (m == null || string.IsNullOrEmpty(m.Platform)) return;
       if (m.Kind == "chat" && string.IsNullOrWhiteSpace(m.Text) && m.Parts.Count == 0) return;
       if (m.Name == null) m.Name = m.Login ?? "someone"; if (m.Login == null) m.Login = m.Name;
+      if (!m.Old && !m.Me) { var src = Platforms.Get(m.Platform); if (src != null) src.LastMsg = DateTime.Now; }
       // Streamer.bot and IXC's own connection can both deliver the same platform: IXC's own wins
       if (m.Via == "streamerbot" && Platforms.HandlesChat(m.Platform)) return;
       if (!Seen(m)) { Duplicates++; return; }

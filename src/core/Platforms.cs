@@ -28,6 +28,7 @@ namespace IXC {
   }
 
   public abstract class ChatSource {
+    public DateTime LastMsg = DateTime.MinValue;   // last real chat message (account health on the Platforms page)
     public string Id, Label; public ViewerInfo Viewers = new ViewerInfo();
     public abstract bool Configured { get; }
     public abstract string State { get; }
@@ -47,7 +48,7 @@ namespace IXC {
     public Dictionary<string, object> Status() {
       var acc = Accounts.Info(Id);
       return J.D("id", Id, "label", Label, "configured", Configured, "enabled", Enabled, "channel", Id == "rumble" ? (Accounts.RumbleUrl().Length > 0 ? "set" : "") : Channel, "state", Configured ? State : "off", "detail", Configured ? Detail : (Enabled ? "add your channel" : "turned off"),
-        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "mod", Moderation.Caps(Id), "account", acc, "viewers", global::IXC.Viewers.View(this)); }
+        "canSend", CanSend || ViaSb, "sendVia", CanSend ? "ixc" : ViaSb ? "streamerbot" : "", "sendNote", CanSend || ViaSb ? "" : SendNote, "mod", Moderation.Caps(Id), "account", acc, "viewers", global::IXC.Viewers.View(this), "lastMessage", LastMsg == DateTime.MinValue ? null : (object)(long)(LastMsg.ToUniversalTime() - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds); }
     // no IXC sign-in for this platform, but Streamer.bot is connected: replies go through Streamer.bot (Rumble can't send at all)
     public bool ViaSb { get { return !CanSend && Id != "rumble" && Platforms.Sb.Ready; } }
     protected Timer viewerT;
