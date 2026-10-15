@@ -39,12 +39,12 @@ Get-Content "$tmp\data\logs\chat.log" -EA SilentlyContinue | Select -Last 15 | %
 # Kick chat probe: what kick.com's own web app uses to connect to chat (Pusher key / cluster / websocket host), printed for a human
 try {
   $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
-  $home = (Invoke-WebRequest -UseBasicParsing 'https://kick.com/' -UserAgent $ua -TimeoutSec 20).Content
-  $srcs = [regex]::Matches($home, '<script[^>]+src="([^"]+\.js[^"]*)"') | % { $_.Groups[1].Value } | Select -Unique
-  Write-Host "  kick probe: home $($home.Length) chars, $(@($srcs).Count) scripts"
+  $kh = (Invoke-WebRequest -UseBasicParsing 'https://kick.com/' -UserAgent $ua -TimeoutSec 20).Content
+  $srcs = [regex]::Matches($kh, '<script[^>]+src="([^"]+\.js[^"]*)"') | % { $_.Groups[1].Value } | Select -Unique
+  Write-Host "  kick probe: home $($kh.Length) chars, $(@($srcs).Count) scripts"
   $hits = 0
   foreach ($s in @('inline') + @($srcs)) {
-    $t = if ($s -eq 'inline') { $home } else { $u = if ($s -match '^https?:') { $s } elseif ($s -match '^//') { "https:$s" } else { "https://kick.com$s" }; try { (Invoke-WebRequest -UseBasicParsing $u -UserAgent $ua -TimeoutSec 20).Content } catch { '' } }
+    $t = if ($s -eq 'inline') { $kh } else { $u = if ($s -match '^https?:') { $s } elseif ($s -match '^//') { "https:$s" } else { "https://kick.com$s" }; try { (Invoke-WebRequest -UseBasicParsing $u -UserAgent $ua -TimeoutSec 20).Content } catch { '' } }
     foreach ($m in [regex]::Matches($t, '(?i)(pusher|wss://|ws-[a-z0-9]+\.|cluster|websocket|centrifug|ably|soketi|reverb)')) {
       if ($hits -ge 40) { break }; $a = [Math]::Max(0, $m.Index - 90); $snip = $t.Substring($a, [Math]::Min(220, $t.Length - $a)) -replace '\s+', ' '
       Write-Host "  kick probe [$([IO.Path]::GetFileName(($s -split '\?')[0]))]: $snip"; $hits++ } }
