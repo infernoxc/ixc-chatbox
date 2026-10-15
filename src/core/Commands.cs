@@ -54,12 +54,13 @@ namespace IXC {
         // optional different answer per platform (empty = the normal answer)
         var per = new Dictionary<string, object>(); var pd = J.Obj(d, "responses");
         if (pd != null) foreach (var p in Settings.PlatformIds) { var x = Regex.Replace(J.Str(pd, p, "").Trim(), "[\\r\\n]+", " "); if (x.Length > 450) x = x.Substring(0, 450); if (x.Length > 0) per[p] = x; }
-        if (builtin == null && resp.Length == 0 && per.Count == 0) { err = trig + " needs a response"; return null; }
+        string oerr; var obs = ObsControl.ValidateAction(J.Get(d, "obs"), out oerr); if (oerr != null) { err = trig + ": " + oerr; return null; }
+        if (builtin == null && resp.Length == 0 && per.Count == 0 && obs == null) { err = trig + " needs a response"; return null; }
         var perm = J.Str(d, "permission", "everyone"); if (!Settings.Roles.Contains(perm)) perm = "everyone";
         var plats = J.List(d, "platforms").Where(x => Settings.PlatformIds.Contains(x)).Distinct().ToList();
         outp.Add(J.D("id", Regex.IsMatch(J.Str(d, "id", ""), "^[\\w-]{1,20}$") ? J.Str(d, "id", "") : U.Token(5), "trigger", trig, "aliases", aliases, "response", resp, "permission", perm,
           "cooldownSec", Math.Max(0, Math.Min(3600, J.Int(d, "cooldownSec", 0))), "userCooldownSec", Math.Max(0, Math.Min(3600, J.Int(d, "userCooldownSec", 0))),
-          "platforms", plats, "enabled", J.Bool(d, "enabled", true), "builtin", builtin, "responses", per)); }
+          "platforms", plats, "enabled", J.Bool(d, "enabled", true), "builtin", builtin, "responses", per, "obs", obs)); }
       foreach (var sr in Settings.List("songRequests.commands")) if (seen.Contains(sr.StartsWith("!") ? sr : "!" + sr)) { err = sr + " is already the song request command"; return null; }
       return outp; }
     static string Trig(string t) { t = (t ?? "").Trim().ToLowerInvariant(); if (!t.StartsWith("!")) t = "!" + t; return Regex.IsMatch(t, "^![\\p{L}\\p{N}_-]{1,30}$") ? t : null; }
@@ -82,6 +83,8 @@ namespace IXC {
         lastUse[id] = now; lastUse[id + "|" + m.Key] = now; if (lastUse.Count > 5000) lastUse.Clear(); }
       Used++; lock (counts) { int n; counts.TryGetValue(id, out n); counts[id] = n + 1; }
       string reply = null; var builtin = J.Str(cmd, "builtin", null); var resp = J.Str(J.Obj(cmd, "responses") ?? new Dictionary<string, object>(), m.Platform, ""); if (resp.Length == 0) resp = J.Str(cmd, "response", "");
+      // OBS action (switch scene, show / hide a source) first, then the answer
+      var obsAct = J.Obj(cmd, "obs"); if (obsAct != null) { var oe = ObsControl.Run(obsAct); if (oe != null) Log.Warn("obs", word + ": " + oe); }
       try { reply = builtin != null ? Builtin(builtin, m, args, resp) : Fill(resp, m, args, id); } catch (Exception e) { Log.Err("chat", word + ": " + e.Message); }
       if (!string.IsNullOrEmpty(reply)) Chat.Reply(m, reply);
       Log.Info("chat", m.Platform + " " + m.Name + " used " + word);

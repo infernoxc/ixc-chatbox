@@ -250,6 +250,28 @@
   });
 
   // ======================= COMMANDS =======================
+  page('obs', 'OBS', (main) => {
+    // direct OBS connection (obs-websocket 5, built into OBS 28+): no Streamer.bot or plugin needed
+    let scenes = null, sources = null, busy = false;
+    const pill = (on, t) => `<span class="pill ${on ? 'st-connected' : ''}"><i></i>${t}</span>`;
+    async function load() { const st = await IXC.api('/api/obs/state'); if (st.connected) { scenes = await IXC.api('/api/obs/scenes'); sources = scenes.ok ? await IXC.api('/api/obs/sources?scene=' + encodeURIComponent(scenes.current)) : null; } else { scenes = sources = null; } paint(st); }
+    function paint(st) { if (App.current !== 'obs') return;
+      main.innerHTML = card('🎬 Connection', `<div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(st.connected ? 'connected' : st.state)} ${st.connected ? `<span class="small">OBS ${esc(st.version)} · WebSocket ${esc(st.websocketVersion)}</span>` : `<span class="small muted">${esc(st.detail || '')}</span>`}</div>
+        ${st.connected ? `<div class="row" style="gap:8px;margin-top:8px">${pill(st.streaming, st.streaming ? 'Streaming' : 'Not streaming')} ${pill(st.recording, st.recording ? 'Recording' : 'Not recording')}</div>` : ''}
+        <div class="field" style="margin-top:10px"><label class="lbl">Address</label><div class="val"><input type="text" id="oAddr" value="${esc(st.address === 'auto' ? '' : (st.address || '').replace(/^ws:\/\//, '').replace(/\/$/, ''))}" placeholder="automatic (from OBS's settings) - or 127.0.0.1:4455"></div></div>
+        <div class="field"><label class="lbl">Password</label><div class="val"><input type="password" id="oPw" autocomplete="new-password" placeholder="${st.passwordSet ? '(saved - type a new one to replace it)' : 'automatic (from OBS\'s settings)'}"></div></div>
+        <div class="actions"><button class="primary" id="oTest">${busy ? 'Testing…' : 'Save & test connection'}</button></div>
+        <div class="hint">IXC finds OBS and its WebSocket password by itself. Only fill these in if OBS is on another PC or you changed the port: OBS > Tools > WebSocket Server Settings > Show Connect Info. OBS 28 or newer is needed.</div>`) +
+        (scenes && scenes.ok ? `<div style="height:14px"></div>` + card('🎞️ Scenes', `<div class="row" style="gap:8px;flex-wrap:wrap">${scenes.scenes.map(n => `<button class="${n === scenes.current ? 'primary' : ''}" data-scene="${esc(n)}">${esc(n)}</button>`).join('')}</div>`) : '') +
+        (sources && sources.ok ? `<div style="height:14px"></div>` + card('👁️ Sources in "' + esc(sources.scene) + '"', `<table class="t">${sources.sources.map(x => `<tr><td>${esc(x.name)}</td><td style="text-align:right"><button class="small ${x.visible ? '' : 'primary'}" data-src="${esc(x.name)}" data-vis="${x.visible ? 'hide' : 'show'}">${x.visible ? 'Hide' : 'Show'}</button></td></tr>`).join('')}</table>
+          <div class="hint">Chat commands can do this too: Commands > edit a command > OBS action (e.g. !brb switches to your BRB scene).</div>`) : ''); }
+    main.onclick = async (e) => { const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+      if (b.id === 'oTest') { busy = true; b.textContent = 'Testing…'; const body = { address: $('oAddr').value.trim() || 'auto' }; if ($('oPw').value) body.password = $('oPw').value;
+        const r = await IXC.api('/api/obs/connection', body); busy = false; toast(r.ok ? 'Connected to OBS ' + r.version : r.error, !r.ok); load(); }
+      if (d.scene) { const r = await IXC.api('/api/obs/scene', { scene: d.scene }); if (!r.ok) toast(r.error, true); setTimeout(load, 300); }
+      if (d.src) { const r = await IXC.api('/api/obs/source', { scene: sources.scene, source: d.src, visible: d.vis }); if (!r.ok) toast(r.error, true); load(); } };
+    load(); on('status', () => { if (App.current === 'obs' && !busy) load(); });
+  });
   page('timers', 'Timers', (main) => {
     // repeating chat messages, e.g. "Follow me everywhere" every 15 minutes (replaces Streamer.bot timers)
     let list = [], view = [];
@@ -312,12 +334,14 @@
         <div class="field"><label class="lbl">Other names</label><div class="val"><input type="text" id="eA" value="${esc((c.aliases || []).join(' '))}" placeholder="!dc !disc"></div></div>
         <div class="field"><label class="lbl">Answer</label><div class="val"><textarea id="eR" style="font-family:inherit">${esc(c.response)}</textarea></div></div>
         <details ${Object.keys(c.responses || {}).length ? 'open' : ''}><summary class="small">Different answer per platform (optional)</summary>${App.PLAT_OPTS.map(([v, n]) => `<div class="field"><label class="lbl">${n}</label><div class="val"><input type="text" data-resp="${v}" value="${esc((c.responses || {})[v] || '')}" placeholder="(same as above)"></div></div>`).join('')}</details>
+        <div class="field"><label class="lbl">OBS action</label><div class="val"><select id="eO">${[['', 'None'], ['scene', 'Switch to scene'], ['show', 'Show a source'], ['hide', 'Hide a source'], ['toggle', 'Show / hide a source']].map(([v, t]) => `<option value="${v}" ${((c.obs || {}).type || '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <input type="text" id="eOS" placeholder="Scene" value="${esc((c.obs || {}).scene || '')}" style="margin-top:6px"><input type="text" id="eOX" placeholder="Source (for show / hide)" value="${esc((c.obs || {}).source || '')}" style="margin-top:6px"></div></div>
         <div class="field"><label class="lbl">Who can use it</label><div class="val"><select id="eP">${App.ROLE_OPTS.map(([v, t]) => `<option value="${v}" ${c.permission === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div></div>
         <div class="field"><label class="lbl">Cooldown (s)</label><div class="val"><input type="number" id="eC" min="0" max="3600" value="${c.cooldownSec}"></div></div>
         <div class="field"><label class="lbl">Per person cooldown (s)</label><div class="val"><input type="number" id="eU" min="0" max="3600" value="${c.userCooldownSec}"></div></div>
         <div class="field"><label class="lbl">Platforms</label><div class="val chipset" id="ePl">${App.PLAT_OPTS.map(([v, t]) => `<label><input type="checkbox" value="${v}" ${!c.platforms.length || c.platforms.includes(v) ? 'checked' : ''}>${t}</label>`).join('')}</div></div>
         <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="eSave">Save</button></div>`);
-      $('eSave').onclick = async () => { c.trigger = $('eT').value.trim(); c.aliases = $('eA').value.split(/[\s,]+/).filter(Boolean); c.response = $('eR').value.trim(); c.responses = {}; document.querySelectorAll('[data-resp]').forEach(el => { if (el.value.trim()) c.responses[el.dataset.resp] = el.value.trim(); }); c.permission = $('eP').value; c.cooldownSec = +$('eC').value; c.userCooldownSec = +$('eU').value;
+      $('eSave').onclick = async () => { c.trigger = $('eT').value.trim(); c.aliases = $('eA').value.split(/[\s,]+/).filter(Boolean); c.response = $('eR').value.trim(); c.responses = {}; document.querySelectorAll('[data-resp]').forEach(el => { if (el.value.trim()) c.responses[el.dataset.resp] = el.value.trim(); }); c.permission = $('eP').value; c.obs = $('eO').value ? { type: $('eO').value, scene: $('eOS').value.trim(), source: $('eOX').value.trim() } : null; c.cooldownSec = +$('eC').value; c.userCooldownSec = +$('eU').value;
         const pl = [...document.querySelectorAll('#ePl input:checked')].map(x => x.value); c.platforms = pl.length === 4 ? [] : pl;
         if (i < 0) list.push(c); else list[i] = c; if (await store()) App.closeModal(); else if (i < 0) list.pop(); }; }
     main.onclick = async (e) => { const d = e.target.dataset; if (e.target.id === 'cAdd') edit(-1); if (e.target.id === 'cImport') importSb(); if (d.ed) edit(+d.ed);

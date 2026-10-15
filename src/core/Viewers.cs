@@ -76,7 +76,7 @@ namespace IXC {
       var issues = Health.QuickIssues();
       string overall = issues.Any(i => (string)i["level"] == "error") ? "error" : issues.Any(i => (string)i["level"] == "warn") ? "warning" : "healthy";
       var d = J.D("type", "status", "version", Program.Version, "overall", overall, "issues", issues, "firstRun", !Settings.Bool("general.firstRunDone"),
-        "obs", J.D("state", Obs.Link.State, "detail", Obs.Link.Detail, "connected", Obs.Link.Ready, "setup", Obs.SetupOk, "setupNote", Obs.LastSetup),
+        "obs", J.D("state", Obs.Link.State, "detail", Obs.Link.Detail, "connected", Obs.Link.Ready, "setup", Obs.SetupOk, "setupNote", Obs.LastSetup, "streaming", Obs.Link.Ready && ObsControl.Streaming, "recording", Obs.Link.Ready && ObsControl.Recording, "scene", ObsControl.Scene),
         "phone", Remote.Summary(), "update", Updates.Summary());
       if (Music.Enabled) { var cur = Music.Current(); var st = J.Obj(Music.State(), "s"); d["music"] = J.D("playing", J.Bool(st, "playing", false), "title", cur == null ? "" : Music.Describe(cur), "queue", Music.Queue().Count, "player", Hub.Count("player") > 0, "ducked", J.Bool(st, "ducked", false), "note", J.Str(st, "note", "")); }
       if (Chat.Enabled) { d["chat"] = Platforms.StatusAll(); d["tts"] = J.D("on", Tts.On, "paused", Tts.Paused, "speaking", Tts.Speaking, "source", Hub.Count("tts") > 0); d["viewers"] = Viewers.Snapshot(); }

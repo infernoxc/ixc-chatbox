@@ -28,9 +28,13 @@ test('every dashboard page renders with live data and no script errors', async (
   await settings(c, { 'general.firstRunDone': true, 'platforms.kick.enabled': true, 'platforms.kick.channel': 'demo' });
   for (let i = 0; i < 6; i++) await inject(c, { platform: ['twitch', 'kick', 'youtube'][i % 3], id: 'ui' + i, name: ['Rushkaa', 'ShadowSniper', 'Aman Verma'][i % 3], text: ['GG how many kills?', 'that spray transfer was insane', 'first time here, love the setup'][i % 3] + ' #' + i, mod: i === 1 });
   const p = await open('/app/');
-  for (const pg of ['home', 'chat', 'music', 'requests', 'accounts', 'overlays', 'phone', 'tts', 'voices', 'commands', 'timers', 'filters', 'check', 'settings']) {
+  for (const pg of ['home', 'chat', 'music', 'requests', 'accounts', 'overlays', 'phone', 'tts', 'voices', 'commands', 'timers', 'obs', 'filters', 'check', 'settings']) {
     await p.evaluate((h) => { location.hash = h; }, '#' + pg); await p.waitForTimeout(pg === 'check' ? 1200 : 700);
     assert.ok(await p.locator('#main').evaluate(el => el.innerText.length > 20 || el.querySelector('iframe')), pg + ' has content'); await shot(p, '10-page-' + pg); }
+  // OBS page: connected (fake OBS), streaming shown, a scene button switches the scene in OBS
+  obs.event('StreamStateChanged', { outputActive: true });
+  await p.evaluate(() => { location.hash = '#obs'; }); await p.waitForSelector('text=Streaming', { timeout: 8000 });
+  await p.click('button[data-scene="BRB"]'); await until(() => obs.st.current === 'BRB', 4000, 'scene switched from the page'); await p.waitForTimeout(500); await shot(p, '10-page-obs-connected');
   // Timers: create one through the form; it is saved and shows its status
   await p.evaluate(() => { location.hash = '#timers'; }); await p.waitForTimeout(600);
   await p.click('#tAdd'); await p.fill('#tN', 'Socials'); await p.fill('#tM', 'Follow me everywhere!'); await p.fill('#tI', '10'); await p.fill('#tL', '3'); await p.click('#tSave');

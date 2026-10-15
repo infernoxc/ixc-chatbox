@@ -28,9 +28,9 @@ namespace IXC {
       return m; }
     protected override async Task Handshake() {
       identified.Reset();
-      if (!await Task.Run(() => gotHello.Wait(5000))) throw new Exception("OBS did not say hello");
+      if (!await Task.Run(() => gotHello.Wait(5000))) throw new Exception("OBS did not say hello (IXC needs OBS 28 or newer, which has obs-websocket 5 built in)");
       gotHello.Reset();
-      var d = J.D("rpcVersion", 1, "eventSubscriptions", 1 | 4 | 8);   // General, Scenes, Inputs
+      var d = J.D("rpcVersion", 1, "eventSubscriptions", 1 | 4 | 8 | 64);   // General, Scenes, Inputs, Outputs (streaming / recording)
       var a = J.Obj(helloD, "authentication");
       if (a != null) { var pw = Secrets.Str("obs.password") ?? ""; if (pw.Length == 0) pw = J.Str(Obs.WsConfig(), "server_password", "");
         d["authentication"] = U.Sha(U.Sha(pw + J.Str(a, "salt", "")) + J.Str(a, "challenge", "")); }
@@ -68,8 +68,8 @@ namespace IXC {
       bool r = false; try { r = Process.GetProcessesByName("obs64").Length > 0 || Process.GetProcessesByName("obs").Length > 0 || Process.GetProcessesByName("obs32").Length > 0; } catch { }
       runCache = r; runAt = DateTime.Now; return r; }
     public static void Init() {
-      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); var t = AutoSetup(false); if (Music.Enabled) Music.OnObsReady(); };
-      Link.OnObsEvent = (type, d) => { if (Music.Enabled) Music.OnObsEvent(type, d); };
+      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); ObsControl.OnReady(); var t = AutoSetup(false); if (Music.Enabled) Music.OnObsReady(); };
+      Link.OnObsEvent = (type, d) => { ObsControl.OnEvent(type, d); if (Music.Enabled) Music.OnObsEvent(type, d); };
       Link.Start(); }
     public static void Changed() { Hub.Publish("status", Status.Msg()); }
 

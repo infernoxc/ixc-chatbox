@@ -142,6 +142,7 @@ namespace IXC {
       if (path.StartsWith("/api/accounts/") && m == "POST") { var parts = path.Split('/'); if (parts.Length == 5) { var p = parts[3]; var act = parts[4];
           if (act == "connect") { Http.Json(ctx, Accounts.Begin(p)); return; } if (act == "signout") { Accounts.SignOut(p); Http.Json(ctx, Accounts.All()); return; } if (act == "cancel") { Accounts.Cancel(p); Http.Json(ctx, Accounts.All()); return; }
           if (act == "rumble") { var err = Accounts.SetRumbleUrl(J.Str(Http.BodyJson(ctx), "url", "")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return; } } }
+      if (ObsControl.Api(ctx, path, m)) return;
       if (path == "/api/obs/detect") { Http.Json(ctx, Obs.Detect()); return; }
       if (path == "/api/obs/check") { Http.Json(ctx, Obs.Check().Result); return; }
       if (path == "/api/obs/remove" && m == "POST") { Http.Json(ctx, Obs.RemoveAll().Result); return; }
