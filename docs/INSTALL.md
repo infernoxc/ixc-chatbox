@@ -3,7 +3,7 @@
 ## The normal way
 
 1. Install **OBS Studio** if you don't have it yet ([obsproject.com](https://obsproject.com)), and **open it once**.
-2. Download **`IXC-Setup.exe`** from [Releases](https://github.com/infernoxc/ixc-chatbox/releases/latest) and run it.
+2. Open [Releases](https://github.com/infernoxc/ixc-chatbox/releases/latest), scroll to **Assets** and click **`IXC-Setup-vX.Y.Z.exe`** (for example `IXC-Setup-v3.2.0.exe`). Run it from your Downloads folder.
    - **"Windows protected your PC"**: click **More info**, then **Run anyway**. This appears because IXC is a free project without a paid code-signing certificate. The download's checksum is listed in `SHA256SUMS.txt` next to it.
 3. Choose **Express (recommended)**.
    - If OBS is open, the setup asks you to close it (**File > Exit**). OBS saves its settings when it closes, so IXC can only add its panels while it's closed.
@@ -18,8 +18,16 @@
 | **Overlays** | Add Now Playing, Chat, Viewers or Alerts to the scene that's on air. |
 | **System test** | Checks everything. Anything wrong has a **Fix** button. |
 
-Done. IXC starts with Windows and lives in the tray (bottom right). **Double-click the tray icon** to open IXC.
+Done. IXC lives in the tray (bottom right; click **^** if you don't see it). **Double-click the tray icon** to open IXC.
+
+**IXC starts and stops with OBS.** When Windows starts, only the small tray icon starts. IXC itself opens when you open OBS and
+closes about 20 seconds after you close OBS. Want it running all the time (for example for the phone remote without OBS)? IXC >
+**Settings** > switch off **Start and stop with OBS**.
 In OBS you'll find the **IXC ChatBox**, **IXC Music** and **IXC** panels under **Docks**.
+
+## Updating
+Run the new `IXC-Setup-vX.Y.Z.exe` the same way. Your settings, accounts, music queue and playlists stay; a backup is made first
+(IXC > Updates & diagnostics > Backups). IXC also updates by itself when a new version is out (never while you're live).
 
 ## Advanced setup
 Choose **Advanced** in the setup to decide:

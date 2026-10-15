@@ -19,16 +19,24 @@ with song requests, overlays, and a phone remote that works on mobile data. Made
 
 ## Get started (5 minutes)
 
-1. **Download** `IXC-Setup.exe` from [Releases](https://github.com/infernoxc/ixc-chatbox/releases/latest).
-2. **Run it** and click **Express setup**. No admin rights needed. *(If OBS is open, the setup asks you to close it once.)*
-3. IXC opens and walks you through the rest:
-   - It **sets up OBS** by itself.
-   - You **connect your platforms** (Twitch, Kick, YouTube: one click each).
-   - You can **scan a QR code** with your phone.
-   - It **runs a system test**.
-4. **Open OBS and stream.** The IXC panels are under **Docks**, and IXC sits in the tray (bottom right).
+1. **Install OBS Studio** (free, [obsproject.com](https://obsproject.com)) if you don't have it, and open it once.
+2. **Download IXC:** open [Releases](https://github.com/infernoxc/ixc-chatbox/releases/latest), scroll down to **Assets** and click
+   **`IXC-Setup-v3.2.0.exe`** (the number is the version).
+3. **Run it** from your Downloads folder.
+   - If Windows says **"Windows protected your PC"**: click **More info**, then **Run anyway**. (IXC is free and has no paid
+     signing certificate.)
+   - Click **Express setup**. No admin rights needed. If OBS is open, the setup asks you to close it once.
+4. **IXC opens a short setup assistant.** Just follow it:
+   - it **sets up OBS** by itself (panels, music player, chat voice),
+   - you type your **channel names** (Twitch, Kick, YouTube, Rumble): that's enough to read chat,
+   - optional: scan a **QR code** to control IXC from your phone,
+   - it **runs a system test**; anything wrong has a **Fix** button.
+5. **Open OBS and stream.** The IXC panels are under **Docks**. IXC sits in the tray (bottom right) and from now on **starts by
+   itself when you open OBS**.
 
 That's all. You never edit files, ports, JSON or firewall rules.
+Want IXC to also **reply** in chat (commands, timers, thank-you messages)? Follow the 5-minute steps in IXC > **Platforms &
+accounts > Your apps** (one free developer app per platform). Full walkthrough: [📖 Step-by-step guide](docs/GUIDE.md).
 
 ## What you get
 | | |
@@ -36,9 +44,10 @@ That's all. You never edit files, ports, JSON or firewall rules.
 | 💬 **One chat** | Twitch, Kick, YouTube and Rumble in one panel, with emotes, badges and roles. Reply to one platform or all of them. Show or hide each platform. |
 | 🔊 **Chat voice (TTS)** | Reads chat out loud through OBS. 11 natural voices, plus an offline Windows voice as a backup. Give people their own voice, or set one per role or platform. Pause, skip, queue, history. |
 | 🎚 **Music ducking** | Music fades down smoothly while the voice speaks, then comes back to exactly where it was. |
-| 🎵 **Music** | YouTube search and links, Spotify links (matched on YouTube), your own MP3/FLAC/… folders. Queue, shuffle, repeat, autoplay. Send the music to **all platforms or only one** (for example, YouTube only). |
+| 🎵 **Music** | YouTube search and links, Spotify links (matched on YouTube), your own MP3/FLAC/… folders. Queue, shuffle, repeat, autoplay. Shuffle plays every song once before repeating. Playlists and history. |
+| 🎚 **Audio routing** | Switch the **music** and the **chat voice** on or off **per platform** (for example music on Twitch and YouTube, not on Kick). Uses OBS audio tracks, needs one OBS output per platform (multistream). |
 | 🙋 **Song requests** | `!sr song name` from chat, with who-can-request, cooldowns, limits, banned songs/artists and a maximum length. `!wrongsong` removes your last request. |
-| ⌨️ **Commands** | `!np` `!queue` `!skip` `!uptime` `!viewers` and your own (`!discord`, `!socials`…) with permissions, cooldowns, platforms, a different answer per platform and OBS actions (`!brb` → BRB scene). Import from Streamer.bot. |
+| ⌨️ **Commands** | `!np` `!queue` `!skip` `!uptime` `!viewers`, ready-made `!commands` `!followage` `!clip` `!discord` `!socials`, and your own (`!discord`, `!socials`…) with permissions, cooldowns, platforms, a different answer per platform and OBS actions (`!brb` → BRB scene). Import from Streamer.bot. |
 | ⏱ **Timers** | Repeating messages ("Follow me everywhere…") every N minutes, only after enough chat, only while live. Never repeats after a reconnect or restart. |
 | 🎉 **Event messages** | Thank-you in chat for follows, subs, gifts, raids, Super Chats and members, with flood protection. |
 | 🎬 **OBS control** | Direct OBS WebSocket connection: streaming / recording state, scene switching, show / hide sources, connection test. |
@@ -47,6 +56,7 @@ That's all. You never edit files, ports, JSON or firewall rules.
 | 👁 **Viewer counter** | Per platform and total. A number that's out of date is never shown as current. |
 | 🖼 **Overlays** | Now Playing (full / compact / minimal), Up Next, Chat, Viewers, Alerts (follows, subs, raids, Super Chats), chat-voice indicator and a "Live on" badge. Style them in IXC and press **Add to OBS**. |
 | 📱 **Phone remote** | Scan a QR code once, then control music, voice and chat from anywhere: 4G/5G, another Wi-Fi, another city. It keeps working after restarts. |
+| 🚀 **Starts with OBS** | Open OBS and IXC is there; close OBS and IXC closes too. Only a tiny tray icon waits in the background. |
 | 🩺 **System check** | One button checks everything; **Fix automatically** repairs it. Backups, diagnostics export, safe updates with rollback. |
 
 ## Requirements
@@ -62,6 +72,7 @@ That's all. You never edit files, ports, JSON or firewall rules.
 - **Reading chat** on Kick and YouTube uses the same public connections their websites use, and these can change. Replying uses the official APIs (you sign in).
 - **Followers:** follower alerts and "followers only" checks work on Twitch (signed in), Kick and Rumble. YouTube doesn't share them.
 - **Spotify** audio can't be streamed. IXC plays the same song from YouTube. Spotify playlists and albums need your own free Spotify app keys (Settings, Advanced).
+- **TikTok, Instagram and Facebook Live** aren't supported: TikTok has no official chat API, Instagram and Facebook need an app approved by Meta.
 - **Music copyright:** use music you're allowed to stream (for example NCS or StreamBeats). Platforms mute or strike copyrighted music.
 
 ## Documentation

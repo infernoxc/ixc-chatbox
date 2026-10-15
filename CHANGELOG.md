@@ -3,7 +3,7 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
-## [3.2.0] - test build, not released yet
+## [3.2.0] - 2026-10-15
 ### Added
 - **Audio routing** page: switch the music and the chat voice (TTS) on or off **per platform** (Twitch / Kick / YouTube), independently. Works through OBS audio tracks and is read back from OBS; your other sources and unused tracks are never touched. The music dock's platform buttons are now on/off switches.
 - **Start and stop with OBS** (on by default, Settings): at sign-in only the tray icon starts; IXC opens when OBS opens and closes 20 s after OBS closes. Opening IXC yourself starts it at once.
