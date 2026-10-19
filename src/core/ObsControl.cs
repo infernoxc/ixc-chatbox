@@ -97,10 +97,43 @@ namespace IXC {
         : Obs.Link.Detail.Length > 0 ? Obs.Link.Detail : "OBS didn't answer at " + (url == "auto" ? "the address from OBS's settings" : url) + " - is OBS open with its WebSocket server on?";
       return st; }
 
+    // ---------- Stage 0: read-only report of what THIS OBS can do (requests, outputs, video settings, status, Aitum vendors) ----------
+    // Only look-up requests are sent. Nothing that returns a stream key or a password is ever called (GetStreamServiceSettings, GetOutputSettings,
+    // profile parameters and so on are deliberately not used), and nothing here changes OBS.
+    static async Task<Dictionary<string, object>> Try(string type, Dictionary<string, object> data) {
+      try { return await Obs.Link.Call(type, data); } catch (Exception e) { return J.D("_error", U.Plain(e)); } }
+    static Dictionary<string, object> Pick(Dictionary<string, object> d, params string[] keys) { var r = new Dictionary<string, object>(); foreach (var k in keys) if (d.ContainsKey(k)) r[k] = d[k]; if (d.ContainsKey("_error")) r["_error"] = d["_error"]; return r; }
+    public static async Task<Dictionary<string, object>> Capabilities() {
+      if (!Obs.Link.Ready) return J.D("ok", false, "error", "OBS isn't connected (" + (Obs.Link.Detail.Length > 0 ? Obs.Link.Detail : Obs.Link.State) + ")");
+      var v = await Try("GetVersion", null); var reqs = J.List(v, "availableRequests"); reqs.Sort(StringComparer.Ordinal);
+      var interesting = new Regex("Output|Stream|Record|Video|Profile|Canvas|Vendor|Hotkey|SceneItemTransform|SceneItemEnabled|Filter|Replay|VirtualCam", RegexOptions.IgnoreCase);
+      var outs = new List<object>(); var ol = await Try("GetOutputList", null);
+      foreach (var o in J.Objs(ol, "outputs")) {
+        var name = J.Str(o, "outputName", ""); var st = await Try("GetOutputStatus", J.D("outputName", name));
+        outs.Add(J.D("name", name, "kind", J.Str(o, "outputKind", ""), "width", J.Int(o, "outputWidth", 0), "height", J.Int(o, "outputHeight", 0), "active", J.Bool(o, "outputActive", false), "flags", o.ContainsKey("outputFlags") ? o["outputFlags"] : null,
+          "status", Pick(st, "outputActive", "outputReconnecting", "outputTimecode", "outputDuration", "outputCongestion", "outputBytes", "outputSkippedFrames", "outputTotalFrames"))); }
+      var vendors = new Dictionary<string, object>();
+      foreach (var vn in new[] { "aitum-multistream", "aitum-vertical-canvas" }) {
+        var vr = await Try("CallVendorRequest", J.D("vendorName", vn, "requestType", "version"));
+        vendors[vn] = vr.ContainsKey("_error") ? J.D("registered", false, "error", vr["_error"]) : J.D("registered", true, "answer", vr.ContainsKey("responseData") ? vr["responseData"] : vr); }
+      var hk = await Try("GetHotkeyList", null); var hkNames = J.List(hk, "hotkeys");
+      var prof = await Try("GetProfileList", null); var stats = await Try("GetStats", null);
+      return J.D("ok", true, "readOnly", true, "generatedAt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+        "note", "Only look-up requests were sent. No request that returns a stream key or password was made, and nothing in OBS was changed.",
+        "obs", Pick(v, "obsVersion", "obsWebSocketVersion", "rpcVersion", "platform", "platformDescription", "_error"),
+        "requestCount", reqs.Count, "requests", reqs, "interestingRequests", reqs.Where(r => interesting.IsMatch(r)).ToList(),
+        "hasCanvasRequests", reqs.Any(r => r.IndexOf("Canvas", StringComparison.OrdinalIgnoreCase) >= 0), "hasVendorRequest", reqs.Contains("CallVendorRequest"),
+        "videoSettings", Pick(await Try("GetVideoSettings", null), "baseWidth", "baseHeight", "outputWidth", "outputHeight", "fpsNumerator", "fpsDenominator"),
+        "streamStatus", Pick(await Try("GetStreamStatus", null), "outputActive", "outputReconnecting", "outputTimecode", "outputDuration", "outputCongestion", "outputBytes", "outputSkippedFrames", "outputTotalFrames"),
+        "recordStatus", Pick(await Try("GetRecordStatus", null), "outputActive", "outputPaused", "outputTimecode", "outputBytes"),
+        "profile", Pick(prof, "currentProfileName", "profiles"), "stats", Pick(stats, "cpuUsage", "memoryUsage", "activeFps", "averageFrameRenderTime", "renderSkippedFrames", "outputSkippedFrames"),
+        "outputs", outs, "outputCount", outs.Count, "vendors", vendors,
+        "hotkeys", J.D("count", hkNames.Count, "matching", hkNames.Where(n => Regex.IsMatch(n, "aitum|vertical|multistream|canvas", RegexOptions.IgnoreCase)).ToList())); }
     public static bool Api(Ctx ctx, string path, string m) {
       if (!path.StartsWith("/api/obs/")) return false;
       try {
         if (path == "/api/obs/state") { Http.Json(ctx, State()); return true; }
+        if (path == "/api/obs/capabilities") { Http.Json(ctx, Capabilities().Result); return true; }
         if (path == "/api/obs/connection" && m == "POST") { var r = SetConnection(Http.BodyJson(ctx)); Http.Json(ctx, r); return true; }
         if (!Obs.Link.Ready && (path == "/api/obs/scenes" || path == "/api/obs/sources" || path == "/api/obs/scene" || path == "/api/obs/source")) { Http.Json(ctx, 409, J.D("ok", false, "error", "OBS isn't connected (" + Obs.Link.Detail + ")")); return true; }
         if (path == "/api/obs/scenes") { Http.Json(ctx, Scenes().Result); return true; }

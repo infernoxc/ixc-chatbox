@@ -36,10 +36,23 @@ namespace IXC {
       for (int i = 0; i < args.Length; i++) {
         if (args[i] == "--config" && i + 1 < args.Length) cfgPath = args[++i]; else if (args[i] == "--test") { TestMode = true; worker = true; }
         else if (args[i] == "--worker") worker = true; else if (args[i] == "--no-tray") noTray = true; }
+      bool explicitCfg = cfgPath != null;
       if (cfgPath == null) { var la = Environment.GetEnvironmentVariable("LOCALAPPDATA"); if (string.IsNullOrEmpty(la)) la = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData); cfgPath = Path.Combine(la, "IXC-OBS", "config.json"); }
+      for (int i = 0; i < args.Length; i++) if (args[i] == "--obs-capabilities") return ObsProbe(args, i, cfgPath, explicitCfg);
       if (!worker && !noTray) return Supervisor.Run(args, cfgPath);
       return Worker(cfgPath);
     }
+
+    // "ixc-core.exe --obs-capabilities <report.json> --config <scratch folder>\config.json": connects to OBS with OBS's own WebSocket settings, writes the read-only
+    // capability report and exits. It starts nothing else (no setup, no audio routing, no docks, no chat, no web server), so it never changes OBS, and it
+    // refuses to run on IXC's real data folder: a scratch --config is required.
+    static int ObsProbe(string[] args, int i, string cfgPath, bool explicitCfg) {
+      if (!explicitCfg || i + 1 >= args.Length) { Console.Error.WriteLine("usage: ixc-core.exe --obs-capabilities <report.json> --config <scratch folder>\\config.json"); return 64; }
+      var outFile = args[i + 1]; var dataDir = Path.GetDirectoryName(Path.GetFullPath(cfgPath)); Directory.CreateDirectory(dataDir);
+      Log.Init(Path.Combine(dataDir, "logs")); Secrets.Load(dataDir); Cfg.Load(cfgPath); Log.Verbose = Settings.Bool("diagnostics.verboseLog");
+      ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288; ServicePointManager.DefaultConnectionLimit = 32; ServicePointManager.Expect100Continue = false;
+      Obs.Link.Start(); for (int t = 0; t < 200 && !Obs.Link.Ready; t++) Thread.Sleep(100);
+      var r = ObsControl.Capabilities().Result; File.WriteAllText(outFile, J.Pretty(J.Ser(r)), new System.Text.UTF8Encoding(false)); Log.Flush(); return J.Bool(r, "ok", false) ? 0 : 2; }
 
     static int Worker(string cfgPath) {
       var dataDir = Path.GetDirectoryName(Path.GetFullPath(cfgPath)); Directory.CreateDirectory(dataDir);
@@ -150,7 +163,7 @@ namespace IXC {
       if (path == "/api/obs/remove" && m == "POST") { Http.Json(ctx, Obs.RemoveAll().Result); return; }
       if (path == "/api/obs/overlay" && m == "POST") { var b = Http.BodyJson(ctx); try { Http.Json(ctx, Obs.AddOverlay(J.Str(b, "name", "Overlay"), BaseUrl + J.Str(b, "path", "/overlay/"), J.Int(b, "width", 800), J.Int(b, "height", 200)).Result); } catch (Exception e) { Http.Json(ctx, 400, J.D("ok", false, "error", U.Plain(e))); } return; }
       if (path == "/api/firstrun/done" && m == "POST") { Settings.Set("general.firstRunDone", true); Http.Json(ctx, J.D("ok", true)); return; }
-      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m)) return;
+      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m) || Multistream.Api(ctx, path, m)) return;
       if (Routing.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
       if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;
