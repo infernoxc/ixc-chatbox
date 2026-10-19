@@ -2,6 +2,8 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Fixed
+- **Audio routing with renamed OBS sources**: if the music player or chat voice browser source is not called "IXC Music Player" / "IXC TTS" (for example "MUSIC — IXC Music Player" in a custom scene collection), IXC now finds it by its URL, remembers the name, and follows later renames in OBS. Before, the per-platform music/TTS switch silently did nothing.
 
 ## [3.2.0] - 2026-10-15
 ### Added

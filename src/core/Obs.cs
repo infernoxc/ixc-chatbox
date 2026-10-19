@@ -139,7 +139,17 @@ namespace IXC {
     static async Task<List<Dictionary<string, object>>> Inputs() {
       var r = await Link.Call("GetInputList", J.D("inputKind", "browser_source")); var list = new List<Dictionary<string, object>>();
       var arr = J.Get(r, "inputs") as ArrayList; if (arr != null) foreach (var o in arr) { var d = o as Dictionary<string, object>; if (d != null) list.Add(d); } return list; }
-    static async Task<string> FindByUrl(string part, string preferName) {
+    // The music player / TTS browser source may carry any name (e.g. "MUSIC - IXC Music Player" in a styled scene collection).
+    // Find it by its address and remember the name, every time (not only on first setup), so audio routing never says "no source called ...".
+    public static async Task ResolveInput(string src) {
+      try {
+        if (!Link.Ready) return;
+        var part = src == "music" ? "/music/player.html" : "/chat/tts.html"; var key = src + ".routing.inputName";
+        var cur = Cfg.Get(key) as string; if (string.IsNullOrEmpty(cur)) cur = src == "music" ? PlayerInput : TtsInput;
+        var found = await FindByUrl(part, cur);
+        if (found != null && found != cur) { Cfg.Set(key, found); Cfg.Save(); Log.Info("obs", "found the " + (src == "music" ? "music player" : "chat voice") + " source in OBS under the name \"" + found + "\""); } }
+      catch (Exception e) { Log.Warn("obs", "could not look up the " + src + " source: " + e.Message); } }
+    internal static async Task<string> FindByUrl(string part, string preferName) {
       foreach (var i in await Inputs()) { var n = J.Str(i, "inputName", ""); if (n == preferName) return n; }
       foreach (var i in await Inputs()) { var n = J.Str(i, "inputName", ""); try { var s = await Link.Call("GetInputSettings", J.D("inputName", n)); if (J.Str(s, "inputSettings.url", "").Contains(part)) return n; } catch { } }
       return null; }
