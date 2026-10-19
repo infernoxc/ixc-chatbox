@@ -353,3 +353,9 @@ Record actual evidence only. Do not mark unverified features complete.
 - Added: src/core/SbManager.cs (detect, Test, Save, Start/Stop of an IXC-started process, monitor, API), SentEcho (own-reply echo guard) + ChatMsg.Echo, SbLink health fields, settings exePath/launch, route hook, dashboard page `streamerbot` + nav entry + link on Platforms & Accounts.
 - Tests (mock Streamer.bot, hermetic): integration 29 (5), UI streamerbot-page (1); full integration 79/82 (OBS-closed test needs OBS closed, !followage preset unresolved, one OBS test flaky under load but passes alone).
 - Not verified: launching/minimizing the real Streamer.bot 1.0.7, its saved platform sessions, a real SendMessage echo shape, real chat. Needs user approval.
+
+## 2026-10-19 15:16 Installed into the live copy (approved)
+- Installed core: 3.3.0-rc.1 (sha prefix 7FC254F8), dashboard app.js/pages.js, chat.html. Backup + ROLLBACK.ps1: Desktop\IXC-backup-20261019-151528\pre-chat-streamerbot-swap (51 files, hashes verified, MANIFEST.txt). Rollback: run ROLLBACK.ps1 (-RestoreSettings only if settings are damaged).
+- Verified live: /api/streamerbot answers, Streamer.bot page reachable from System > Streamer.bot, status Connected (v1.0.7, password accepted from Streamer.bot's own settings, accounts infernoxc00 + Infernoxc), read-only Test connection OK, unchanged Save persists after reload, config.json differs from the backup only in "version", secrets.dat identical, real Streamer.bot (pid 15584) never stopped/started/modified, no log errors, music/TTS/OBS reconnected.
+- Not tested (no permission yet): incoming chat events (events=0), replies, IXC-managed launch, platform sign-in validity inside Streamer.bot.
+- Known cosmetic issue: "Saved" marker next to the password box also shows when the password is only found in Streamer.bot's settings (not saved in IXC).
