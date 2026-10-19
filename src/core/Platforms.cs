@@ -72,7 +72,7 @@ namespace IXC {
     public override void Restart() { irc.Restart(); es.Restart(); PollNow(); }
     public override void Kick() { irc.Kick(); es.Kick(); }
     public override bool CanSend { get { return irc.Ready && irc.Authed; } }
-    public override string SendNote { get { return !Accounts.Has("twitch") ? "Sign in to Twitch (Accounts) to reply" : irc.Ready ? "Twitch sign-in expired - sign in again" : "Twitch chat is not connected"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("twitch", "Twitch") ?? (Accounts.Info("twitch") != null && !J.List(Accounts.Info("twitch"), "scopes").Contains("chat:edit") ? "Twitch: this sign-in lacks the chat permission - connect your Twitch account again" : !irc.Ready ? "Twitch chat is not connected" : !irc.Authed ? "Twitch did not accept the sign-in - connect your Twitch account again" : ""); } }
     public override async Task<string> Send(string text) {
       if (!CanSend) return SendNote;
       try { await irc.Tx("PRIVMSG #" + Login + " :" + text); irc.EchoOwn(text); return null; } catch (Exception e) { return U.Plain(e); } }
@@ -230,7 +230,7 @@ namespace IXC {
     public override void Restart() { ChatroomId = ""; pusher.Restart(); PollNow(); }
     public override void Kick() { pusher.Kick(); }
     public override bool CanSend { get { return Accounts.Has("kick") && !Accounts.IsInvalid("kick"); } }
-    public override string SendNote { get { return !Accounts.Has("kick") ? "Sign in to Kick (Accounts) to reply" : "Kick sign-in expired - sign in again"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("kick", "Kick") ?? ""; } }
     // channel lookup: kick.com's public channel data (has the chat room); the official API as a fallback (no chat room id)
     public bool Resolve() {
       var slug = Slug; var cached = J.Str(Cfg.D, "platforms.kick.cache", "");
@@ -390,7 +390,7 @@ namespace IXC {
       if (state != "connected") wake.Set(); }
     public void StreamerBotEnded() { sbVideo = ""; }
     public override bool CanSend { get { return Accounts.Has("youtube") && !Accounts.IsInvalid("youtube") && VideoId.Length > 0; } }
-    public override string SendNote { get { return !Accounts.Has("youtube") ? "Connect your YouTube account (Platforms & accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("youtube", "YouTube") ?? (VideoId.Length == 0 ? "YouTube: you're not live right now, so there is no chat to reply to" : ""); } }
     string Base { get { return Ep.Get("youtube_web", "https://www.youtube.com"); } }
     static Dictionary<string, string> Hdr() { return new Dictionary<string, string> { { "Cookie", "SOCS=CAI; CONSENT=YES+1" }, { "Accept-Language", "en-US,en;q=0.9" } }; }
     void Loop() {
@@ -403,11 +403,12 @@ namespace IXC {
             // the stream is found once; after that IXC stays on it (like a Twitch or Kick connection) and only re-opens its chat
             if (VideoId.Length == 0) {
               if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-              if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
+              if (!FindLive()) { Set(whyIsProblem ? "error" : "unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
             OpenChat(); openedAt = DateTime.Now; if (state != "connected") Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); Set("connected", ""); }
           int timeout = Poll(); fails = 0; endSignals = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
+          if (msg.StartsWith("YouTube has no channel")) { Set("error", msg + " - check the channel name (Platforms) - IXC checks again every 60 s"); fails = 0; wake.WaitOne(60000); continue; }   // a wrong name is not "not live"
           if (msg.StartsWith("ended")) {
             // YouTube's chat sometimes answers "no chat" for a moment while the stream goes on: the stream counts as ended only when
             // that keeps happening for a while; until then the chat is re-opened and the state stays as it is
@@ -434,7 +435,10 @@ namespace IXC {
     public static string LiveVideoId(string page) {
       foreach (var p in VideoIdPatterns) { var m = Regex.Match(page ?? "", p); if (m.Success) return m.Groups[1].Value; }
       return null; }
-    string notLiveWhy = "not live right now";
+    // "not live" is only said when YouTube's channel page was read and shows no stream; anything else (bot check, a page IXC does not recognise,
+    // a wrong channel name) is a problem and is shown as one (state "error")
+    string notLiveWhy = "not live right now"; bool whyIsProblem;
+    static bool IsChannelPage(string page) { return Regex.IsMatch(page ?? "", "rel=\"canonical\" href=\"https://www\\.youtube\\.com/(channel/UC|@)|\"(channelId|externalId)\":\"UC[\\w-]{22}\""); }
     bool FindLive() {
       bool found = false; Exception err = null;
       try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
@@ -456,17 +460,23 @@ namespace IXC {
         Log.Info("chat", "YouTube: the channel page doesn't show the stream (" + notLiveWhy + "); YouTube's API says you're live (" + id + ")"); return true; }
       return false; }
     bool FindLiveOnPage() {
-      notLiveWhy = "not live right now";
+      notLiveWhy = "not live right now"; whyIsProblem = false;
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
-      if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
+      // a bare 11-character name is a channel handle (e.g. "infernoxc00") as often as a video id: the handle is tried first, the video id only if YouTube has no such channel
+      bool bare = !vm.Success && Regex.IsMatch(c, "^[\\w-]{11}$"); Http.Resp hr = null;
+      if (bare) { hr = Http.Request("GET", Base + "/@" + c + "/live", null, null, Hdr(), 15000); if (hr.Code == 404) hr = null; else bare = false; }
+      if (vm.Success || bare) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
       else {
         string path; var m = Regex.Match(c, "youtube\\.com/(@[\\w.\\-]+|channel/UC[\\w-]{22}|c/[\\w.\\-]+|user/[\\w.\\-]+)", RegexOptions.IgnoreCase);
         if (m.Success) path = m.Groups[1].Value; else if (c.StartsWith("UC") && c.Length == 24) path = "channel/" + c; else path = "@" + c.TrimStart('@');
-        var r = Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
+        var r = hr ?? Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
         page = r.Body ?? ""; var id = LiveVideoId(page);
-        if (id == null) { VideoId = ""; notLiveWhy = BotCheck(page) ? BotCheckNote : "your channel has no live stream right now"; return false; } VideoId = id; }
+        if (id == null) { VideoId = ""; whyIsProblem = true;
+          if (BotCheck(page)) notLiveWhy = BotCheckNote;
+          else if (!IsChannelPage(page)) notLiveWhy = "YouTube's page for \"" + c + "\" wasn't recognised (a consent screen, a redirect or a changed page), so IXC can't tell if you're live";
+          else { whyIsProblem = false; notLiveWhy = "your channel has no live stream right now"; } return false; } VideoId = id; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
       if (!live) {
@@ -474,7 +484,7 @@ namespace IXC {
         // the page names a video but leaves out YouTube's "live" markers (seen on home connections in Oct 2026, and with YouTube's
         // bot check): the video's own live chat decides - a running live chat means the stream is live
         if (!JustEnded(VideoId) && LiveChatRunning(VideoId)) { Log.Info("chat", "YouTube: the page doesn't say \"live\", but the live chat of " + VideoId + " is running - connecting"); return true; }
-        notLiveWhy = BotCheck(page) ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
+        whyIsProblem = BotCheck(page); notLiveWhy = whyIsProblem ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
     // a live (not replay) chat with a continuation: the stream is on air
     bool LiveChatRunning(string id) {
@@ -538,6 +548,7 @@ namespace IXC {
       if (VideoId.Length == 0) {
         // IXC can't see the stream itself; a recent number from Streamer.bot is kept rather than replaced by "offline"
         if (Viewers.Source == "Streamer.bot" && (DateTime.Now - Viewers.At).TotalSeconds < 120) return;
+        if (state == "error") { Viewers.Fail(detail); return; }   // IXC could not look: not the same as offline
         if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
       var body = J.Ser(J.D("context", J.D("client", J.D("clientName", "WEB", "clientVersion", clientVersion, "hl", "en")), "videoId", VideoId));
       var r = Http.Request("POST", Base + "/youtubei/v1/updated_metadata?prettyPrint=false" + (apiKey.Length > 0 ? "&key=" + apiKey : ""), body, "application/json", Hdr(), 12000);
@@ -751,6 +762,10 @@ namespace IXC {
       var l = new List<string>();
       foreach (var s in All) if ((s.Configured && s.CanSend) || (Sb.Ready && s.Id != "rumble")) l.Add(s.Id);
       return l; }
+    // the exact missing prerequisite per platform that is set up in IXC (shown when a reply has nowhere to go)
+    public static string WhyNoReply() {
+      var l = All.Where(s => s.Configured && s.Id != "rumble").Select(s => s.SendNote).Where(n => !string.IsNullOrEmpty(n)).ToList();
+      return l.Count > 0 ? string.Join("; ", l) : "no platform is set up in IXC - enable one under Platforms & accounts"; }
     public static async Task<string> Send(string platform, string text) {
       var s = Get(platform); if (s == null) return "unknown platform " + platform;
       if (s.Configured && s.CanSend) return await s.Send(text);

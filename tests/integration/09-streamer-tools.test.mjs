@@ -22,7 +22,7 @@ test('Kick read by IXC (no sign-in) + Streamer.bot connected: replies go through
   const chat = await page(c, 'chat', ['chat']);
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.kick.state === 'connected', 10000, 'kick connected');
   // before Streamer.bot runs: Kick can't be replied to, and the reason is clear
-  let k = (await api(c, '/api/chat/status')).body.platforms.kick; assert.equal(k.canSend, false); assert.match(k.sendNote, /Sign in/);
+  let k = (await api(c, '/api/chat/status')).body.platforms.kick; assert.equal(k.canSend, false); assert.match(k.sendNote, /add your Kick app/);
   sbUp = true; await api(c, '/api/repair', { action: 'streamerbot.reconnect' });
   // Streamer.bot connects: Kick becomes sendable through it, and the chat box gets the full command list without asking
   await until(async () => { const s = (await api(c, '/api/chat/status')).body.platforms.kick; return s.canSend && s.sendVia === 'streamerbot'; }, 15000, 'kick sendable via Streamer.bot');
@@ -67,7 +67,7 @@ test('YouTube page shows no live stream (e.g. YouTube\'s bot check) but Streamer
     x.ws.on('message', (d) => { const m = JSON.parse(d.toString()); if (m.request === 'GetCommands') x.send({ id: m.id, status: 'ok', commands: [] }); else x.send({ id: m.id, status: 'ok', platforms: {} }); }); }); cleanup.push(sb.close);
   const c = await startCore({ env: { IXC_EP_YOUTUBE_WEB: yt.url, IXC_EP_STREAMERBOT: sb.url }, config: { viewers: { refreshSec: 15 }, platforms: { youtube: { enabled: true, channel: '@hidden' }, streamerbot: { mode: 'on' } } } }); cleanup.push(() => c.stop());
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.streamerbot.state === 'connected', 10000, 'streamer.bot connected');
-  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 10000, 'youtube page shows no stream');
+  await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'error', 10000, 'youtube page shows no stream (bot check = a problem, not offline)');
   // Streamer.bot reports YouTube viewers: the number stays, IXC's own check doesn't overwrite it with "offline"
   sb.conns[0].send({ event: { source: 'YouTube', type: 'StatisticsUpdated' }, data: { concurrentViewers: 12 } });
   await until(async () => (await api(c, '/api/viewers')).body.platforms.youtube.count === 12, 5000, 'viewers from Streamer.bot');

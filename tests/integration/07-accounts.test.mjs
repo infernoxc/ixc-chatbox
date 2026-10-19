@@ -45,7 +45,7 @@ test('Twitch: sign in with a code, reply in chat, follower alerts, viewer counts
   // sign out: back to reading anonymously
   await api(c, '/api/accounts/twitch/signout', {}); await until(() => tw.live().find(x => /justinfan/.test(x.nick || '') && x.chan), 10000, 'anonymous again');
   acc = (await api(c, '/api/accounts')).body; assert.equal(acc.twitch.account, null);
-  const s2 = (await api(c, '/api/chat/send', { platform: 'twitch', message: 'x' })).body; assert.equal(s2.results[0].ok, false); assert.match(s2.results[0].error, /Sign in/);
+  const s2 = (await api(c, '/api/chat/send', { platform: 'twitch', message: 'x' })).body; assert.equal(s2.results[0].ok, false); assert.match(s2.results[0].error, /connect your Twitch account/);
 });
 
 test('Streamer.bot (optional): password from its settings file, its chat for platforms IXC doesn\'t connect itself, replies through it', async () => {

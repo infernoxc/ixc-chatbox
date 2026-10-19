@@ -36,6 +36,13 @@ namespace IXC {
       if (p == "youtube") return GoogleId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
       if (p == "kick") return KickId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
       return false; }
+    // why IXC can't send as this account yet, in the order the streamer has to fix it (null = the account is ready): app -> sign-in -> still valid
+    public static string ReplyBlocker(string p, string label) {
+      var app = p == "youtube" ? "Google (YouTube)" : label;
+      if (!Available(p)) return "To reply on " + label + ": add your " + app + " app (Platforms & accounts > Your apps), then connect your " + label + " account";
+      var a = Raw(p); if (a == null) return "To reply on " + label + ": connect your " + label + " account (Platforms & accounts > Connect)";
+      if (J.Bool(a, "invalid", false)) { var why = J.Str(a, "reason", ""); return label + ": " + (why.Length > 0 ? why : "sign-in expired - connect your " + label + " account again"); }
+      return null; }
     public static string RedirectUri(string p) { return (p == "youtube" ? "http://127.0.0.1:" : "http://localhost:") + Program.Port + "/oauth/" + p; }
     // what the "Your apps" form shows: IDs (public) and whether a secret is saved, never the secret
     public static Dictionary<string, object> Apps() {
@@ -98,6 +105,8 @@ namespace IXC {
       if (J.Long(a, "expiresAt", 0) - U.Now() < 300000 && !Refresh(p)) return null;
       return J.Str(Raw(p), "access", null); }
     static readonly Dictionary<string, object> refreshLocks = new Dictionary<string, object> { { "twitch", new object() }, { "youtube", new object() }, { "kick", new object() } };
+    // Google ends the sign-in of an app left in "Testing" after 7 days (refresh answers 400 invalid_grant): the usual reason a YouTube sign-in "expires"
+    const string ExpiredGoogle = "sign-in expired - connect again. If it keeps expiring after a week: Google Cloud > OAuth consent screen > Publish app (apps in Testing lose their sign-in after 7 days)";
     public static bool Refresh(string p) {
       lock (refreshLocks[p]) {
         var a = Raw(p); if (a == null) return false; if (J.Long(a, "expiresAt", 0) - U.Now() > 300000) return true;
@@ -105,7 +114,7 @@ namespace IXC {
         Http.Resp r;
         if (p == "twitch") r = Http.Request("POST", Ep.Get("twitch_id", "https://id.twitch.tv") + "/oauth2/token", "grant_type=refresh_token&refresh_token=" + Uri.EscapeDataString(rt) + "&client_id=" + TwitchId, "application/x-www-form-urlencoded", null, 12000);
         else r = Broker(p, J.D("grant_type", "refresh_token", "refresh_token", rt));
-        if (r.Code == 400 || r.Code == 401) { MarkInvalid(p, "sign-in expired - please connect again"); return false; }
+        if (r.Code == 400 || r.Code == 401) { MarkInvalid(p, p == "youtube" ? ExpiredGoogle : "sign-in expired - please connect again"); return false; }
         if (!r.Ok) { Log.Warn("auth", p + " token refresh failed: " + (r.Error ?? r.Code.ToString())); return false; }   // network trouble: keep the account, try later
         var t = J.Parse(r.Body); Apply(a, t); Save(p, a); Log.Info("auth", p + " sign-in refreshed"); return true; } }
     static void Apply(Dictionary<string, object> a, Dictionary<string, object> t) {
