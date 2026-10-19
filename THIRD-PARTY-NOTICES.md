@@ -8,6 +8,7 @@ isn't covered by this project's license, and this project claims no ownership of
 |---|---|---|
 | **QR Code Generator for JavaScript** (`src/core/web/qrcode.js`, bundled) | Draws the phone pairing QR code locally. | © 2009 Kazuhiko Arase, MIT License (notice kept in the file) |
 | **OBS Studio** | Docks, browser sources and obs-websocket 5 (setup and audio routing). No OBS code is included or linked. | OBS Project, GPL-2.0 |
+| **Aitum Vertical Canvas** / **Aitum Multistream** (OBS plugins, optional) | NOT bundled or installed by IXC. If you install them yourself, IXC detects them and reads their status over obs-websocket vendor requests (no code is linked or included). | Aitum, GPL-2.0 (https://github.com/Aitum/obs-vertical-canvas, https://github.com/Aitum/obs-aitum-multistream). Their licence and source come from those projects. |
 | **Twitch** | Chat over IRC/WebSocket, EventSub, Helix API, emote images, and twitch.tv's public data for viewer numbers without sign-in (unofficial). | Twitch Interactive, [Developer Agreement](https://legal.twitch.com/legal/developer-agreement/) |
 | **Kick** | Chat over its public chat socket (Pusher), its channel data and the official public API. | Kick Streaming |
 | **YouTube** | Live chat as used by youtube.com, YouTube Data API v3 (replies, optional search), oEmbed, the IFrame player, thumbnails. | Google, [YouTube API Services Terms](https://developers.google.com/youtube/terms/api-services-terms-of-service) |

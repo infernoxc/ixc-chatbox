@@ -3,6 +3,20 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.3.0-rc.1] - 2026-10-19 (release candidate)
+### Added
+- **Multistream Studio**: destinations (up to 8) with encrypted write-only stream keys, a server reachability check, and a native relay that forwards OBS's single encoded stream to RTMP/RTMPS servers (off by default, no auto-start). Shared encode only: no per-destination bitrate/encoder.
+- **Vertical Studio**, **Automation Studio** and an **OBS Control** report: honest status pages built on real OBS/IXC state; unbuilt features are labelled.
+- New navigation (Overview, Chat, Platforms & Accounts, Multistream Studio, Vertical Studio, Automation Studio, OBS Control, Settings).
+- Read-only OBS capability report (`/api/obs/capabilities`, `ixc-core.exe --obs-capabilities`).
+- Reply prerequisites: IXC names the exact missing step per platform.
+### Fixed
+- YouTube: an 11-character channel name was treated as a video id; "Not live" no longer covers bot checks, unreadable pages or wrong names; Google "Testing" 7-day sign-in limit is explained.
+- Music, chat voice and overlay browser sources are reloaded when OBS opened before IXC answered.
+- TLS 1.2 for rtmps:// connections (the .NET default is TLS 1.0).
+### Known limitations
+- See docs/release-notes/v3.3.0-rc.1.md. The relay has only been tested with fake servers; Automation Studio and Vertical Studio are status pages.
+
 ## [3.2.0] - 2026-10-15
 ### Added
 - **Audio routing** page: switch the music and the chat voice (TTS) on or off **per platform** (Twitch / Kick / YouTube), independently. Works through OBS audio tracks and is read back from OBS; your other sources and unused tracks are never touched. The music dock's platform buttons are now on/off switches.

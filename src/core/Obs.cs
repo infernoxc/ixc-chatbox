@@ -68,7 +68,7 @@ namespace IXC {
       bool r = false; try { r = Process.GetProcessesByName("obs64").Length > 0 || Process.GetProcessesByName("obs").Length > 0 || Process.GetProcessesByName("obs32").Length > 0; } catch { }
       runCache = r; runAt = DateTime.Now; return r; }
     public static void Init() {
-      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); ObsControl.OnReady(); var t = AutoSetup(false); Routing.OnObsReady(); };
+      Link.OnReady = () => { Log.Info("obs", "connected to OBS " + Link.ObsVersion + " (obs-websocket " + Link.WsVersion + ")"); ObsControl.OnReady(); var t = AutoSetup(false); Routing.OnObsReady(); var rv = ReviveSources(); };
       Link.OnObsEvent = (type, d) => { ObsControl.OnEvent(type, d); Routing.OnObsEvent(type, d); };
       Link.Start(); }
     public static void Changed() { Hub.Publish("status", Status.Msg()); }
@@ -203,6 +203,24 @@ namespace IXC {
       try { await Link.Call("RemoveScene", J.D("sceneName", AudioScene)); removed.Add(AudioScene); } catch { }
       Cfg.Set("obs.setupDone", null); Cfg.Save(); Log.Info("obs", "removed IXC from OBS: " + string.Join(", ", removed));
       return J.D("ok", true, "removed", removed); }
+    // When OBS opens before IXC answers (IXC starts with OBS), OBS loads its IXC browser sources while nothing is listening, and a browser source
+    // whose page failed to load never retries. So a few seconds after connecting, every IXC source that has not connected gets its page reloaded
+    // (a plain refresh: no setting changes, nothing that is already connected - so nothing that is playing - is touched).
+    static async Task<List<string>> InputsWithUrl(string part) {
+      var l = new List<string>();
+      foreach (var i in await Inputs()) { var n = J.Str(i, "inputName", ""); try { var s = await Link.Call("GetInputSettings", J.D("inputName", n)); var u = J.Str(s, "inputSettings.url", ""); if (u.Contains(part) && u.Contains(":" + Program.Port + "/")) l.Add(n); } catch (Exception) { } }
+      return l; }
+    static async Task ReviveSources() {
+      for (int attempt = 0; attempt < 3; attempt++) {
+        try {
+          await Task.Delay(attempt == 0 ? int.Parse(Ep.Get("obs_revive_ms", "8000")) : 10000); if (!Link.Ready) return;
+          var todo = new List<string>();
+          if (Music.Enabled && Hub.Count("player") == 0) { var n = await FindByUrl("/music/player.html", PlayerInput); if (n != null) todo.Add(n); }
+          if (Chat.Enabled && Hub.Count("tts") == 0) { var n = await FindByUrl("/chat/tts.html", TtsInput); if (n != null) todo.Add(n); }
+          if (Hub.Count("overlay") == 0 && (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds < 180) todo.AddRange(await InputsWithUrl("/overlay/"));   // only just after IXC started: no overlay is reloaded in the middle of a stream
+          if (todo.Count == 0) return;
+          foreach (var n in todo) { try { await Link.Call("PressInputPropertiesButton", J.D("inputName", n, "propertyName", "refreshnocache")); Log.Info("obs", "reloaded the page of \"" + n + "\" (it had not connected to IXC)"); } catch (Exception e) { Log.Debug("obs", "could not reload \"" + n + "\": " + e.Message); } }
+        } catch (Exception e) { Log.Debug("obs", "source check: " + e.Message); return; } } }
     public static async Task<Dictionary<string, object>> Check() {
       var d = Detect(); if (!Link.Ready) return J.D("ok", false, "obs", d);
       bool scene = false, player = false, tts = false;

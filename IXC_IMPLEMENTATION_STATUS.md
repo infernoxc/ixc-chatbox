@@ -329,3 +329,11 @@ shown in IXC's tray/app.
 
 ## Rules
 Record actual evidence only. Do not mark unverified features complete.
+
+## 2026-10-19 Release candidate 3.3.0-rc.1 (local, not pushed)
+- Artifact: dist/IXC-Suite-v3.3.0-rc.1.zip (SHA-256 f03d7c43...fdfeb3d, see dist/SHA256SUMS.txt). Setup .exe NOT built locally (no Inno Setup).
+- Fix: Obs.cs ReviveSources reloads IXC browser sources (music/TTS/overlays) that stayed unconnected when OBS opened before the worker listened; mock-tested (tests/integration/25). Not yet verified on real OBS with the RC core.
+- Test fix: 08-system zipText works on Windows (bsdtar). Full suite on RC core: 86 tests, 83 pass; failing: "OBS closed" (real OBS running), 18 !followage preset (cause unknown), docks/phone page (needs wrangler). Tests 06/10 not run (Cloudflare tooling).
+- Clean-install simulation (temp profile, redirected Start menu, no-op scheduled tasks): install, worker start, dashboard/API, update-in-place with settings + encrypted stream key kept, uninstall all OK. First attempt "IXC didn't start" = artefact (tray supervisor is single-instance and the real IXC tray was running); real install untouched (hashes equal).
+- Vertical: plugin Backtrack off, record path Videos\Vertical Clips, RecRB false (persistence after next OBS restart unconfirmed). Installed core in %LOCALAPPDATA% is still the Stage 0 build (NOT swapped; needs approval, backup first).
+- Open: platforms status lists "streamerbot" as configured on a clean profile (to check); relay mock-tested only; Automation Studio / per-destination encoders not built.
