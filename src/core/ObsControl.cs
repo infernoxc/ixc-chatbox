@@ -103,6 +103,19 @@ namespace IXC {
     static async Task<Dictionary<string, object>> Try(string type, Dictionary<string, object> data) {
       try { return await Obs.Link.Call(type, data); } catch (Exception e) { return J.D("_error", U.Plain(e)); } }
     static Dictionary<string, object> Pick(Dictionary<string, object> d, params string[] keys) { var r = new Dictionary<string, object>(); foreach (var k in keys) if (d.ContainsKey(k)) r[k] = d[k]; if (d.ContainsKey("_error")) r["_error"] = d["_error"]; return r; }
+    // "deep" adds more look-ups for a plugin load test: the canvases OBS knows (GetCanvasList) with their scene names, and the read-only "status" and
+    // "get_scenes" requests of the Aitum Vertical Canvas vendor. Still no request that changes anything or carries a key (any field named like key/password/secret/token is dropped).
+    static object Scrub(object o) {
+      var d = o as Dictionary<string, object>; if (d != null) { var r = new Dictionary<string, object>(); foreach (var kv in d) { if (Regex.IsMatch(kv.Key, "key|password|secret|token", RegexOptions.IgnoreCase)) continue; r[kv.Key] = Scrub(kv.Value); } return r; }
+      var a = o as ArrayList; if (a != null) { var l = new List<object>(); foreach (var x in a) l.Add(Scrub(x)); return l; } return o; }
+    static async Task<Dictionary<string, object>> DeepLookups() {
+      var canv = await Try("GetCanvasList", null); var list = new List<object>();
+      foreach (var cv in J.Objs(canv, "canvases")) { var uuid = J.Str(cv, "canvasUuid", ""); var sc = await Try("GetSceneList", J.D("canvasUuid", uuid)); var names = new List<string>(); foreach (var s in J.Objs(sc, "scenes")) names.Add(J.Str(s, "sceneName", ""));
+        list.Add(J.D("canvas", Scrub(cv), "scenes", sc.ContainsKey("_error") ? (object)J.D("_error", sc["_error"]) : names)); }
+      var vv = new Dictionary<string, object>();
+      foreach (var rt in new[] { "status", "get_scenes" }) { var r = await Try("CallVendorRequest", J.D("vendorName", "aitum-vertical-canvas", "requestType", rt)); vv[rt] = r.ContainsKey("_error") ? J.D("ok", false, "error", r["_error"]) : J.D("ok", true, "answer", Scrub(r.ContainsKey("responseData") ? r["responseData"] : r)); }
+      return J.D("canvasList", canv.ContainsKey("_error") ? (object)J.D("_error", canv["_error"]) : list, "verticalVendor", vv); }
+    public static async Task<Dictionary<string, object>> Capabilities(bool deep) { var r = await Capabilities(); if (deep && J.Bool(r, "ok", false)) r["deep"] = await DeepLookups(); return r; }
     public static async Task<Dictionary<string, object>> Capabilities() {
       if (!Obs.Link.Ready) return J.D("ok", false, "error", "OBS isn't connected (" + (Obs.Link.Detail.Length > 0 ? Obs.Link.Detail : Obs.Link.State) + ")");
       var v = await Try("GetVersion", null); var reqs = J.List(v, "availableRequests"); reqs.Sort(StringComparer.Ordinal);

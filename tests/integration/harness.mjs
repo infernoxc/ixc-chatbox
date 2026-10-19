@@ -98,7 +98,8 @@ export async function fakeObs(opts = {}) {
         case 'GetProfileList': data = { currentProfileName: 'Untitled', profiles: ['Untitled'] }; break;
         case 'GetHotkeyList': data = { hotkeys: ['ReplayBuffer.Save', 'OBSBasic.StartStreaming', 'Aitum Multistream.Start all'] }; break;
         case 'GetStats': data = { cpuUsage: 3.5, memoryUsage: 512, activeFps: 60, averageFrameRenderTime: 2.1, renderSkippedFrames: 0, outputSkippedFrames: 0 }; break;
-        case 'CallVendorRequest': if (q.vendorName === 'aitum-multistream' && opts.vendors !== false) data = { vendorName: q.vendorName, requestType: q.requestType, responseData: { version: '1.0.8' } }; else fail('vendor not found: ' + q.vendorName); break;
+        case 'GetCanvasList': data = { canvases: [{ canvasName: 'Main', canvasUuid: 'u-main', canvasFlags: { MAIN: true }, streamKey: 'SECRET-CANVAS-KEY' }, { canvasName: 'Vertical', canvasUuid: 'u-vert', canvasFlags: { MAIN: false } }] }; break;
+        case 'CallVendorRequest': if (q.vendorName === 'aitum-vertical-canvas' && opts.verticalVendor) data = { vendorName: q.vendorName, requestType: q.requestType, responseData: q.requestType === 'status' ? { streaming: false, recording: false, backtrack: false, virtualcam: false } : { scenes: ['Vertical scene'] } }; else if (q.vendorName === 'aitum-multistream' && opts.vendors !== false) data = { vendorName: q.vendorName, requestType: q.requestType, responseData: { version: '1.0.8' } }; else fail('vendor not found: ' + q.vendorName); break;
         case 'GetStreamServiceSettings': case 'GetOutputSettings': case 'GetProfileParameter': st.forbidden = (st.forbidden || 0) + 1; data = { streamServiceSettings: { key: 'SECRET-STREAM-KEY' } }; break;
         case 'GetSceneList': data = { scenes: st.scenes.map(n => ({ sceneName: n })), currentProgramSceneName: st.current }; break;
         case 'GetCurrentProgramScene': data = { currentProgramSceneName: st.current, sceneName: st.current }; break;

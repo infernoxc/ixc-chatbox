@@ -52,7 +52,7 @@ namespace IXC {
       Log.Init(Path.Combine(dataDir, "logs")); Secrets.Load(dataDir); Cfg.Load(cfgPath); Log.Verbose = Settings.Bool("diagnostics.verboseLog");
       ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288; ServicePointManager.DefaultConnectionLimit = 32; ServicePointManager.Expect100Continue = false;
       Obs.Link.Start(); for (int t = 0; t < 200 && !Obs.Link.Ready; t++) Thread.Sleep(100);
-      var r = ObsControl.Capabilities().Result; File.WriteAllText(outFile, J.Pretty(J.Ser(r)), new System.Text.UTF8Encoding(false)); Log.Flush(); return J.Bool(r, "ok", false) ? 0 : 2; }
+      bool deep = Array.IndexOf(args, "--deep") >= 0; var r = ObsControl.Capabilities(deep).Result; File.WriteAllText(outFile, J.Pretty(J.Ser(r)), new System.Text.UTF8Encoding(false)); Log.Flush(); return J.Bool(r, "ok", false) ? 0 : 2; }
 
     static int Worker(string cfgPath) {
       var dataDir = Path.GetDirectoryName(Path.GetFullPath(cfgPath)); Directory.CreateDirectory(dataDir);

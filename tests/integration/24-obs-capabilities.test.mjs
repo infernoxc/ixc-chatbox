@@ -41,3 +41,15 @@ test('capability report without OBS says so; the probe mode writes the report, s
   // OBS not reachable: exit code 2 and a report that says why
   const out2 = path.join(dir, 'down.json'); fs.writeFileSync(path.join(dir, 'config2.json'), JSON.stringify({ obs: { websocketUrl: 'ws://127.0.0.1:1/' } })); const p2 = await run(['--obs-capabilities', out2, '--config', path.join(dir, 'config2.json')]); assert.equal(p2.status, 2); assert.equal(JSON.parse(fs.readFileSync(out2, 'utf8')).ok, false);
 });
+
+test('deep probe (plugin load test): canvases with their scenes and the Aitum vertical vendor\'s read-only status; still only look-ups, no keys', async () => {
+  const obs = await fakeObs({ verticalVendor: true }); cleanup.push(obs.close); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-probe-')); fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ obs: { websocketUrl: obs.url } }));
+  const exe = path.join(build(), 'core/ixc-core.exe'); const out = path.join(dir, 'deep.json');
+  const p = await new Promise((res) => { const pr = process.env.IXC_CORE_EXE ? spawn(exe, ['--obs-capabilities', out, '--deep', '--config', path.join(dir, 'config.json')]) : spawn('mono', [exe, '--obs-capabilities', out, '--deep', '--config', path.join(dir, 'config.json')]); const t = setTimeout(() => pr.kill(), 60000); pr.on('exit', (code) => { clearTimeout(t); res({ status: code }); }); });
+  assert.equal(p.status, 0); const rep = JSON.parse(fs.readFileSync(out, 'utf8')); assert.equal(rep.ok, true); assert.equal(rep.deep.canvasList.length, 2);
+  assert.equal(rep.deep.canvasList[0].canvas.canvasName, 'Main'); assert.equal(rep.deep.canvasList[1].canvas.canvasUuid, 'u-vert'); assert.deepEqual(rep.deep.canvasList[1].scenes, ['Main', 'BRB']);
+  assert.equal(rep.deep.verticalVendor.status.ok, true); assert.equal(rep.deep.verticalVendor.status.answer.streaming, false); assert.deepEqual(rep.deep.verticalVendor.get_scenes.answer.scenes, ['Vertical scene']);
+  assert.ok(!JSON.stringify(rep).includes('SECRET-CANVAS-KEY'), 'key-like fields are dropped');
+  const ALLOWED = new Set([...READ_ONLY, 'GetCanvasList', 'GetSceneList']); for (const t of new Set(obs.st.calls)) assert.ok(ALLOWED.has(t), 'unexpected request ' + t);
+  assert.ok(!obs.st.calls.some(t => /^(Set|Start|Stop|Create|Remove|Toggle|Trigger|Save)/.test(t)), 'nothing that changes OBS was sent');
+});
