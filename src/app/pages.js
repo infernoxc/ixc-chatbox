@@ -110,7 +110,7 @@
     // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
     const APPS = [
       ['twitch', 'Twitch', 'dev.twitch.tv/console/apps', ['Click <b>Register Your Application</b>.', 'Name: anything (e.g. <i>IXC yourname</i>). OAuth Redirect URL: <code>http://localhost</code> (not used). Category: <b>Broadcaster Suite</b>. Client Type: <b>Public</b>.', 'Click <b>Create</b>, then <b>Manage</b>, and copy the <b>Client ID</b> here. Public apps have no secret.']],
-      ['google', 'YouTube (Google)', 'console.cloud.google.com/apis/library/youtube.googleapis.com', ['Create a project and click <b>Enable</b> for <b>YouTube Data API v3</b>.', '<b>OAuth consent screen</b>: External, add yourself under <b>Test users</b>.', '<b>Credentials > Create credentials > OAuth client ID</b>, type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> here.']],
+      ['google', 'YouTube (Google)', 'console.cloud.google.com/apis/library/youtube.googleapis.com', ['Create a project and click <b>Enable</b> for <b>YouTube Data API v3</b>.', '<b>OAuth consent screen</b>: External, add yourself under <b>Test users</b>, then click <b>Publish app</b> (an app left in Testing loses its sign-in every 7 days).', '<b>Credentials > Create credentials > OAuth client ID</b>, type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> here.']],
       ['kick', 'Kick', 'kick.com/settings/developer', ['Click <b>Create new app</b>.', 'Redirect URL: <code>{redirect}</code> (exactly this). Scopes: <b>Read user information</b>, <b>Read channel information</b>, <b>Write to Chat feed</b>, <b>Moderate</b>.', 'Copy the <b>Client ID</b> and <b>Client Secret</b> here.']]];
     function appsCard(apps) {
       const anyMissing = APPS.some(([k]) => !(apps[k] || {}).available);
@@ -445,5 +445,78 @@
       main.querySelectorAll('[data-open]').forEach(b => b.onclick = () => IXC.api('/api/open', { what: b.dataset.open }));
       main.querySelectorAll('[data-fix]').forEach(b => b.onclick = async () => { if (await UI.confirmBox('All phones will need a new QR code. Continue?', 'Continue')) repair(b.dataset.fix, b); }); };
     paint(); on('settings', () => { if (document.activeElement && document.activeElement.closest('#main')) return; paint(); });
+  });
+  // ======================= MULTISTREAM =======================
+  // One OBS stream, forwarded by IXC to up to 8 destinations. Stream keys are write-only: typed here, stored encrypted, never shown again.
+  page('multistream', 'Multistream', (main) => {
+    let d = null, showIngest = false;
+    const MAX = 8;
+    async function load() { const r = await IXC.api('/api/multistream'); if (r && r.destinations) { d = r; paint(); } }
+    const fmtMB = (n) => (n || 0).toFixed(n >= 10 ? 0 : 1);
+    function publishing(x) {   // is the platform actually receiving the stream? (not the same as "the server answers")
+      const r = x.relay || {};
+      if (r.state === 'live') return ['live', 'Publishing - the server accepted the stream (' + fmtMB(r.sentMB) + ' MB sent' + (r.droppedFrames ? ', ' + r.droppedFrames + ' video frames skipped' : '') + ')'];
+      if (r.state === 'connecting') return ['connecting', 'Connecting to the server…'];
+      if (r.state === 'reconnecting') return ['reconnecting', 'Not publishing: ' + (r.detail || 'connection lost')];
+      if (r.state === 'skipped') return ['off', 'Not used for this stream: ' + (r.detail || '')];
+      return ['off', d.relay.running ? (d.relay.publishing ? 'Not publishing' : 'Waiting for OBS to start streaming') : 'Not publishing (the relay is off)']; }
+    function reach(x) {   // "server reachable" only means TCP/TLS and the RTMP handshake worked - not that the key is right
+      if (x.state === 'checking') return ['connecting', 'Checking the server…'];
+      if (x.state === 'ok') return ['connected', 'Server reachable (handshake only - this does not prove the key is accepted)'];
+      if (x.state === 'failed') return ['error', 'Server not reachable: ' + x.detail];
+      return ['off', 'Server not checked']; }
+    function relayCard() {
+      const r = d.relay, st = !r.running ? ['off', 'Off'] : r.publishing ? ['live', 'OBS is sending - forwarding to your destinations'] : ['waiting', 'On - waiting for OBS to start streaming'];
+      const obs = r.running ? `<div class="hint" style="margin-top:10px"><b>Put this in OBS</b> (Settings › Stream › Service: <b>Custom…</b>) - IXC does not change OBS for you:
+        <div class="field"><label class="lbl">Server</label><div class="val"><input type="text" id="msSrv" readonly value="${esc(r.serverUrl)}"> <button class="small" data-act="copy" data-v="${esc(r.serverUrl)}">Copy</button></div></div>
+        <div class="field"><label class="lbl">Stream key</label><div class="val"><input type="${showIngest ? 'text' : 'password'}" id="msKey" readonly value="${esc(r.streamKey)}" autocomplete="off"> <button class="small" data-act="showkey">${showIngest ? 'Hide' : 'Show'}</button> <button class="small" data-act="copy" data-v="${esc(r.streamKey)}">Copy</button></div></div>
+        <div class="small muted">This key only lets OBS on this PC talk to IXC. It is not a platform key. Keep OBS's own encoder settings (bitrate, keyframe interval 2 s) as the platforms require.</div></div>` : '';
+      return card('📡 Relay', `<div class="row" style="gap:12px;align-items:center">${UI.pill(st[0], st[1])}<span class="grow"></span>
+        ${r.running ? '<button data-act="relayStop" id="msStop">Stop relay</button>' : '<button class="primary" data-act="relayStart" id="msStart">Start relay</button>'}</div>${obs}
+        <div class="hint" style="margin-top:10px">The relay is off until you start it, and it does not start by itself. OBS encodes once; IXC copies that same stream to every destination below - nothing is re-encoded, so there is almost no extra load. Stopping OBS's stream ends all destinations.</div>`); }
+    function destCard(x) {
+      const p = publishing(x), c = reach(x), full = x.keySet ? '<span class="small">🔒 Key saved - hidden</span>' : '<span class="small muted">No stream key yet</span>';
+      return `<div class="card" data-id="${esc(x.id)}"><div class="row" style="align-items:center;gap:10px"><h3 style="margin:0" class="grow">${esc(x.name)} <span class="small muted">· ${esc(x.platform)}</span></h3>
+        <label class="switch"><input type="checkbox" data-en="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Use ${esc(x.name)}"><i></i></label></div>
+        <div class="small muted" style="margin:6px 0">${esc(x.url)} · ${full}</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(p[0], p[1])}</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">${UI.pill(c[0], c[1])}</div>
+        <div class="actions" style="margin-top:10px"><button class="small" data-act="check" data-id="${esc(x.id)}">Check server</button> <button class="small" data-act="edit" data-id="${esc(x.id)}">Edit</button> <button class="small" data-act="del" data-id="${esc(x.id)}">Delete</button></div></div>`; }
+    function paint() { if (App.current !== 'multistream' || !d) return;
+      if (document.getElementById('msModal')) return;   // never redraw under an open editor
+      const n = d.destinations.length;
+      main.innerHTML = relayCard() + `<h3 style="margin:18px 0 8px">Destinations <span class="small muted">(${n} of ${MAX})</span></h3>` +
+        (n ? d.destinations.map(destCard).join('') : '<p class="muted">No destinations yet. Add the server address and stream key each platform shows in its own dashboard.</p>') +
+        `<div class="actions"><button class="primary" id="msAdd" ${n >= MAX ? 'disabled title="IXC manages up to ' + MAX + ' destinations"' : ''}>+ Add destination</button>${n >= MAX ? ' <span class="small muted">The limit is ' + MAX + ' destinations.</span>' : ''}</div>
+        <div class="hint" style="margin-top:12px"><b>Server reachable</b> only proves IXC can open a connection and speak RTMP with that address - it does not send your key. <b>Publishing</b> means the platform accepted your stream key and is receiving video. Use a throw-away or private stream first. Each platform has its own rules (accounts, minimum followers, keys that expire); copy the address and key from its dashboard.</div>`; }
+    function edit(id) {
+      const x = id ? d.destinations.find(z => z.id === id) : { platform: 'custom', name: '', url: '', enabled: true, keySet: false };
+      const pre = (pl) => d.presets.find(z => z.platform === pl) || d.presets[d.presets.length - 1];
+      App.modal(`<div id="msModal"><h3>${id ? 'Edit destination' : 'Add destination'}</h3>
+        <div class="field"><label class="lbl">Platform</label><div class="val"><select id="mP">${d.presets.map(z => `<option value="${esc(z.platform)}" ${z.platform === x.platform ? 'selected' : ''}>${esc(z.label)}</option>`).join('')}</select></div></div>
+        <div class="hint small" id="mNote">${esc(pre(x.platform).note)}</div>
+        <div class="field"><label class="lbl">Name</label><div class="val"><input type="text" id="mN" maxlength="40" value="${esc(x.name)}" placeholder="My Twitch"></div></div>
+        <div class="field"><label class="lbl">Server URL</label><div class="val"><input type="text" id="mU" value="${esc(x.url)}" placeholder="rtmp://… or rtmps://…" spellcheck="false" autocomplete="off"><div class="tiny muted" id="mS"></div></div></div>
+        <div class="field"><label class="lbl">Stream key</label><div class="val"><input type="password" id="mK" autocomplete="new-password" spellcheck="false" placeholder="${x.keySet ? '•••••••• saved - leave empty to keep it' : 'paste the key from the platform'}">
+          ${x.keySet ? '<label class="small"><input type="checkbox" id="mC"> Remove the saved key</label>' : ''}<div class="tiny muted">Stored encrypted on this PC. It is never shown again.</div></div></div>
+        <div class="field"><label class="lbl">Use this destination</label><div class="val"><label class="switch"><input type="checkbox" id="mE" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><i></i></label></div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="mSave">Save</button></div></div>`);
+      let lastSug = '';
+      const sug = () => { const z = pre($('mP').value); $('mNote').textContent = z.note; $('mS').textContent = z.url && z.suggested ? 'Suggested address - confirm it in the platform\'s dashboard.' : ''; };
+      $('mP').onchange = () => { const z = pre($('mP').value); const u = $('mU').value.trim(); if ((u === '' || u === lastSug) && z.url) { $('mU').value = z.url; lastSug = z.url; } if (!$('mN').value.trim() || d.presets.some(q => q.label === $('mN').value.trim())) $('mN').value = z.label === 'Custom' ? '' : z.label; sug(); }; sug();
+      $('mSave').onclick = async () => {
+        const body = { platform: $('mP').value, name: $('mN').value.trim(), url: $('mU').value.trim(), enabled: $('mE').checked }; if (id) body.id = id;
+        const k = $('mK').value.trim(); if (k) body.key = k; if ($('mC') && $('mC').checked) body.clearKey = true;
+        const r = await IXC.api('/api/multistream/save', body); $('mK').value = ''; if (!r.ok) { toast(r.error || 'Could not save', true); return; } App.closeModal(); toast('Saved'); load(); }; }
+    main.onclick = async (e) => { const t = e.target.closest('[data-act],#msAdd'); if (!t) return; const a = t.dataset.act, id = t.dataset.id;
+      if (t.id === 'msAdd') edit(null);
+      else if (a === 'edit') edit(id);
+      else if (a === 'del') { const x = d.destinations.find(z => z.id === id); if (await UI.confirmBox('Delete "' + x.name + '" and its saved stream key?', 'Delete')) { const r = await IXC.api('/api/multistream/delete', { id }); toast(r.ok ? 'Deleted' : r.error, !r.ok); load(); } }
+      else if (a === 'check') { const r = await IXC.api('/api/multistream/check', { id }); if (!r.ok) toast(r.error, true); load(); }
+      else if (a === 'relayStart' || a === 'relayStop') { const r = await IXC.api('/api/multistream/relay', { action: a === 'relayStart' ? 'start' : 'stop' }); if (!r.ok) toast(r.error, true); else toast(a === 'relayStart' ? 'Relay started' : 'Relay stopped'); load(); }
+      else if (a === 'showkey') { showIngest = !showIngest; paint(); }
+      else if (a === 'copy') { try { await navigator.clipboard.writeText(t.dataset.v); toast('Copied'); } catch (err) { toast('Select the text and press Ctrl+C', true); } } };
+    main.onchange = async (e) => { const id = e.target.dataset.en; if (!id) return; const r = await IXC.api('/api/multistream/save', { id, enabled: e.target.checked }); if (!r.ok) toast(r.error, true); load(); };
+    load(); const iv = setInterval(() => { if (App.current !== 'multistream') return clearInterval(iv); load(); }, 2000);
   });
 })();
