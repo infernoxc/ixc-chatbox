@@ -82,7 +82,7 @@ namespace IXC {
       Settings.Changed += k => { if (k == "diagnostics.verboseLog") Log.Verbose = Settings.Bool(k); if (k.StartsWith("overlays.") || k.StartsWith("chat.") || k.StartsWith("general.")) Hub.Publish("settings", J.D("type", "settings", "key", k, "value", Settings.Value(k))); };
       NetWatch.Init();
       Safe("TTS", () => { if (HasChat) Tts.Init(); });
-      Safe("chat", () => { if (HasChat) { Chat.Init(); Platforms.Init(); } });
+      Safe("chat", () => { if (HasChat) { Chat.Init(); Platforms.Init(); SbManager.Init(); } });
       Safe("routing", Routing.Init);
       Safe("music", () => { if (HasMusic) Music.Init(); });
       Safe("OBS", () => Obs.Init());
@@ -163,7 +163,7 @@ namespace IXC {
       if (path == "/api/obs/remove" && m == "POST") { Http.Json(ctx, Obs.RemoveAll().Result); return; }
       if (path == "/api/obs/overlay" && m == "POST") { var b = Http.BodyJson(ctx); try { Http.Json(ctx, Obs.AddOverlay(J.Str(b, "name", "Overlay"), BaseUrl + J.Str(b, "path", "/overlay/"), J.Int(b, "width", 800), J.Int(b, "height", 200)).Result); } catch (Exception e) { Http.Json(ctx, 400, J.D("ok", false, "error", U.Plain(e))); } return; }
       if (path == "/api/firstrun/done" && m == "POST") { Settings.Set("general.firstRunDone", true); Http.Json(ctx, J.D("ok", true)); return; }
-      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m) || Multistream.Api(ctx, path, m)) return;
+      if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m) || Multistream.Api(ctx, path, m) || SbManager.Api(ctx, path, m)) return;
       if (Routing.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
       if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;

@@ -114,7 +114,7 @@
           ${ctl.toggle('platforms.' + p + '.enabled', 'Use ' + P[p].name)}${chan}${account}<div class="hint" style="margin-top:8px">${NOTE[p]}${s.configured && s.sendVia === 'streamerbot' ? '<br>Replies: sent through Streamer.bot ✓' : s.configured && !s.canSend && p !== 'rumble' ? '<br>Replies: ' + esc(s.sendNote) : ''}</div></div>`; }).join('') +
         `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional bridge, not needed)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
           ${ctl.select('platforms.streamerbot.mode', 'Use Streamer.bot', [['auto', 'Automatically, when it\'s running'], ['on', 'Always (keep trying)'], ['off', 'Never']])}
-          <div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
+          <div class="actions"><button data-go="streamerbot">Streamer.bot settings &amp; status</button></div><div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
       paintApps();
       const rs = $('rumbleSave'); if (rs) rs.onclick = async () => { const r = await IXC.api('/api/accounts/rumble/rumble', { url: $('rumbleUrl').value }); toast(r.ok ? 'Rumble connected' : r.error, !r.ok); }; };
     // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
@@ -153,6 +153,7 @@
         if (!ap || (idv && ap.id !== idv) || (sv && !ap.secretSet)) { appMsg(k, 'IXC said "saved" but reading the settings back did not show them. Your entries are still here - try again.', true); toast('Could not confirm the save', true); return; }
         S.accounts = fresh; paintApps(true, k); appMsg(k, 'Saved' + (sv ? ' - the secret is stored encrypted and is never shown again' : '') + '. Now press Connect above.', false); toast('Saved - now press Connect above'); return; }
       if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r && r.ok) { S.accounts = await IXC.api('/api/accounts'); paintApps(true, d.appClear); paint(); } else appMsg(d.appClear, 'Not removed: ' + ((r && r.error) || 'IXC did not answer'), true); return; }
+      if (d.go) { location.hash = '#' + d.go; return; }
       if (d.openUrl) { e.preventDefault(); window.open(d.openUrl, '_blank'); return; }
       if (d.connect) { b.disabled = true; const r = await IXC.api('/api/accounts/' + d.connect + '/connect', {}); b.disabled = false; if (!r.ok) toast(r.error, true); else toast('Your browser opened - finish signing in there'); }
       if (d.signout && await UI.confirmBox('Sign out of ' + P[d.signout].name + '? IXC keeps reading chat but can\'t reply there.', 'Sign out')) await IXC.api('/api/accounts/' + d.signout + '/signout', {});
@@ -612,5 +613,62 @@
     main.onclick = (e) => { const b = e.target.closest('[data-go]'); if (b) { e.preventDefault(); location.hash = '#' + b.dataset.go; } };
     async function load() { const d = await IXC.api('/api/settings'); if (d && d.values) { S.values = d.values; } paint(); }
     paint(); load(); const iv = setInterval(() => { if (App.current !== 'automation') return clearInterval(iv); load(); }, 4000);
+  });
+  // ======================= STREAMER.BOT (managed backend) =======================
+  // IXC talks to Streamer.bot's local WebSocket API. The sign-ins to Twitch / YouTube / Kick live inside Streamer.bot (one time, in its own
+  // window): IXC cannot do them for you. Status is drawn separately from the form so a refresh never wipes what is being typed.
+  page('streamerbot', 'Streamer.bot', (main) => {
+    main.innerHTML = `<p class="muted" style="margin-top:0">IXC can use <b>Streamer.bot</b> as a background helper for chat, replies and actions on Twitch, YouTube and Kick, so you don't have to register developer apps in IXC. IXC only talks to it on this PC (localhost).</p>
+      <div class="grid"><div class="card" id="sbStatus"></div><div class="card" id="sbForm"></div></div>`;
+    let d = null, formDone = false;
+    const ago = (t) => { if (!t) return 'never'; const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? s + ' s ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; };
+    const stateOf = (x) => { const l = x.link || {}; return l.ready ? ['connected', 'Connected'] : !x.installed ? ['off', 'Not found'] : !x.running ? ['off', 'Not running'] : ['reconnecting', l.detail || 'Waiting for Streamer.bot']; };
+    function paintStatus() { const x = d, [st, label] = stateOf(x), l = x.link || {}, s = x.settings;
+      const warn = [];
+      if (s && !s.serverOn) warn.push('Streamer.bot\'s WebSocket Server is switched off (in Streamer.bot: Servers/Clients > WebSocket Server > Auto Start).');
+      if (s && !s.localOnly) warn.push('Streamer.bot\'s WebSocket Server listens on ' + esc(s.address) + ', not only on this PC. Set its address to 127.0.0.1.');
+      if (s && !s.authEnabled) warn.push('Streamer.bot\'s WebSocket password is switched off. Turn on Authentication there.');
+      const tb = $('sbTest') ? $('sbTest').outerHTML : '<div class="small" id="sbTest" role="status" style="margin-top:8px"></div>';   // keep the last test result across refreshes
+      $('sbStatus').innerHTML = `<h3>Status ${UI.pill(st, label)}</h3>
+        <div class="kv small"><div>Program</div><div>${x.installed ? esc(x.path || '') : '<span class="warn">Streamer.bot.exe not found - choose its folder under Settings.</span>'}</div>
+          <div>Version</div><div>${esc(x.version || '-')}</div>
+          <div>Running</div><div>${x.running ? 'Yes' + (x.managed ? ' (started by IXC, pid ' + x.managedPid + ')' : ' (not started by IXC, IXC will not stop it)') : 'No'}</div>
+          <div>Connection</div><div>${esc(l.ready ? 'Connected' + (l.auth === 'ok' ? ', signed in with the password' : l.auth === 'not required' ? ', no password needed' : '') : (l.detail || (x.mode === 'off' ? 'Turned off' : 'Not connected')))}</div>
+          <div>Last event</div><div>${l.lastEvent ? ago(l.lastEvent) + ' (' + l.events + ' received)' : 'none yet'}</div>
+          <div>Accounts</div><div>${(l.accounts || []).length ? esc(l.accounts.join(', ')) : '<span class="muted">none reported yet</span>'}</div>
+          <div>Password</div><div>${x.passwordSet ? 'Set (' + esc(x.passwordSource) + ')' : '<span class="warn">none</span>'}</div></div>
+        ${warn.map(w => `<div class="banner" style="margin-top:8px">${w}</div>`).join('')}
+        ${x.startError ? `<div class="err small" style="margin-top:8px">${esc(x.startError)}</div>` : ''}
+        <div class="actions" style="margin-top:10px"><button class="primary" data-sb="test">Test connection</button><button data-sb="start" ${x.running || !x.installed ? 'disabled' : ''}>Start Streamer.bot</button><button data-sb="stop" ${x.managed ? '' : 'disabled'} title="${x.managed ? '' : 'Only a Streamer.bot that IXC started can be stopped here'}">Stop</button></div>
+        ${tb}
+        <div class="hint" style="margin-top:8px"><b>Signing in to Twitch, YouTube and Kick</b> is done once inside Streamer.bot's own window (Platforms tab). IXC cannot do it for you and never sees those sign-ins. After that IXC runs it in the background.</div>`; }
+    function paintForm() { if (formDone) return; formDone = true;
+      $('sbForm').innerHTML = `<h3>Settings</h3>
+        <div class="field"><label class="lbl">Use Streamer.bot</label><div class="val"><select id="sbMode"><option value="auto">Automatically, when it is running</option><option value="on">Always (keep trying)</option><option value="off">Never</option></select></div></div>
+        <div class="field"><label class="lbl">Address</label><div class="val"><input id="sbUrl" autocomplete="off" spellcheck="false" placeholder="ws://127.0.0.1:8080/"></div></div>
+        <div class="field"><label class="lbl">Password</label><div class="val"><input id="sbPw" type="password" autocomplete="new-password"> <span class="ok small" id="sbPwSaved" hidden>🔒 Saved</span></div></div>
+        <div class="tiny muted">The password is stored encrypted on this PC and never shown again. Leave it empty and IXC looks it up in Streamer.bot's own settings file.</div>
+        <div class="field"><label class="lbl">Program</label><div class="val"><input id="sbExe" autocomplete="off" spellcheck="false" placeholder="folder with Streamer.bot.exe (found automatically)"></div></div>
+        <div class="field"><label class="lbl">Start with IXC</label><div class="val"><select id="sbLaunch"><option value="never">No, I start it myself</option><option value="withIxc">Yes, keep it running in the background</option></select></div></div>
+        <div class="actions"><button class="primary" data-sb="save">Save</button></div><div class="small" id="sbMsg" role="status" style="margin-top:6px"></div>`;
+      fillForm(); }
+    function fillForm() { const x = d, set = (id, v) => { const e = $(id); if (e) e.value = v; };
+      set('sbMode', x.mode); set('sbUrl', x.url); set('sbExe', x.exePath || ''); set('sbLaunch', x.launch); $('sbPw').value = ''; $('sbPw').placeholder = x.passwordSet ? '(set - type a new one to replace it)' : ''; $('sbPwSaved').hidden = !x.passwordSet; }
+    const msg = (id, text, bad) => { const e = $(id); if (e) { e.className = 'small ' + (bad ? 'err' : 'ok'); e.textContent = text; } };
+    async function load() { const r = await IXC.api('/api/streamerbot'); if (r && r.mode !== undefined) { d = r; paintStatus(); paintForm(); } else if (!d) $('sbStatus').innerHTML = '<div class="err">IXC did not answer.</div>'; }
+    main.onclick = async (e) => { const b = e.target.closest('[data-sb]'); if (!b) return; const a = b.dataset.sb; b.disabled = true;
+      try {
+        if (a === 'test') { msg('sbTest', 'Testing...', false); const r = await IXC.api('/api/streamerbot/test', {}); const text = r.ok ? 'Connected' + (r.version ? ' to Streamer.bot ' + r.version : '') + (r.authRequired ? ', password accepted' : ', no password needed') + (r.accounts && r.accounts.length ? '. Accounts: ' + r.accounts.join(', ') : '. No platform account reported - sign in inside Streamer.bot.') : r.error || 'Failed'; msg('sbTest', text, !r.ok); }
+        else if (a === 'start') { const r = await IXC.api('/api/streamerbot/start', {}); toast(r.ok ? 'Starting Streamer.bot...' : r.error, !r.ok); }
+        else if (a === 'stop') { let r = await IXC.api('/api/streamerbot/stop', {}); if (!r.ok && /did not close/.test(r.error || '')) { if (await UI.confirmBox(r.error, 'Force stop')) r = await IXC.api('/api/streamerbot/stop', { force: true }); } if (!r.ok) toast(r.error, true); }
+        else if (a === 'save') {
+          const body = { mode: $('sbMode').value, url: $('sbUrl').value.trim(), exePath: $('sbExe').value.trim(), launch: $('sbLaunch').value }; const pw = $('sbPw').value; if (pw) body.password = pw;
+          const r = await IXC.api('/api/streamerbot/config', body);
+          if (!r || !r.ok) { const why = (r && r.error) || 'IXC did not answer - is it running?'; msg('sbMsg', 'Not saved: ' + why + ' Your entries are still here.', true); return; }   // entries stay as typed
+          const f = await IXC.api('/api/streamerbot');   // confirm from the backend, not from the browser
+          if (!f || f.url !== body.url || f.mode !== body.mode || f.launch !== body.launch || (pw && !f.passwordSet)) { msg('sbMsg', 'IXC said "saved" but reading the settings back did not show them. Your entries are still here - try again.', true); return; }
+          d = f; fillForm(); paintStatus(); msg('sbMsg', 'Saved.', false); }
+      } finally { b.disabled = false; load(); } };
+    load(); const iv = setInterval(() => { if (App.current !== 'streamerbot') return clearInterval(iv); load(); }, 3000);
   });
 })();

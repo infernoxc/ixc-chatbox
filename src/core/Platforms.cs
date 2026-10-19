@@ -620,6 +620,7 @@ namespace IXC {
   // ======================= Streamer.bot (optional: still works for people who already use it) =======================
   public class SbLink : WsLink {
     public string AuthState = "none"; public List<string> Broadcasters = new List<string>(); Dictionary<string, object> hello;
+    public DateTime LastEvent = DateTime.MinValue; public int EventCount;   // Streamer.bot events received (health shown in IXC > Streamer.bot)
     readonly ManualResetEventSlim gotHello = new ManualResetEventSlim(false); DateTime lastRunCheck = DateTime.MinValue; bool runCache;
     public SbLink() { Name = "Streamer.bot"; Area = "streamerbot"; MaxBackoffMs = 30000; }
     string Mode { get { return Settings.Str("platforms.streamerbot.mode"); } }
@@ -648,6 +649,8 @@ namespace IXC {
       var names = new List<string>(); Collect(r, names, 0);
       lock (Broadcasters) { Broadcasters.Clear(); Broadcasters.AddRange(names.Distinct(StringComparer.OrdinalIgnoreCase)); }
       if (names.Count > 0) Log.Info("streamerbot", "your accounts (from Streamer.bot): " + string.Join(", ", Broadcasters)); }
+    public static void CollectNames(object o, List<string> names, int depth) { Collect(o, names, depth); }
+    public static IEnumerable<string> SettingsFilesPublic() { return SettingsFiles(); }
     static void Collect(object o, List<string> names, int depth) {
       var d = o as Dictionary<string, object>; if (d == null || depth > 5) { var a = o as ArrayList; if (a != null) foreach (var x in a) Collect(x, names, depth + 1); return; }
       foreach (var kv in d) { var s = kv.Value as string; var k = kv.Key.ToLowerInvariant();
@@ -668,7 +671,7 @@ namespace IXC {
         foreach (var d in dirs) { var f = Path.Combine(d, "data", "settings.json"); if (seen.Add(f)) yield return f; } } }
     protected override void OnText(string raw) {
       var m = J.Parse(raw);
-      if (m.ContainsKey("event") && m.ContainsKey("data")) { try { SbEvents.Handle(m); } catch (Exception e) { Log.Err("streamerbot", "event: " + e.Message); } return; }
+      if (m.ContainsKey("event") && m.ContainsKey("data")) { LastEvent = DateTime.Now; EventCount++; try { SbEvents.Handle(m); } catch (Exception e) { Log.Err("streamerbot", "event: " + e.Message); } return; }
       if (J.Str(m, "request", "") == "Hello" || (!Ready && m.ContainsKey("info") && !m.ContainsKey("id"))) { hello = m; gotHello.Set(); return; }
       var id = J.Str(m, "id", null); if (id != null) Complete(id, m); }
     public Task<Dictionary<string, object>> Request(Dictionary<string, object> req, int ms) { if (!Ready) return Task.FromResult<Dictionary<string, object>>(null); var id = NewId(); req["id"] = id; return Ask(id, J.Ser(req), ms); }
@@ -684,8 +687,10 @@ namespace IXC {
       cmdCache = l; cmdAt = DateTime.Now; return l; }
     public async Task<string> SendTo(string platform, string message) {
       if (!Ready) return "Streamer.bot is not connected";
+      SentEcho.Note(platform, message);   // the event Streamer.bot sends back for this message must not be treated as new chat
       var r = await Request(J.D("request", "SendMessage", "platform", platform, "message", message, "bot", false, "internal", true), 6000);
-      if (r == null) return "no answer from Streamer.bot"; return J.Str(r, "status", "") == "ok" ? null : "Streamer.bot: " + J.Str(r, "error", "failed"); }
+      if (r == null) { SentEcho.Forget(platform, message); return "no answer from Streamer.bot, so the message may not have been sent"; }
+      if (J.Str(r, "status", "") == "ok") return null; SentEcho.Forget(platform, message); return "Streamer.bot: " + J.Str(r, "error", "failed"); }
   }
 
   // Streamer.bot events -> normalized messages (payloads differ per platform and Streamer.bot version, so parsing is tolerant)
@@ -708,6 +713,7 @@ namespace IXC {
       else if (type == "SuperChat") { cm.Kind = "superchat"; cm.Amount = Pick(G(data, "amount"), G(data, "formattedAmount")) ?? ""; }
       else if (type != "ChatMessage" && type != "Message") return;
       if (cm.Kind == "chat" && string.IsNullOrWhiteSpace(cm.Text)) return;
+      if (cm.Kind == "chat" && SentEcho.Take(cm.Platform, cm.Text)) { cm.Me = true; cm.Echo = true; }   // IXC's own reply coming back: shown as yours, never counted, run or spoken
       Chat.Ingest(cm); }
     // the live video in a Streamer.bot YouTube event: data.broadcast.id (a broadcast's id is its video id) or a videoId field
     static string VideoId(object o, int depth) {

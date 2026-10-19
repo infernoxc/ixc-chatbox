@@ -137,3 +137,16 @@ export async function startRelay() {
   for (let i = 0; i < 300; i++) { await sleep(200); try { const r = await fetch('http://127.0.0.1:' + port + '/health'); if (r.ok) break; } catch {} }
   return { port, url: 'http://127.0.0.1:' + port, proc, output: () => out, stop: async () => { proc.kill('SIGTERM'); await sleep(300); try { proc.kill('SIGKILL'); } catch {} } }; }
 export async function until(fn, ms = 8000, label = 'condition') { const t0 = Date.now(); let last; while (Date.now() - t0 < ms) { try { last = await fn(); if (last) return last; } catch (e) { last = e; } await sleep(100); } throw new Error('timeout: ' + label + (last instanceof Error ? ' (' + last.message + ')' : '')); }
+
+// Streamer.bot WebSocket API (fake): Hello (+ password challenge when a password is given), Authenticate, Subscribe, GetBroadcaster, GetCommands, SendMessage.
+export async function fakeStreamerBot({ password = 'sb-Secret-Pass-12345', port } = {}) {
+  const { createHash } = await import('node:crypto'); const H = (x) => createHash('sha256').update(x).digest('base64'); const sb = { sends: [] };
+  const srv = await wsServer((c) => {
+    c.send(JSON.stringify({ request: 'Hello', info: { name: 'Streamer.bot', version: '1.0.7', instanceId: 'abc' }, authentication: password ? { salt: 's', challenge: 'c' } : undefined }));
+    c.ws.on('message', (d) => { const m = JSON.parse(d.toString()); const ok = (x = {}) => c.send(JSON.stringify(Object.assign({ id: m.id, status: 'ok' }, x)));
+      if (m.request === 'Authenticate') { if (m.authentication === H(H(password + 's') + 'c')) { c.authed = true; ok(); } else c.send(JSON.stringify({ id: m.id, status: 'error', error: 'bad password' })); }
+      else if (password && !c.authed) c.send(JSON.stringify({ id: m.id, status: 'error', error: 'authentication required' }));
+      else if (m.request === 'GetBroadcaster') ok({ platforms: { kick: { broadcastUserName: 'mykick' }, twitch: { broadcastUserName: 'mytwitch' } } });
+      else if (m.request === 'GetCommands') ok({ commands: [] });
+      else if (m.request === 'SendMessage') { sb.sends.push(m); ok(); } else ok(); }); }, port);
+  sb.srv = srv; sb.url = srv.url + '/'; sb.close = srv.close; return sb; }

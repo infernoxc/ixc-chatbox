@@ -12,7 +12,7 @@ window.App = (() => {
     ['', '', 'OBS'], ['obs', '🎬', 'OBS Control'],
     ['', '', 'Audio & Music'], ['music', '🎵', 'Music'], ['requests', '🙋', 'Song requests'], ['audio', '🎚️', 'Audio routing'], ['tts', '🔊', 'Chat voice (TTS)'], ['voices', '🎙️', 'Voices for people'],
     ['', '', 'More'], ['overlays', '🖼️', 'Overlays & docks'], ['phone', '📱', 'Phone remote'],
-    ['', '', 'System'], ['settings', '⚙️', 'Settings'], ['check', '🩺', 'Updates & diagnostics']];
+    ['', '', 'System'], ['settings', '⚙️', 'Settings'], ['streamerbot', '🤖', 'Streamer.bot'], ['check', '🩺', 'Updates & diagnostics']];
   function navHtml() { $('navList').innerHTML = NAV.map(([id, ic, t]) => id ? `<a href="#${id}" data-p="${id}"><span class="ic" aria-hidden="true">${ic}</span>${esc(t)}<span class="badge" hidden></span></a>` : `<div class="grp">${esc(t)}</div>`).join(''); }
   // ---------- live state ----------
   const link = IXC.connect({ role: 'app', topics: ['status', 'music.state', 'tts', 'remote', 'accounts', 'viewers', 'settings', 'reload'], onState, on: onMsg });

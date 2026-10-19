@@ -2,6 +2,8 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Added
+- Streamer.bot page in the dashboard (System > Streamer.bot): status, detected version and path, address, write-only password, Test connection, Start / Stop (only a process IXC started), optional start with IXC. Localhost only. IXC's own replies echoed back by Streamer.bot are shown as yours and never run commands or are read aloud.
 ### Changed
 - Chat page: each platform chip now shows connection, live / not live and the time of the last chat message as separate facts ("not live" is no longer shown as "offline").
 - Send: a message counts as sent only when the platform confirms it (Twitch USERSTATE, Kick/YouTube API success); Twitch refusals and silence are reported as failures. Results are per platform (`kind`: sent / needs-account / failed); ALL lists every set-up platform. One short line for missing accounts.

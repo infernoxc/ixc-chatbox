@@ -15,7 +15,7 @@ using System.Threading.Tasks;
 
 namespace IXC {
   public class ChatMsg {
-    public string Platform, Id, UserId = "", Name, Login, Color, Avatar, Text = "", Kind = "chat", Amount = "", Via = "ixc";
+    public string Platform, Id, UserId = "", Name, Login, Color, Avatar, Text = "", Kind = "chat", Amount = "", Via = "ixc"; public bool Echo;
     public List<string> Badges = new List<string>(); public List<Dictionary<string, object>> Parts = new List<Dictionary<string, object>>();
     public bool Broadcaster, Mod, Vip, Sub, FirstTime, Me, Test, Old; public bool? Follower;
     public DateTime At = DateTime.Now; public List<string> Flags = new List<string>(); public bool Hidden, NoTts;
@@ -60,6 +60,7 @@ namespace IXC {
       if (m.Hidden) Hidden++;
       lock (History) { History.AddLast(m); while (History.Count > 150) History.RemoveFirst(); }
       Hub.Publish("chat", J.D("type", "chat.msg", "m", m.View()));
+      if (m.Echo) return;   // IXC's own reply echoed back by Streamer.bot: shown, but no commands, timers or voice
       if (m.Kind != "chat") { AddAlert(m); return; }
       if (m.Old) return;
       Timers.OnChat(m);
