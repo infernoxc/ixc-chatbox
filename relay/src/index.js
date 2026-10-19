@@ -49,8 +49,15 @@ async function broker(p, req, env) {
     form.set('grant_type', 'refresh_token'); form.set('refresh_token', b.refresh_token);
   } else return json(400, { error: 'bad grant_type' });
   const url = p === 'youtube' ? 'https://oauth2.googleapis.com/token' : 'https://id.kick.com/oauth/token';
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: form });
-  return new Response(await r.text(), { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  // Privacy: nothing in this function is logged, and the app secret only ever goes to the platform's own token address.
+  // A success is passed through as is (the PC needs the tokens). A failure is reduced to the platform's error code + short text,
+  // so no request content (code, refresh token, secret) can come back inside an error.
+  let r; try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: form }); } catch { return json(502, { error: 'platform unreachable' }); }
+  const text = await r.text();
+  if (r.ok) return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  let e = {}; try { e = JSON.parse(text); } catch { }
+  const safe = (v) => typeof v === 'string' ? v.replace(/[^\w .,:;()'\/-]/g, '').slice(0, 200) : undefined;
+  return json(r.status >= 400 && r.status < 600 ? r.status : 502, { error: safe(e.error) || 'sign-in refused', error_description: safe(e.error_description || e.message) });
 }
 function json(status, o) { return new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }); }
 async function sha(s) { const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return btoa(String.fromCharCode(...new Uint8Array(d))); }

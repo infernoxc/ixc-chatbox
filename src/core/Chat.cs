@@ -96,8 +96,11 @@ namespace IXC {
       platform = (platform ?? "all").ToLowerInvariant();
       var targets = platform == "all" ? Platforms.SendTargets() : new List<string> { platform };
       if (targets.Count == 0) { res.Add(J.D("platform", "all", "ok", false, "error", "Nothing was sent. " + Platforms.WhyNoReply())); return res; }
-      var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } return J.D("platform", p, "ok", err == null, "error", err ?? ""); }).ToList();
+      var tasks = targets.Select(async p => { string err; try { err = await Platforms.Send(p, message); } catch (Exception e) { err = U.Plain(e); } var needs = err != null && Platforms.NeedsAccount(p); var sp = Platforms.Get(p); return J.D("platform", p, "label", sp == null ? p : sp.Label, "ok", err == null, "kind", err == null ? "sent" : needs ? "needs-account" : "failed", "error", err ?? ""); }).ToList();   // "sent" only when the platform confirmed it
       foreach (var t in tasks) res.Add(await t);
+      // ALL: platforms that are set up but cannot reply are listed too, so the result never looks like they received it
+      if (platform == "all") foreach (var sp in Platforms.All.Where(x => x.Configured && x.Id != "rumble" && !targets.Contains(x.Id))) {
+        var need = Platforms.NeedsAccount(sp.Id); res.Add(J.D("platform", sp.Id, "label", sp.Label, "ok", false, "kind", need ? "needs-account" : "failed", "error", sp.SendNote ?? "can't send")); }
       // "ALL" also tries, through Streamer.bot, platforms you haven't set up in IXC: a failure there (Streamer.bot isn't connected to it)
       // isn't news, so it's only logged - unless nothing was sent at all
       if (platform == "all" && res.Any(r => (bool)r["ok"])) {

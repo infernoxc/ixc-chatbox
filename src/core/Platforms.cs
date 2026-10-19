@@ -75,7 +75,8 @@ namespace IXC {
     public override string SendNote { get { return Accounts.ReplyBlocker("twitch", "Twitch") ?? (Accounts.Info("twitch") != null && !J.List(Accounts.Info("twitch"), "scopes").Contains("chat:edit") ? "Twitch: this sign-in lacks the chat permission - connect your Twitch account again" : !irc.Ready ? "Twitch chat is not connected" : !irc.Authed ? "Twitch did not accept the sign-in - connect your Twitch account again" : ""); } }
     public override async Task<string> Send(string text) {
       if (!CanSend) return SendNote;
-      try { await irc.Tx("PRIVMSG #" + Login + " :" + text); irc.EchoOwn(text); return null; } catch (Exception e) { return U.Plain(e); } }
+      await irc.SendLock.WaitAsync();
+      try { var err = await irc.TxConfirmed("PRIVMSG #" + Login + " :" + text, 5000); if (err == null) irc.EchoOwn(text); return err; } catch (Exception e) { return U.Plain(e); } finally { irc.SendLock.Release(); } }
     public override List<string> OwnNames() { var a = Accounts.Info("twitch"); var l = new List<string> { Login }; if (a != null) l.Add(J.Str(a, "login", "")); return l.Where(x => x.Length > 0).ToList(); }
     public override void PollViewers() {
       if (!Accounts.Has("twitch")) { PublicViewers(); return; }
@@ -112,6 +113,13 @@ namespace IXC {
   }
 
   public class TwitchIrc : WsLink {
+    volatile TaskCompletionSource<string> pendingSend; public readonly SemaphoreSlim SendLock = new SemaphoreSlim(1, 1);
+    // a send is only "sent" once Twitch answers with USERSTATE; a NOTICE (rate limit, slow mode, banned...) is the refusal
+    public async Task<string> TxConfirmed(string line, int waitMs) {
+      var tcs = new TaskCompletionSource<string>(); pendingSend = tcs;
+      try { await Tx(line); var done = await Task.WhenAny(tcs.Task, Task.Delay(waitMs)); if (done != tcs.Task) return "Twitch did not confirm the message, so it may not have been delivered"; return tcs.Task.Result; }
+      finally { pendingSend = null; } }
+    void ResolveSend(string err) { var t = pendingSend; if (t != null) t.TrySetResult(err); }
     readonly TwitchSource src; public volatile bool Authed; string nick = ""; bool forceAnon; string room = "";
     readonly ManualResetEventSlim welcome = new ManualResetEventSlim(false), joined = new ManualResetEventSlim(false); volatile string failure;
     public TwitchIrc(TwitchSource s) { src = s; Name = "Twitch chat"; Area = "chat"; IdleTimeoutSec = 400; }
@@ -152,11 +160,13 @@ namespace IXC {
         case "RECONNECT": Log.Info("chat", "Twitch asked IXC to reconnect"); try { ws.Abort(); } catch { } break;
         case "JOIN": if (string.Equals(login, nick, StringComparison.OrdinalIgnoreCase)) joined.Set(); break;
         case "ROOMSTATE": joined.Set(); break;
+        case "USERSTATE": ResolveSend(null); break;
         case "NOTICE": {
           var id = Get(tags, "msg-id"); var text = trailing ?? "";
           if (text.Contains("Login authentication failed") || text.Contains("Improperly formatted auth")) { failure = "auth: " + text; welcome.Set(); }
           else if (id == "msg_channel_suspended" || id == "tos_ban" || id == "msg_banned") { failure = "Twitch: " + text; joined.Set(); }
-          else if (id == "msg_ratelimit" || id == "msg_duplicate" || id == "msg_slowmode" || id == "msg_followersonly" || id == "msg_subsonly" || id == "msg_emoteonly") { Log.Info("chat", "Twitch didn't send your message: " + text); Hub.Publish("chat", J.D("type", "chat.reply", "platform", "twitch", "text", "", "error", "Twitch: " + text)); }
+          else if (id == "msg_ratelimit" || id == "msg_duplicate" || id == "msg_slowmode" || id == "msg_followersonly" || id == "msg_subsonly" || id == "msg_emoteonly") { Log.Info("chat", "Twitch didn't send your message: " + text); Hub.Publish("chat", J.D("type", "chat.reply", "platform", "twitch", "text", "", "error", "Twitch: " + text)); ResolveSend("Twitch: " + text); }
+          else if (pendingSend != null && id != null && id.StartsWith("msg_")) ResolveSend("Twitch: " + text);
           else Log.Debug("chat", "Twitch notice: " + text);
           break; }
         case "PRIVMSG": {
@@ -766,6 +776,8 @@ namespace IXC {
     public static string WhyNoReply() {
       var l = All.Where(s => s.Configured && s.Id != "rumble").Select(s => s.SendNote).Where(n => !string.IsNullOrEmpty(n)).ToList();
       return l.Count > 0 ? string.Join("; ", l) : "no platform is set up in IXC - enable one under Platforms & accounts"; }
+    // true when a reply failed only because no IXC account is connected on that platform (the UI then shows one short line for all of them)
+    public static bool NeedsAccount(string platform) { var s = Get(platform); return s != null && s.Configured && platform != "rumble" && !s.CanSend && !Sb.Ready && Accounts.ReplyBlocker(platform, s.Label) != null && !Accounts.Has(platform); }
     public static async Task<string> Send(string platform, string text) {
       var s = Get(platform); if (s == null) return "unknown platform " + platform;
       if (s.Configured && s.CanSend) return await s.Send(text);

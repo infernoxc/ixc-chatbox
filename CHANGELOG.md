@@ -2,6 +2,11 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Changed
+- Chat page: each platform chip now shows connection, live / not live and the time of the last chat message as separate facts ("not live" is no longer shown as "offline").
+- Send: a message counts as sent only when the platform confirms it (Twitch USERSTATE, Kick/YouTube API success); Twitch refusals and silence are reported as failures. Results are per platform (`kind`: sent / needs-account / failed); ALL lists every set-up platform. One short line for missing accounts.
+- Relay sign-in helper: errors are reduced to the platform error code, nothing is logged, request logging is switched off in wrangler.toml.
+- docs/DEVELOPER-SETUP.md: maintainer registration checklist (redirects, scopes, secrets, privacy notice, Google verification).
 
 ## [3.3.0-rc.1] - 2026-10-19 (release candidate)
 ### Added

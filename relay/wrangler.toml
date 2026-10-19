@@ -18,3 +18,7 @@ fallthrough = false
 
 # Secrets (set with `npx wrangler secret put NAME`), only needed for "Connect account" on YouTube / Kick:
 #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KICK_CLIENT_ID, KICK_CLIENT_SECRET
+
+# Keep request logging off: the sign-in route carries authorization codes and refresh tokens in its request body.
+[observability]
+enabled = false

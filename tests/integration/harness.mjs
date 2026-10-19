@@ -77,6 +77,8 @@ export async function fakeTwitch(port) {
     c.ws.on('message', (d) => { for (const line of d.toString().split('\r\n').filter(Boolean)) { c.lines.push(line);
       if (line.startsWith('NICK ')) { c.nick = line.slice(5); c.send(':tmi.twitch.tv 001 ' + c.nick + ' :Welcome, GLHF!'); }
       if (line.startsWith('PASS ')) c.pass = line.slice(5);
+      // like Twitch: USERSTATE confirms an accepted message, a NOTICE refuses it. s.sendMode = 'silent' never answers, 'ratelimit' refuses
+      if (line.startsWith('PRIVMSG ')) { const ch = line.split(' ')[1]; if (s.sendMode === 'ratelimit') c.send('@msg-id=msg_ratelimit :tmi.twitch.tv NOTICE ' + ch + ' :Your message was not sent because you are sending messages too quickly.'); else if (s.sendMode !== 'silent') c.send('@badges=;display-name=x :tmi.twitch.tv USERSTATE ' + ch); }
       if (line.startsWith('JOIN ')) { c.chan = line.slice(5); c.send(':' + c.nick + '!' + c.nick + '@' + c.nick + '.tmi.twitch.tv JOIN ' + c.chan); c.send('@room-id=1 :tmi.twitch.tv ROOMSTATE ' + c.chan); } } }); }, port);
   s.msg = (tags, login, text, chan = '#streamer') => { for (const c of s.live()) c.send('@' + Object.entries(tags).map(([k, v]) => k + '=' + v).join(';') + ' :' + login + '!' + login + '@' + login + '.tmi.twitch.tv PRIVMSG ' + chan + ' :' + text); };
   s.raw = (line) => { for (const c of s.live()) c.send(line); };
