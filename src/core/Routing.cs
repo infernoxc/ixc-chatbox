@@ -54,6 +54,9 @@ namespace IXC {
     public static void OnObsEvent(string type, Dictionary<string, object> d) {
       if (type != "InputAudioTracksChanged" && type != "InputCreated" && type != "InputNameChanged") return;
       var name = J.Str(d, "inputName", J.Str(d, "oldInputName", ""));
+      if (type == "InputNameChanged") {   // renamed in OBS: follow the new name instead of losing the source
+        var oldName = J.Str(d, "oldInputName", "");
+        foreach (var src in Sources) if (oldName.Length > 0 && string.Equals(oldName, InputName(src), StringComparison.OrdinalIgnoreCase)) { Cfg.Set(src + ".routing.inputName", name); Cfg.Save(); } }   // the loop below then re-applies under the new name
       foreach (var src in Sources) {
         if (!string.Equals(name, InputName(src), StringComparison.OrdinalIgnoreCase)) continue; var s = st[src];
         if (type == "InputAudioTracksChanged") { var tr = J.Obj(d, "inputAudioTracks"); s.Actual = TrackText(tr);
@@ -69,6 +72,7 @@ namespace IXC {
     static async Task<Dictionary<string, object>> Once(string src) {
       var s = st[src];
       try {
+        await Obs.ResolveInput(src);   // the source may have been renamed in OBS: find it by its address
         var mine = WantTracks(src); var want = new Dictionary<string, object>();
         foreach (var n in Managed()) want[n.ToString()] = mine.Contains(n);
         await Obs.Link.Call("SetInputAudioTracks", J.D("inputName", InputName(src), "inputAudioTracks", want));
