@@ -101,7 +101,7 @@
 
   // ======================= PLATFORMS & ACCOUNTS =======================
   page('accounts', 'Platforms & Accounts', (main) => {
-    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. <b>Connect</b> your account to also reply from IXC, get follower alerts and see Twitch viewers.</p><div class="grid" id="acc"></div>`;
+    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. <b>Connect</b> your account to also reply from IXC, get follower alerts and see Twitch viewers.</p><div class="grid" id="acc"></div><div class="grid" id="appsBox" style="margin-top:12px"></div>`;
     const NOTE = { twitch: 'Reads chat without signing in. Sign in for replies, follower alerts and viewer counts.', kick: 'Reads chat and viewers without signing in. Sign in to reply.', youtube: 'Finds your live stream by itself. Sign in to reply in YouTube chat.', rumble: 'Copy your "Live Stream API" link from rumble.com (Account > Live Stream API) and paste it here. Rumble doesn\'t allow apps to send chat.' };
     const paint = () => { const st = (S.status || {}).chat || {}, acc = S.accounts || {};
       $('acc').innerHTML = plats.map(p => { const s = st[p] || {}, a = acc[p] || {}, ac = a.account, fl = a.flow;
@@ -115,7 +115,7 @@
         `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional bridge, not needed)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
           ${ctl.select('platforms.streamerbot.mode', 'Use Streamer.bot', [['auto', 'Automatically, when it\'s running'], ['on', 'Always (keep trying)'], ['off', 'Never']])}
           <div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
-      $('acc').innerHTML += appsCard(acc.apps || {});
+      paintApps();
       const rs = $('rumbleSave'); if (rs) rs.onclick = async () => { const r = await IXC.api('/api/accounts/rumble/rumble', { url: $('rumbleUrl').value }); toast(r.ok ? 'Rumble connected' : r.error, !r.ok); }; };
     // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
     const APPS = [
@@ -127,15 +127,32 @@
       return `<div class="card" style="grid-column:1/-1"><h3>🔑 Your apps <span class="tiny muted">(for replies, alerts and viewer counts)</span></h3>
         <div class="hint">To send messages, Twitch, YouTube and Kick need a free developer app that belongs to you. Create it once (about 5 minutes each), paste the IDs here, then press <b>Connect</b> above. Secrets are stored encrypted on this PC only and are never shown again. ${anyMissing ? '' : '<b>All set ✓</b>'}</div>
         ${APPS.map(([k, name, url, steps]) => { const a = apps[k] || {};
-          return `<details style="margin-top:8px" ${a.available ? '' : 'open'}><summary><b>${name}</b> ${a.available ? '<span class="ok small">✓ ready</span>' : '<span class="muted small">not set up</span>'}${a.own ? '' : a.builtIn ? ' <span class="tiny muted">(using the built-in app)</span>' : ''}</summary>
+          return `<details data-k="${k}" style="margin-top:8px" ${a.available ? '' : 'open'}><summary><b>${name}</b> ${a.available ? '<span class="ok small">✓ ready</span>' : '<span class="muted small">not set up</span>'}${a.own ? '' : a.builtIn ? ' <span class="tiny muted">(using the built-in app)</span>' : ''}</summary>
             <ol class="small" style="margin:6px 0 8px 18px;padding:0"><li>Open <a href="#" data-open-url="https://${url}">${url}</a> and sign in.</li>${steps.map(x => `<li>${x.replace('{redirect}', esc(a.redirect || ''))}</li>`).join('')}</ol>
             <div class="field"><label class="lbl">Client ID</label><div class="val"><input id="app_${k}_id" value="${esc(a.id || '')}" autocomplete="off" spellcheck="false"></div></div>
-            ${k === 'twitch' ? '' : `<div class="field"><label class="lbl">Client secret</label><div class="val"><input id="app_${k}_secret" type="password" autocomplete="new-password" placeholder="${a.secretSet ? '(saved - paste a new one to replace it)' : ''}"></div></div>`}
-            <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div></details>`; }).join('')}</div>`; }
+            ${k === 'twitch' ? '' : `<div class="field"><label class="lbl">Client secret</label><div class="val"><input id="app_${k}_secret" type="password" autocomplete="new-password" placeholder="${a.secretSet ? '(saved - paste a new one to replace it)' : ''}">${a.secretSet ? ' <span class="ok small" id="app_' + k + '_saved">🔒 Secret saved</span>' : ''}</div></div>`}
+            <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div><div class="small" id="app_${k}_msg" role="status" style="margin-top:6px"></div></details>`; }).join('')}</div>`; }
+    // The card is redrawn only when the saved app data changed. Whatever is typed but not saved yet (IDs, secrets, which steps are open) is kept.
+    let appsKey = null;
+    function paintApps(force, resetKey) { const box = $('appsBox'); if (!box) return; const apps = (S.accounts || {}).apps || {}, key = JSON.stringify(apps);
+      if (!force && key === appsKey && box.firstChild) return; appsKey = key;
+      const draft = {}, open = {}; box.querySelectorAll('input').forEach(i => { draft[i.id] = i.value; }); box.querySelectorAll('details').forEach(d => { open[d.dataset.k] = d.open; });
+      box.innerHTML = appsCard(apps);
+      box.querySelectorAll('input').forEach(i => { const k = i.id.split('_')[1]; if (k !== resetKey && draft[i.id] && draft[i.id] !== i.value) i.value = draft[i.id]; });
+      box.querySelectorAll('details').forEach(d => { if (d.dataset.k === resetKey) d.open = true; else if (open[d.dataset.k] !== undefined) d.open = open[d.dataset.k]; }); }
+    function appMsg(k, text, bad) { const m = $('app_' + k + '_msg'); if (m) { m.className = 'small ' + (bad ? 'err' : 'ok'); m.textContent = text; } }
     main.onclick = async (e) => { const b = e.target.closest('button,a[data-open-url]'); if (!b) return; const d = b.dataset;
-      if (d.appSave) { const k = d.appSave, body = { [k]: { id: $('app_' + k + '_id').value.trim() } }; const se = $('app_' + k + '_secret'); if (se && se.value.trim()) body[k].secret = se.value.trim();
-        const r = await IXC.api('/api/accounts/apps', body); if (se) se.value = ''; toast(r.ok ? 'Saved - now press Connect above' : r.error, !r.ok); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
-      if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
+      if (d.appSave) { const k = d.appSave, idv = $('app_' + k + '_id').value.trim(), se = $('app_' + k + '_secret'), sv = se ? se.value.trim() : '', body = { [k]: {} };
+        // a blank field means "leave it alone" (Remove is the way to clear), so an empty box can never wipe a saved ID
+        if (idv) body[k].id = idv; if (sv) body[k].secret = sv;
+        if (!idv && !sv) { appMsg(k, 'Nothing to save yet - paste the Client ID' + (k === 'twitch' ? '' : ' and the Client secret') + ' first.', true); return; }
+        b.disabled = true; const r = await IXC.api('/api/accounts/apps', body); b.disabled = false;
+        if (!r || !r.ok) { const why = (r && r.error) || 'IXC did not answer - is it running?'; appMsg(k, 'Not saved: ' + why + ' Your entries are still here.', true); toast('Not saved: ' + why, true); return; }   // fields are left exactly as typed
+        // confirm from the backend, not from what the browser remembers
+        const fresh = await IXC.api('/api/accounts'); const ap = fresh && fresh.apps && fresh.apps[k];
+        if (!ap || (idv && ap.id !== idv) || (sv && !ap.secretSet)) { appMsg(k, 'IXC said "saved" but reading the settings back did not show them. Your entries are still here - try again.', true); toast('Could not confirm the save', true); return; }
+        S.accounts = fresh; paintApps(true, k); appMsg(k, 'Saved' + (sv ? ' - the secret is stored encrypted and is never shown again' : '') + '. Now press Connect above.', false); toast('Saved - now press Connect above'); return; }
+      if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r && r.ok) { S.accounts = await IXC.api('/api/accounts'); paintApps(true, d.appClear); paint(); } else appMsg(d.appClear, 'Not removed: ' + ((r && r.error) || 'IXC did not answer'), true); return; }
       if (d.openUrl) { e.preventDefault(); window.open(d.openUrl, '_blank'); return; }
       if (d.connect) { b.disabled = true; const r = await IXC.api('/api/accounts/' + d.connect + '/connect', {}); b.disabled = false; if (!r.ok) toast(r.error, true); else toast('Your browser opened - finish signing in there'); }
       if (d.signout && await UI.confirmBox('Sign out of ' + P[d.signout].name + '? IXC keeps reading chat but can\'t reply there.', 'Sign out')) await IXC.api('/api/accounts/' + d.signout + '/signout', {});

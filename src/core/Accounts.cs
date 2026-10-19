@@ -53,7 +53,13 @@ namespace IXC {
       { "twitch", "^[a-z0-9]{20,40}$" }, { "google", "^[\\w.-]{3,120}\\.apps\\.googleusercontent\\.com$" }, { "kick", "^[A-Za-z0-9]{10,64}$" } };
     // patch: { twitch: { id }, google: { id, secret }, kick: { id, secret } }. A missing field is left as it is, "" clears it.
     // Returns null when saved, otherwise the problem (then nothing is saved).
+    // Diagnostics (auth.log) name the fields and the outcome only - never a value. The write is read back before "saved" is reported.
     public static string SetApps(Dictionary<string, object> patch) {
+      var names = new List<string>(); if (patch != null) foreach (var app in new[] { "twitch", "google", "kick" }) { var d = J.Obj(patch, app); if (d == null) continue; foreach (var f in new[] { "id", "secret" }) if (d.ContainsKey(f)) names.Add(app + "." + f); }
+      string err; try { err = SetAppsCore(patch); } catch (Exception e) { err = "IXC couldn't write its encrypted settings (" + e.GetType().Name + ")"; }
+      if (err != null) Log.Info("auth", "your app settings were NOT saved (HTTP 400; fields: " + (names.Count > 0 ? string.Join(", ", names) : "none") + "): " + err);
+      return err; }
+    static string SetAppsCore(Dictionary<string, object> patch) {
       if (patch == null) return "nothing to save";
       var todo = new List<KeyValuePair<string, string>>();
       foreach (var app in new[] { "twitch", "google", "kick" }) {
@@ -65,7 +71,10 @@ namespace IXC {
           if (sec.Length > 0 && (sec.Length < 10 || sec.Length > 200 || Regex.IsMatch(sec, "\\s"))) return "That doesn't look like a client secret - copy it again";
           todo.Add(new KeyValuePair<string, string>("apps." + app + ".secret", sec)); } }
       if (todo.Count == 0) return "nothing to save";
+      var old = todo.ToDictionary(kv => kv.Key, kv => Secrets.Get(kv.Key));
       foreach (var kv in todo) Secrets.Set(kv.Key, kv.Value.Length == 0 ? null : kv.Value);
+      if (Secrets.SaveError != null) { foreach (var kv in old) Secrets.Set(kv.Key, kv.Value); return "IXC couldn't write its encrypted settings file (" + Secrets.SaveError + "), so nothing was saved"; }
+      foreach (var kv in todo) { var back = (Secrets.Str(kv.Key) ?? "").Trim(); if (back != kv.Value) return "IXC wrote your " + kv.Key.Split('.')[1] + " " + kv.Key.Split('.')[2] + " but could not read it back, so it was not kept"; }
       Log.Info("auth", "your app settings were saved (" + string.Join(", ", todo.Select(kv => kv.Key.Split('.')[1] + " " + kv.Key.Split('.')[2] + (kv.Value.Length == 0 ? " cleared" : ""))) + ")");
       Changed("twitch"); return null; }
 
