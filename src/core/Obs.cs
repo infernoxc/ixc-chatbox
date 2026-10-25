@@ -139,6 +139,7 @@ namespace IXC {
     static async Task<List<Dictionary<string, object>>> Inputs() {
       var r = await Link.Call("GetInputList", J.D("inputKind", "browser_source")); var list = new List<Dictionary<string, object>>();
       var arr = J.Get(r, "inputs") as ArrayList; if (arr != null) foreach (var o in arr) { var d = o as Dictionary<string, object>; if (d != null) list.Add(d); } return list; }
+    public static Task<string> FindSource(string part) { return FindByUrl(part, null); }
     static async Task<string> FindByUrl(string part, string preferName) {
       foreach (var i in await Inputs()) { var n = J.Str(i, "inputName", ""); if (n == preferName) return n; }
       foreach (var i in await Inputs()) { var n = J.Str(i, "inputName", ""); try { var s = await Link.Call("GetInputSettings", J.D("inputName", n)); if (J.Str(s, "inputSettings.url", "").Contains(part)) return n; } catch { } }

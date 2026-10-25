@@ -359,3 +359,13 @@ Record actual evidence only. Do not mark unverified features complete.
 - Verified live: /api/streamerbot answers, Streamer.bot page reachable from System > Streamer.bot, status Connected (v1.0.7, password accepted from Streamer.bot's own settings, accounts infernoxc00 + Infernoxc), read-only Test connection OK, unchanged Save persists after reload, config.json differs from the backup only in "version", secrets.dat identical, real Streamer.bot (pid 15584) never stopped/started/modified, no log errors, music/TTS/OBS reconnected.
 - Not tested (no permission yet): incoming chat events (events=0), replies, IXC-managed launch, platform sign-in validity inside Streamer.bot.
 - Known cosmetic issue: "Saved" marker next to the password box also shows when the password is only found in Streamer.bot's settings (not saved in IXC).
+
+## 2026-10-25 Phase 1 stream repair (live install, config only)
+- Root cause of "OBS has no source called IXC Music Player": sources renamed in OBS to "MUSIC — IXC Music Player" / "CHAT — IXC TTS"; Check finds them by URL but Routing uses the unsaved default names; AutoSetup skipped (obs.setupDone=true). Music sat on track 2 only (Twitch track 1 had no music).
+- Fix: set music/tts.routing.inputName via POST /api/settings (backup D:\OBS\New OBS File\backups\20261025-074638). Routing applied and read back: music track 1+2, TTS 1-4. /api/health all ok.
+- Verified live: music play/pause, scene switch round-trip, stream/record status. NOT tested: recording start/stop, chat send/commands, Streamer.bot events (0), timers (none configured).
+- Next: Routing.cs should follow renamed sources (resolve by URL, InputNameChanged). Details: D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.
+
+## 2026-10-25 Phase 2 checkpoint 1 (local, installed core NOT swapped)
+- Routing follows renamed OBS sources; Streamer.bot onExit option (keep/close, never forced, not while live) + live-stop confirmation. Tests 16 (2/2 x4) and 29 (6/6) pass on the new build; fixed a race in the 16 restart test.
+- Multistream read-only: Aitum 1.0.9 (Twitch, YouTube), obs-multi-rtmp 0.7.4 (Kick with empty server, YouTube duplicate); OBS main stream points at IXC ingest 127.0.0.1:19350 which is not listening. Details: D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.

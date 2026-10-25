@@ -146,7 +146,7 @@ namespace IXC {
       if (path == "/api/diagnostics/export" && m == "POST") { Http.Json(ctx, Diagnostics.Export()); return; }
       if (path == "/api/open" && m == "POST") { OpenThing(J.Str(Http.BodyJson(ctx), "what", "")); Http.Json(ctx, J.D("ok", true)); return; }
       if (path == "/api/system/restart" && m == "POST") { Http.Json(ctx, J.D("ok", true)); RequestRestart("asked from the dashboard"); return; }
-      if (path == "/api/system/quit" && m == "POST") { Http.Json(ctx, J.D("ok", true)); Log.Info("app", "quit from the dashboard"); Task.Delay(500).ContinueWith(_ => Exit(4)); return; }
+      if (path == "/api/system/quit" && m == "POST") { Http.Json(ctx, J.D("ok", true)); Log.Info("app", "quit from the dashboard"); if (HasChat) SbManager.OnIxcQuit(); Task.Delay(500).ContinueWith(_ => Exit(4)); return; }
       if (path == "/api/update/check") { Http.Json(ctx, Updates.Check()); return; }
       if (path == "/api/accounts") { Http.Json(ctx, Accounts.All()); return; }
       // Streamer.bot commands that IXC doesn't have yet (names only: Streamer.bot doesn't share what its actions do)

@@ -79,7 +79,7 @@ namespace IXC {
       string pwSource = pwSaved ? "saved in IXC" : (sbs != null && J.Bool(sbs, "passwordInSettings", false) ? "found in Streamer.bot's settings" : "none");
       return J.D("installed", exe != null || runPath != null, "path", shown ?? "", "folders", folders, "version", shown == null ? "" : Version(shown),
         "running", procs.Length > 0, "processes", procs.Length, "managed", IsManagedAlive(), "managedPid", IsManagedAlive() ? managedPid : 0,
-        "mode", Settings.Str("platforms.streamerbot.mode"), "launch", Settings.Str("platforms.streamerbot.launch"), "url", Settings.Str("platforms.streamerbot.websocketUrl"), "exePath", Settings.Str("platforms.streamerbot.exePath"),
+        "mode", Settings.Str("platforms.streamerbot.mode"), "launch", Settings.Str("platforms.streamerbot.launch"), "onExit", Settings.Str("platforms.streamerbot.onExit"), "url", Settings.Str("platforms.streamerbot.websocketUrl"), "exePath", Settings.Str("platforms.streamerbot.exePath"),
         "passwordSet", pwSource != "none", "passwordSource", pwSource, "settings", sbs,
         "link", J.D("state", link.State, "detail", link.Detail, "ready", link.Ready, "auth", link.AuthState, "since", (long)(link.Since.ToUniversalTime() - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds,
           "lastEvent", link.LastEvent == DateTime.MinValue ? null : (object)(long)(link.LastEvent.ToUniversalTime() - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds, "events", link.EventCount, "accounts", link.Broadcasters.ToList()),
@@ -119,7 +119,7 @@ namespace IXC {
     // ---------- save (IXC settings only) ----------
     // patch: url, password (write-only; "" keeps it), exePath, launch, mode. Returns null when saved, else the reason; nothing is stored then.
     public static string Save(Dictionary<string, object> b) {
-      var names = new List<string>(); foreach (var k in new[] { "url", "password", "exePath", "launch", "mode" }) if (b != null && b.ContainsKey(k)) names.Add(k);
+      var names = new List<string>(); foreach (var k in new[] { "url", "password", "exePath", "launch", "mode", "onExit" }) if (b != null && b.ContainsKey(k)) names.Add(k);
       string err = null;
       try {
         if (b == null || names.Count == 0) err = "nothing to save";
@@ -128,6 +128,7 @@ namespace IXC {
           if (b.ContainsKey("url")) { var u = J.Str(b, "url", "").Trim(); err = ValidateUrl(u); if (err == null) patch["platforms.streamerbot.websocketUrl"] = u; }
           if (err == null && b.ContainsKey("exePath")) { var p = J.Str(b, "exePath", "").Trim(); if (p.Length > 0) { var e = p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? p : ExeIn(p); if (e == null || !File.Exists(e) || !string.Equals(Path.GetFileName(e), ExeName, StringComparison.OrdinalIgnoreCase)) err = "That is not a Streamer.bot.exe (pick the file or its folder)"; else p = e; } patch["platforms.streamerbot.exePath"] = p; }
           if (err == null && b.ContainsKey("launch")) { var l = J.Str(b, "launch", ""); if (l != "never" && l != "withIxc") err = "launch must be never or withIxc"; else patch["platforms.streamerbot.launch"] = l; }
+          if (err == null && b.ContainsKey("onExit")) { var o = J.Str(b, "onExit", ""); if (o != "keep" && o != "close") err = "onExit must be keep or close"; else patch["platforms.streamerbot.onExit"] = o; }
           if (err == null && b.ContainsKey("mode")) { var m = J.Str(b, "mode", ""); if (m != "auto" && m != "on" && m != "off") err = "mode must be auto, on or off"; else patch["platforms.streamerbot.mode"] = m; }
           string pw = null; if (err == null && b.ContainsKey("password")) { pw = J.Str(b, "password", ""); if (pw.Length > 0 && (pw.Length > 200 || pw.Trim() != pw)) err = "That password has leading or trailing spaces or is too long"; }
           if (err == null) {
@@ -157,14 +158,27 @@ namespace IXC {
         catch (Exception e) { lastStartError = "Could not start Streamer.bot: " + U.Plain(e); Log.Err("streamerbot", lastStartError); return lastStartError; } } }
 
     // only the process IXC started (same pid and start time). A normal close first; force only when the user asks for it.
-    public static string Stop(bool force) {
+    // while OBS is live, stopping needs confirmLive: chat, replies and Streamer.bot actions would stop mid-stream
+    public const string LiveWarning = "OBS is streaming or recording right now: stopping Streamer.bot stops chat, replies and its actions.";
+    static bool ObsLive() { return Obs.Link.Ready && (ObsControl.Streaming || ObsControl.Recording); }
+    public static string Stop(bool force, bool confirmLive = false) {
       lock (L) {
         if (!IsManagedAlive()) { ClearManaged(); return Running().Length > 0 ? "Streamer.bot is running but IXC did not start it, so IXC will not stop it" : "Streamer.bot is not running"; }
+        if (ObsLive() && !confirmLive) return LiveWarning;
         try {
           var p = Process.GetProcessById(managedPid); p.CloseMainWindow();
           if (!p.WaitForExit(10000)) { if (!force) return "Streamer.bot did not close (it may be minimized to its tray). Close it there, or use Force stop (unsaved changes inside Streamer.bot could be lost)."; p.Kill(); p.WaitForExit(5000); }
           ClearManaged(); Log.Info("streamerbot", "stopped Streamer.bot" + (force ? " (forced)" : "")); return null; }
         catch (Exception e) { return "Could not stop Streamer.bot: " + U.Plain(e); } } }
+
+    // IXC quits from the dashboard or tray: only with onExit=close, only the copy IXC started, a normal close (never forced), not while OBS is live.
+    // A crash or a kill of IXC never runs this, so Streamer.bot keeps running and is picked up again (no second copy) on the next start.
+    public static void OnIxcQuit() {
+      try {
+        if (Settings.Str("platforms.streamerbot.onExit") != "close" || !IsManagedAlive()) return;
+        if (ObsLive()) { Log.Info("streamerbot", "left Streamer.bot running: OBS is streaming or recording"); return; }
+        var e = Stop(false); Log.Info("streamerbot", e == null ? "closed Streamer.bot because IXC quit" : "on quit: " + e); }
+      catch (Exception e) { Log.Warn("streamerbot", "on quit: " + e.Message); } }
 
     // keeps Streamer.bot up when "start with IXC" is on: at most 3 starts in 10 minutes, so a crash loop is not a restart loop
     static void Tick() {
@@ -183,7 +197,7 @@ namespace IXC {
         if (path == "/api/streamerbot/config") { var err = Save(b); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "status", Snapshot())); return true; }
         if (path == "/api/streamerbot/test") { var r = Test().Result; Log.Info("streamerbot", "connection test: " + ((bool)r["ok"] ? "ok" : "failed at " + r["step"])); Http.Json(ctx, r); return true; }
         if (path == "/api/streamerbot/start") { var err = Start(); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "status", Snapshot())); return true; }
-        if (path == "/api/streamerbot/stop") { var err = Stop(J.Bool(b, "force", false)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "status", Snapshot())); return true; }
+        if (path == "/api/streamerbot/stop") { var err = Stop(J.Bool(b, "force", false), J.Bool(b, "confirmLive", false)); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "status", Snapshot())); return true; }
       } catch (Exception e) { Http.Json(ctx, 500, J.D("ok", false, "error", "Streamer.bot: " + U.Plain(e))); return true; }
       return false; }
   }

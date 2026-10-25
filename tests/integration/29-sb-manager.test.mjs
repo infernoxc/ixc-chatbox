@@ -103,3 +103,28 @@ test('Windows: start/stop only a process IXC started; no second copy; an outside
   r = await api(c2, '/api/streamerbot/start', {}); assert.match(r.body.error ?? '', /not started by IXC/); r = await api(c2, '/api/streamerbot/stop', { force: true }); assert.equal(r.status, 400); assert.match(r.body.error, /did not start/); assert.ok(alive(outside.pid), 'the outside copy was not touched');
   outside.kill();
 });
+
+
+// stopping Streamer.bot while OBS is live needs a second confirmation; on quit IXC only asks the copy it started to close (never forced)
+test('Windows: live-stop guard and close-on-quit preference', { skip: !process.env.IXC_CORE_EXE ? 'Windows only' : false }, async () => {
+  const { fakeObs } = await import('./harness.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-fakesb-')); const src = path.join(dir, 'p.cs'); const exe = path.join(dir, 'IxcFakeSb.exe');
+  fs.writeFileSync(src, 'class P { static void Main() { System.Threading.Thread.Sleep(600000); } }');
+  execFileSync(path.join(process.env.WINDIR, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'), ['/nologo', '/target:winexe', '/out:' + exe, src]);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const obs = await fakeObs({}); cleanup.push(obs.close); obs.st.streaming = true;
+  const c = await startCore({ env: { IXC_EP_SB_EXE: 'IxcFakeSb.exe' }, config: { ...sbCfg({ mode: 'off' }), obs: { websocketUrl: obs.url } } }); cleanup.push(() => c.stop());
+  assert.equal((await status(c)).onExit, 'keep', 'default leaves Streamer.bot running');
+  assert.equal((await api(c, '/api/streamerbot/config', { exePath: dir, onExit: 'never' })).status, 400);
+  assert.equal((await api(c, '/api/streamerbot/config', { exePath: dir, onExit: 'close' })).status, 200); assert.equal((await status(c)).onExit, 'close');
+  assert.equal((await api(c, '/api/streamerbot/start', {})).status, 200); await until(async () => (await status(c)).managed, 8000, 'started'); const pid = (await status(c)).managedPid;
+  await until(async () => (await api(c, '/api/obs/state')).body.streaming === true, 8000, 'OBS live seen');
+  let r = await api(c, '/api/streamerbot/stop', { force: true }); assert.equal(r.status, 400); assert.match(r.body.error, /streaming or recording/); assert.ok(alive(pid), 'not stopped while live');
+  // quit while live: left running
+  await api(c, '/api/system/quit', {}); await until(() => /left Streamer.bot running: OBS is streaming/.test(c.log('streamerbot')), 8000, 'quit while live leaves it'); assert.ok(alive(pid));
+  // not live any more: quit asks it to close; this stand-in has no window, so it stays (never forced)
+  obs.st.streaming = false; const c2 = await c.restart(); cleanup.push(() => c2.stop());
+  await until(async () => (await api(c2, '/api/obs/state')).body.streaming === false && (await status(c2)).managed, 8000, 'restarted, not live');
+  await api(c2, '/api/system/quit', {}); await until(() => /on quit: Streamer.bot did not close/.test(c2.log('streamerbot')), 15000, 'asked to close on quit'); assert.ok(alive(pid), 'never force-killed on quit');
+  process.kill(pid);
+});
