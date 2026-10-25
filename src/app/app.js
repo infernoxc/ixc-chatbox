@@ -7,7 +7,6 @@ window.App = (() => {
   const pages = {}; let current = null, listeners = [];
   const DOCK = new URLSearchParams(location.search).get('dock') === '1'; if (DOCK) document.body.classList.add('dock');
   const NAV = [['home', '🏠', 'Overview'], ['', '', 'Live'], ['chat', '💬', 'Chat'], ['accounts', '🔗', 'Platforms & Accounts'],
-    ['', '', 'Stream'], ['multistream', '📡', 'Multistream Studio'], ['vertical', '📐', 'Vertical Studio'],
     ['', '', 'Automation'], ['automation', '🤖', 'Automation Studio'], ['commands', '⌨️', 'Commands'], ['timers', '⏱️', 'Timers'], ['filters', '🛡️', 'Chat filters'],
     ['', '', 'OBS'], ['obs', '🎬', 'OBS Control'],
     ['', '', 'Audio & Music'], ['music', '🎵', 'Music'], ['requests', '🙋', 'Song requests'], ['audio', '🎚️', 'Audio routing'], ['tts', '🔊', 'Chat voice (TTS)'], ['voices', '🎙️', 'Voices for people'],

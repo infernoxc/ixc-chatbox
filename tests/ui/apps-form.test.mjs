@@ -1,4 +1,4 @@
-// Platforms & Accounts > Your apps: typed values survive status refreshes, Save is confirmed from the backend, failures keep the
+﻿// Platforms & Accounts > Your apps: typed values survive status refreshes, Save is confirmed from the backend, failures keep the
 // entries and say why, secrets are write-only. Fake values only; no screenshots are taken (the page holds a typed secret).
 import { test, before, after } from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
 import { chromium } from 'playwright';
@@ -6,7 +6,7 @@ import { startCore, api, until, sleep } from '../integration/harness.mjs';
 const exe = process.env.IXC_BROWSER || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
 const KICK_ID = '01ABCDEFGHJKMNPQRS', KICK_SECRET = 'kick-TopSecret-1234567890', TW_ID = 'abcdefghij0123456789abcd';
 let c, b;
-before(async () => { c = await startCore(); b = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] }); });
+before(async () => { c = await startCore({ config: { general: { advanced: true } } });   // Your apps is an Advanced-mode card (Streamer.bot is the normal way) b = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] }); });
 after(async () => { await b?.close(); await c?.stop(); });
 const open = async () => { const p = await b.newPage({ viewport: { width: 1100, height: 1400 } }); await p.goto(`http://127.0.0.1:${c.port}/app/#accounts`); await p.waitForSelector('#appsBox input'); for (const d of await p.locator('#appsBox details').all()) await d.evaluate(e => { e.open = true; }); return p; };
 

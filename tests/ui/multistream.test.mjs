@@ -15,7 +15,7 @@ before(async () => { ingestPort = await freePort(); c = await startCore({ env: {
 function edge() { if (process.env.IXC_TEST_BROWSER) return process.env.IXC_TEST_BROWSER; const base = 'C:/Program Files (x86)/Microsoft/EdgeCore'; for (const v of fs.existsSync(base) ? fs.readdirSync(base).sort().reverse() : []) { const f = path.join(base, v, 'msedge.exe'); if (fs.existsSync(f)) return f; } return undefined; }
 after(async () => { for (const f of cleanup.reverse()) await f(); await b?.close(); await c?.stop(); });
 async function open() { const p = await b.newPage({ viewport: { width: 1280, height: 1000 } }); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::|ERR_|fonts/i.test(m.text())) errors.push(m.text()); });
-  await p.goto(c.url.replace('127.0.0.1', 'localhost') + '/app/#multistream'); await p.waitForSelector('#msAdd'); return p; }
+  await p.goto(c.url.replace('127.0.0.1', 'localhost') + '/app/#multistream-legacy'); await p.waitForSelector('#msAdd'); return p; }
 const shot = (p, n) => p.screenshot({ path: path.join(shots, 'ms-' + n + '.png') });
 const list = async () => (await api(c, '/api/multistream')).body;
 async function addVia(p, { platform = 'custom', name, url, key }) { await p.click('#msAdd'); await p.selectOption('#mP', platform); await p.fill('#mN', name); await p.fill('#mU', url); await p.fill('#mK', key); await p.click('#mSave'); }

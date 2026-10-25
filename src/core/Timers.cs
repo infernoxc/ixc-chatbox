@@ -49,7 +49,7 @@ namespace IXC {
       if (cand.Count == 0) { reason = want.Count == 0 ? "no platform is set up" : "its platforms aren't set up"; return new List<string>(); }
       if (J.Bool(t, "liveOnly", true)) { cand = cand.Where(s => s.Viewers.Live == true && (DateTime.Now - s.Viewers.At).TotalSeconds < 300).ToList(); if (cand.Count == 0) { reason = "waiting for you to go live"; return new List<string>(); } }
       var ok = cand.Where(s => s.CanSend || s.ViaSb).Select(s => s.Id).ToList();
-      if (ok.Count == 0) reason = "IXC can't post on " + string.Join(", ", cand.Select(s => s.Label)) + " yet - connect your account (Platforms & accounts)";
+      if (ok.Count == 0) reason = "IXC can't post on " + string.Join(", ", cand.Select(s => s.Label)) + " yet - start Streamer.bot with that platform connected in it";
       return ok; }
     static long Last(string id) { lock (L) { var d = J.Obj(state, id); return d == null ? 0 : J.Long(d, "last", 0); } }
     static long LinesAt(string id) { lock (L) { var d = J.Obj(state, id); return d == null ? 0 : J.Long(d, "lines", 0); } }

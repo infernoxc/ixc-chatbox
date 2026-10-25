@@ -369,3 +369,6 @@ Record actual evidence only. Do not mark unverified features complete.
 ## 2026-10-25 Phase 2 checkpoint 1 (local, installed core NOT swapped)
 - Routing follows renamed OBS sources; Streamer.bot onExit option (keep/close, never forced, not while live) + live-stop confirmation. Tests 16 (2/2 x4) and 29 (6/6) pass on the new build; fixed a race in the 16 restart test.
 - Multistream read-only: Aitum 1.0.9 (Twitch, YouTube), obs-multi-rtmp 0.7.4 (Kick with empty server, YouTube duplicate); OBS main stream points at IXC ingest 127.0.0.1:19350 which is not listening. Details: D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.
+
+## 2026-10-25 Phase 2 checkpoint 2
+- Live IXC = 579ecdb (swapped with user OK, verified healthy). Final build (Streams status page /api/outputs, Studio pages off menu, dev apps Advanced-only, event-driven YouTube check) built in D:\OBS\New OBS File\build\final, NOT installed; SWAP-IXC-FINAL.ps1 ready. Tests: 48/50 subset on final build, 81/90 full on prior build (known env failures only). Finding: all Aitum/multi-rtmp stream keys empty on disk; main stream points at dead relay 127.0.0.1:19350. Details in D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.

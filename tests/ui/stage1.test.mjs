@@ -21,17 +21,17 @@ const text = (p) => p.textContent('#main').then(t => t.replace(/\s+/g, ' '));
 
 test('navigation: the eight Stage 1 pages in order, every existing feature still reachable, every entry opens without errors', async () => {
   const p = await open(c, 'home'); const nav = (await p.$$eval('#navList a', a => a.map(x => [...x.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim())));
-  const want = ['Overview', 'Chat', 'Platforms & Accounts', 'Multistream Studio', 'Vertical Studio', 'Automation Studio', 'OBS Control', 'Settings']; let at = -1; for (const w of want) { const i = nav.indexOf(w, at + 1); assert.ok(i > at, w + ' missing or out of order in ' + nav.join(' | ')); at = i; }
+  const want = ['Overview', 'Chat', 'Platforms & Accounts', 'Automation Studio', 'OBS Control', 'Settings']; let at = -1; for (const w of want) { const i = nav.indexOf(w, at + 1); assert.ok(i > at, w + ' missing or out of order in ' + nav.join(' | ')); at = i; }
   for (const keep of ['Commands', 'Timers', 'Chat filters', 'Music', 'Song requests', 'Audio routing', 'Chat voice (TTS)', 'Voices for people', 'Overlays & docks', 'Phone remote', 'Updates & diagnostics']) assert.ok(nav.includes(keep), 'existing page lost from the navigation: ' + keep);
   const ids = await p.$$eval('#navList a', a => a.map(x => x.dataset.p)); assert.equal(new Set(ids).size, ids.length, 'no duplicate entries'); await shot(p, '01-nav');
   for (const id of ids) { await p.evaluate((h) => { location.hash = '#' + h; }, id); await p.waitForTimeout(350); assert.equal(await p.evaluate(() => document.querySelector('#navList a.sel')?.dataset.p), id, 'selected nav entry for ' + id); if (id === 'chat') assert.equal(await p.locator('#main iframe').count(), 1, 'chat page is the chat panel'); else assert.ok((await text(p)).length > 20, id + ' page is empty'); assert.equal(await p.locator('#main .banner.err').count(), 0, id + ' shows a page error'); }
-  const titles = { home: 'Overview', accounts: 'Platforms & Accounts', multistream: 'Multistream Studio', vertical: 'Vertical Studio', automation: 'Automation Studio', obs: 'OBS Control', settings: 'Settings', chat: 'Chat' };
+  const titles = { home: 'Overview', accounts: 'Platforms & Accounts', multistream: 'Multistream', vertical: 'Vertical stream', automation: 'Automation Studio', obs: 'OBS Control', settings: 'Settings', chat: 'Chat' };
   for (const [id, t] of Object.entries(titles)) { await p.evaluate((h) => { location.hash = '#' + h; }, id); await p.waitForTimeout(250); assert.equal(await p.textContent('#pageTitle'), t); }
   await p.close(); assert.deepEqual(errors, []);
 });
 
 test('Multistream Studio: real OBS outputs, shared-encode relay clearly labelled, independent outputs marked not implemented', async () => {
-  const p = await open(c, 'multistream'); await p.waitForSelector('text=Stream status'); await p.waitForSelector('text=aitum_out_1'); const t = await text(p); await shot(p, '02-multistream');
+  const p = await open(c, 'multistream-legacy'); await p.waitForSelector('text=Stream status'); await p.waitForSelector('text=aitum_out_1'); const t = await text(p); await shot(p, '02-multistream');
   assert.match(t, /adv_stream/); assert.match(t, /aitum_out_1/); assert.match(t, /1 of 2 OBS outputs active/); assert.match(t, /OBS is not streaming/);
   assert.match(t, /Shared-encode destinations/); assert.match(t, /exactly the stream OBS encodes/); assert.match(t, /cannot give one of them its own bitrate or encoder/);
   assert.match(t, /Independent outputs/); assert.match(t, /Not implemented/); assert.match(t, /Aitum Multistream is detected in OBS \(version 1\.0\.8\)/); assert.match(t, /IXC does not edit them yet/);
@@ -42,7 +42,7 @@ test('Multistream Studio: real OBS outputs, shared-encode relay clearly labelled
 });
 
 test('Vertical Studio: shows what OBS reports, no vertical component detected, nothing to click except Refresh, unbuilt parts labelled', async () => {
-  const p = await open(c, 'vertical'); await p.waitForSelector('text=Multiple canvases'); const t = await text(p); await shot(p, '03-vertical');
+  const p = await open(c, 'vertical-legacy'); await p.waitForSelector('text=Multiple canvases'); const t = await text(p); await shot(p, '03-vertical');
   assert.match(t, /No vertical canvas component detected in OBS/); assert.match(t, /Multiple canvases/); assert.match(t, /1920×1080 base/); assert.match(t, /None - there is no vertical output to show/);
   assert.ok((t.match(/Not implemented/g) || []).length >= 3, 'unbuilt parts are labelled'); assert.match(t, /resized preview is not vertical support/);
   const buttons = await p.$$eval('#main button', a => a.map(x => x.id || x.textContent.trim())); assert.deepEqual(buttons, ['vRefresh'], 'only Refresh is a control: ' + buttons.join(','));
@@ -71,7 +71,7 @@ test('OBS Control: the existing controls plus the read-only report from OBS', as
 });
 
 test('without OBS the new pages say so plainly instead of showing made-up state', async () => {
-  for (const id of ['multistream', 'vertical', 'obs']) { const p = await open(c2, id); await p.waitForSelector('text=OBS information is not available', { timeout: 15000 }).catch(async () => { await p.waitForSelector('text=OBS information is not available', { timeout: 15000 }); });
-    const t = await text(p); assert.match(t, /OBS information is not available/); assert.doesNotMatch(t, /OBS is streaming|Aitum .* detected \(/); if (id === 'vertical') { await shot(p, '06-vertical-no-obs'); assert.deepEqual(await p.$$eval('#main button', a => a.map(x => x.id)), ['vRefresh']); } await p.close(); }
+  for (const id of ['multistream-legacy', 'vertical-legacy', 'obs']) { const p = await open(c2, id); await p.waitForSelector('text=OBS information is not available', { timeout: 15000 }).catch(async () => { await p.waitForSelector('text=OBS information is not available', { timeout: 15000 }); });
+    const t = await text(p); assert.match(t, /OBS information is not available/); assert.doesNotMatch(t, /OBS is streaming|Aitum .* detected \(/); if (id === 'vertical-legacy') { await shot(p, '06-vertical-no-obs'); assert.deepEqual(await p.$$eval('#main button', a => a.map(x => x.id)), ['vRefresh']); } await p.close(); }
   assert.deepEqual(errors, []);
 });

@@ -39,7 +39,8 @@ namespace IXC {
     // why IXC can't send as this account yet, in the order the streamer has to fix it (null = the account is ready): app -> sign-in -> still valid
     public static string ReplyBlocker(string p, string label) {
       var app = p == "youtube" ? "Google (YouTube)" : label;
-      if (!Available(p)) return "To reply on " + label + ": add your " + app + " app (Platforms & accounts > Your apps), then connect your " + label + " account";
+      // Streamer.bot is the normal way to reply (it holds the platform sign-ins); an own developer app is the advanced alternative
+      if (!Available(p)) return "To reply on " + label + ": connect " + label + " in Streamer.bot and keep it running (advanced alternative: turn on Advanced in Settings, add your " + app + " app under Platforms & accounts > Your apps, then connect your " + label + " account)";
       var a = Raw(p); if (a == null) return "To reply on " + label + ": connect your " + label + " account (Platforms & accounts > Connect)";
       if (J.Bool(a, "invalid", false)) { var why = J.Str(a, "reason", ""); return label + ": " + (why.Length > 0 ? why : "sign-in expired - connect your " + label + " account again"); }
       return null; }

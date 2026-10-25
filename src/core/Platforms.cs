@@ -394,6 +394,8 @@ namespace IXC {
     string endedVideo = ""; DateTime endedAt = DateTime.MinValue;
     bool JustEnded(string id) { return id.Length > 0 && id == endedVideo && (DateTime.Now - endedAt).TotalMinutes < 10; }
     static int EndConfirmMs { get { return int.Parse(Ep.Get("youtube_end_confirm_ms", "45000")); } }
+    static int NotLiveWaitMs { get { return int.Parse(Ep.Get("youtube_notlive_ms", Platforms.Sb != null && Platforms.Sb.Ready ? "300000" : "30000")); } }
+    public void ObsWentLive() { if (state != "connected") { Log.Debug("chat", "YouTube: OBS went live - looking for the stream now"); wake.Set(); } }
     public void StreamerBotVideo(string id) {
       if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
       sbVideo = id; Log.Info("chat", "YouTube: Streamer.bot names your live stream " + id);
@@ -413,7 +415,9 @@ namespace IXC {
             // the stream is found once; after that IXC stays on it (like a Twitch or Kick connection) and only re-opens its chat
             if (VideoId.Length == 0) {
               if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-              if (!FindLive()) { Set(whyIsProblem ? "error" : "unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
+              // not live: woken at once when OBS starts streaming or Streamer.bot names the stream; the timed look is only a fallback
+              // (30 s without Streamer.bot; 5 min with it, since Streamer.bot reports YouTube broadcasts itself)
+              if (!FindLive()) { Set(whyIsProblem ? "error" : "unavailable", notLiveWhy + " - IXC looks again when you go live"); wait = NotLiveWaitMs; fails = 0; wake.WaitOne(wait); continue; } }
             OpenChat(); openedAt = DateTime.Now; if (state != "connected") Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); Set("connected", ""); }
           int timeout = Poll(); fails = 0; endSignals = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {

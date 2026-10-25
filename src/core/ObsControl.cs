@@ -26,7 +26,7 @@ namespace IXC {
         try { Scene = J.Str(await Obs.Link.Call("GetCurrentProgramScene", null), "currentProgramSceneName", J.Str(await Obs.Link.Call("GetCurrentProgramScene", null), "sceneName", "")); } catch { }
         Publish(); }); }
     public static void OnEvent(string type, Dictionary<string, object> d) {
-      if (type == "StreamStateChanged") { var was = Streaming; Streaming = J.Bool(d, "outputActive", false); if (was != Streaming) Log.Info("obs", Streaming ? "OBS started streaming" : "OBS stopped streaming"); Publish(); }
+      if (type == "StreamStateChanged") { var was = Streaming; Streaming = J.Bool(d, "outputActive", false); if (was != Streaming) { Log.Info("obs", Streaming ? "OBS started streaming" : "OBS stopped streaming"); if (Streaming) try { if (Platforms.YouTube != null) Platforms.YouTube.ObsWentLive(); } catch (NullReferenceException) { } } Publish(); }
       else if (type == "RecordStateChanged") { var was = Recording; Recording = J.Bool(d, "outputActive", false); if (was != Recording) Log.Info("obs", Recording ? "OBS started recording" : "OBS stopped recording"); Publish(); }
       else if (type == "CurrentProgramSceneChanged") { Scene = J.Str(d, "sceneName", ""); Publish(); } }
     static void Publish() { Hub.Publish("status", Status.Msg()); }

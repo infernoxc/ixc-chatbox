@@ -101,20 +101,20 @@
 
   // ======================= PLATFORMS & ACCOUNTS =======================
   page('accounts', 'Platforms & Accounts', (main) => {
-    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. <b>Connect</b> your account to also reply from IXC, get follower alerts and see Twitch viewers.</p><div class="grid" id="acc"></div><div class="grid" id="appsBox" style="margin-top:12px"></div>`;
+    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. Replies, alerts and your platform sign-ins are handled by <b>Streamer.bot</b> (connect Twitch, YouTube and Kick there, under Platforms). No developer apps needed.</p><div class="grid" id="acc"></div><div class="grid" id="appsBox" style="margin-top:12px"></div>`;
     const NOTE = { twitch: 'Reads chat without signing in. Sign in for replies, follower alerts and viewer counts.', kick: 'Reads chat and viewers without signing in. Sign in to reply.', youtube: 'Finds your live stream by itself. Sign in to reply in YouTube chat.', rumble: 'Copy your "Live Stream API" link from rumble.com (Account > Live Stream API) and paste it here. Rumble doesn\'t allow apps to send chat.' };
     const paint = () => { const st = (S.status || {}).chat || {}, acc = S.accounts || {};
       $('acc').innerHTML = plats.map(p => { const s = st[p] || {}, a = acc[p] || {}, ac = a.account, fl = a.flow;
         const chan = p === 'rumble' ? `<div class="field"><label class="lbl">Live Stream API link</label><div class="val"><input type="url" id="rumbleUrl" placeholder="${ac ? '(saved - paste a new one to replace it)' : 'https://rumble.com/-livestream-api/get-data?key=…'}"><button id="rumbleSave">Save</button></div></div><div class="actions"><button data-open-url="https://rumble.com/account/livestream-api">Open rumble.com to copy it</button></div>`
           : ctl.text('platforms.' + p + '.channel', p === 'youtube' ? 'Your channel' : 'Your channel name', p === 'youtube' ? '@yourhandle or channel link' : p === 'twitch' ? 'yourname' : 'your-name');
-        const account = p === 'rumble' ? '' : !a.available ? `<div class="hint">To reply here, add your ${P[p].name} app under <b>Your apps</b> below.</div>` : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
+        const account = p === 'rumble' ? '' : !a.available ? (S.values['general.advanced'] ? `<div class="hint">Replies go through Streamer.bot. Advanced: add your own ${P[p].name} app under <b>Your apps</b> below.</div>` : '') : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
           : fl && fl.state === 'waiting' ? `<div class="banner info" style="margin-top:6px">${esc(fl.message)}${fl.userCode ? ` - code <b style="font-size:18px;letter-spacing:2px">${esc(fl.userCode)}</b>` : ''}<span class="grow"></span>${fl.url ? `<button data-open-url="${esc(fl.url)}">Open again</button>` : ''}<button data-cancel="${p}">Cancel</button></div>`
           : `<div class="actions"><button class="primary" data-connect="${p}">Connect ${P[p].name} account</button></div>${fl && fl.state === 'failed' ? `<div class="err small">${esc(fl.message)}</div>` : ''}`;
         return `<div class="card"><div class="plat"><span class="logo2 ${p}">${P[p].tag.slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${P[p].name}</h3><div class="small muted">${esc(s.configured ? s.detail || '' : '')}</div></div>${UI.pill(s.configured ? s.state : 'off')}</div>${s.configured ? `<div class="tiny muted" style="margin:6px 0 2px">Last chat message: ${s.lastMessage ? new Date(s.lastMessage).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'none since IXC started'} · ${ac ? (ac.invalid ? '⚠ sign-in expired - connect again' : 'can reply') : p === 'rumble' ? 'read-only (Rumble has no sending API)' : 'read-only until you connect the account'}</div>` : ''}
           ${ctl.toggle('platforms.' + p + '.enabled', 'Use ' + P[p].name)}${chan}${account}<div class="hint" style="margin-top:8px">${NOTE[p]}${s.configured && s.sendVia === 'streamerbot' ? '<br>Replies: sent through Streamer.bot ✓' : s.configured && !s.canSend && p !== 'rumble' ? '<br>Replies: ' + esc(s.sendNote) : ''}</div></div>`; }).join('') +
-        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional bridge, not needed)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
+        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(replies, alerts and platform sign-ins)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
           ${ctl.select('platforms.streamerbot.mode', 'Use Streamer.bot', [['auto', 'Automatically, when it\'s running'], ['on', 'Always (keep trying)'], ['off', 'Never']])}
-          <div class="actions"><button data-go="streamerbot">Streamer.bot settings &amp; status</button></div><div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
+          <div class="actions"><button data-go="streamerbot">Streamer.bot settings &amp; status</button></div><div class="hint">Connect your platforms inside Streamer.bot; IXC reads their chat and events and sends your replies through it. IXC's own commands, timers, chat voice, music and OBS controls keep working without it.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
       paintApps();
       const rs = $('rumbleSave'); if (rs) rs.onclick = async () => { const r = await IXC.api('/api/accounts/rumble/rumble', { url: $('rumbleUrl').value }); toast(r.ok ? 'Rumble connected' : r.error, !r.ok); }; };
     // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
@@ -134,7 +134,9 @@
             <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div><div class="small" id="app_${k}_msg" role="status" style="margin-top:6px"></div></details>`; }).join('')}</div>`; }
     // The card is redrawn only when the saved app data changed. Whatever is typed but not saved yet (IDs, secrets, which steps are open) is kept.
     let appsKey = null;
-    function paintApps(force, resetKey) { const box = $('appsBox'); if (!box) return; const apps = (S.accounts || {}).apps || {}, key = JSON.stringify(apps);
+    function paintApps(force, resetKey) { const box = $('appsBox'); if (!box) return; const apps = (S.accounts || {}).apps || {}, key = JSON.stringify(apps) + !!S.values['general.advanced'];
+      // developer apps are an advanced alternative to Streamer.bot: shown only in Advanced mode or when one is already saved
+      if (!S.values['general.advanced'] && !Object.values(apps).some(a => a && a.own)) { box.innerHTML = ''; appsKey = key; return; }
       if (!force && key === appsKey && box.firstChild) return; appsKey = key;
       const draft = {}, open = {}; box.querySelectorAll('input').forEach(i => { draft[i.id] = i.value; }); box.querySelectorAll('details').forEach(d => { open[d.dataset.k] = d.open; });
       box.innerHTML = appsCard(apps);
@@ -483,11 +485,34 @@
     paint(); on('settings', () => { if (document.activeElement && document.activeElement.closest('#main')) return; paint(); });
   });
   // ======================= MULTISTREAM =======================
+  // Multistreaming and the vertical canvas are done in OBS by the Aitum plugins; IXC's own studio pages were not working, so they are off the menu.
+  // Old links land on this note; the old pages stay under #multistream-legacy / #vertical-legacy (backend unchanged).
+  // Streams: Twitch / YouTube / Kick as OBS and its plugins have them set up (read-only; /api/outputs never returns a stream key).
+  // "STREAMING" means OBS reports the output active (local), not that the platform confirmed it receives the stream.
+  page('multistream', 'Streams', (main) => {
+    const ST = { 'STREAMING': 'connected', 'CONNECTING': 'connecting', 'READY': 'idle', 'ERROR': 'error', 'NOT CONFIGURED': 'off', 'DISCONNECTED': 'disconnected' };
+    const NAME = { twitch: 'Twitch', youtube: 'YouTube', kick: 'Kick' };
+    async function load() { const r = await IXC.api('/api/outputs'); if (App.current !== 'multistream') return; paint(r); }
+    function paint(r) {
+      if (!r || !r.ok) { main.innerHTML = card('📡 Streams', `<div class="err">${esc((r && r.error) || 'IXC could not read the stream settings')}</div>`); return; }
+      main.innerHTML = `<div class="actions" style="margin:0 0 10px"><button class="primary" id="outCheck">Check all</button><span class="small muted" style="align-self:center">OBS: ${esc(r.obs)} · start and stop each platform in OBS's Aitum Multistream dock</span></div>`
+        + (r.mainIssue ? `<div class="banner warn" style="margin-bottom:10px">${esc(r.mainIssue)}</div>` : '')
+        + `<div class="grid">` + ['twitch', 'youtube', 'kick'].map(p => { const x = r.platforms[p];
+          return `<div class="card"><div class="plat"><span class="logo2 ${p}">${NAME[p].slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${NAME[p]}</h3></div>${UI.pill(ST[x.state] || 'off', x.state)}</div>`
+            + (x.liveNote ? `<div class="small" style="margin-top:6px">${esc(x.liveNote)}</div>` : '')
+            + (x.outputs.length ? `<ul class="small" style="margin:6px 0 0 16px;padding:0">${x.outputs.map(o => `<li>${esc(o.via)}: <b>${esc(o.name)}</b> · ${o.serverSet ? esc(o.server) : '<span class="err">no server</span>'} · key ${o.keySet ? 'set' : '<span class="err">not set</span>'} · audio track ${o.audioTrack}</li>`).join('')}</ul>` : `<div class="small muted" style="margin-top:6px">No output for ${NAME[p]} in OBS. Add one in the Aitum Multistream dock (server address + stream key from ${NAME[p]}'s dashboard).</div>`)
+            + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
+        + `<p class="tiny muted">${esc(r.note)}${r.otherActiveOutputs && r.otherActiveOutputs.length ? ' Other active OBS outputs: ' + esc(r.otherActiveOutputs.join(', ')) : ''}</p>`;
+      $('outCheck').onclick = load; }
+    main.innerHTML = '<p class="muted">Reading OBS…</p>'; load();
+    const iv = setInterval(() => { if (App.current !== 'multistream') return clearInterval(iv); load(); }, 5000); });
+  for (const [id, title] of [['vertical', 'Vertical stream']]) page(id, title, (main) => {
+    main.innerHTML = card('📡 ' + title + ' is done in OBS', `<p class="small" style="margin-top:0">Use the <b>Aitum Multistream</b> dock in OBS to start and stop each platform, and its settings for bitrate and encoder. IXC shows OBS's real stream and output status under <a href="#obs">OBS Control</a>, and sends music and chat voice to each platform under <a href="#audio">Audio routing</a>.</p><p class="small">If OBS &gt; Settings &gt; Stream points at <code>rtmp://127.0.0.1:19350/live</code>, that was IXC's old relay: set it to your main platform instead.</p>`); });
   // One OBS stream, forwarded by IXC to up to 8 destinations. Stream keys are write-only: typed here, stored encrypted, never shown again.
-  page('multistream', 'Multistream Studio', (main) => {
+  page('multistream-legacy', 'Multistream Studio (old)', (main) => {
     let d = null, showIngest = false;
     const MAX = 8;
-    async function load() { const r = await IXC.api('/api/multistream'); if (r && r.destinations) { d = r; paint(); } Caps.get().then(() => { if (App.current === 'multistream') paint(); }); }
+    async function load() { const r = await IXC.api('/api/multistream'); if (r && r.destinations) { d = r; paint(); } Caps.get().then(() => { if (App.current === 'multistream-legacy') paint(); }); }
     const fmtMB = (n) => (n || 0).toFixed(n >= 10 ? 0 : 1);
     function publishing(x) {   // is the platform actually receiving the stream? (not the same as "the server answers")
       const r = x.relay || {};
@@ -528,7 +553,7 @@
         <div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(p[0], p[1])}</div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">${UI.pill(c[0], c[1])}</div>
         <div class="actions" style="margin-top:10px"><button class="small" data-act="check" data-id="${esc(x.id)}">Check server</button> <button class="small" data-act="edit" data-id="${esc(x.id)}">Edit</button> <button class="small" data-act="del" data-id="${esc(x.id)}">Delete</button></div></div>`; }
-    function paint() { if (App.current !== 'multistream' || !d) return;
+    function paint() { if (App.current !== 'multistream-legacy' || !d) return;
       if (document.getElementById('msModal')) return;   // never redraw under an open editor
       const n = d.destinations.length;
       main.innerHTML = studioStatus() + `<h3 style="margin:18px 0 4px">Shared-encode destinations <span class="small muted">· IXC relay</span></h3><div class="small muted" style="margin-bottom:8px">Every destination here receives exactly the stream OBS encodes: one encoder, no extra encoding load, and the same bitrate, resolution and codecs for all. IXC cannot give one of them its own bitrate or encoder.</div>` + relayCard() + `<h3 style="margin:18px 0 8px">Destinations <span class="small muted">(${n} of ${MAX})</span></h3>` +
@@ -564,13 +589,13 @@
       else if (a === 'showkey') { showIngest = !showIngest; paint(); }
       else if (a === 'copy') { try { await navigator.clipboard.writeText(t.dataset.v); toast('Copied'); } catch (err) { toast('Select the text and press Ctrl+C', true); } } };
     main.onchange = async (e) => { const id = e.target.dataset.en; if (!id) return; const r = await IXC.api('/api/multistream/save', { id, enabled: e.target.checked }); if (!r.ok) toast(r.error, true); load(); };
-    load(); const iv = setInterval(() => { if (App.current !== 'multistream') return clearInterval(iv); load(); }, 2000);
+    load(); const iv = setInterval(() => { if (App.current !== 'multistream-legacy') return clearInterval(iv); load(); }, 2000);
   });
   // ======================= VERTICAL STUDIO =======================
   // Honest shell: shows what OBS and its plugins really report. A 9:16 canvas with its own scenes and output needs an OBS-side component;
   // IXC controls for it are not built yet, so none are shown.
-  page('vertical', 'Vertical Studio', (main) => {
-    async function paint() { if (App.current !== 'vertical') return; const c = Caps.data;
+  page('vertical-legacy', 'Vertical Studio (old)', (main) => {
+    async function paint() { if (App.current !== 'vertical-legacy') return; const c = Caps.data;
       const vv = c && c.ok ? Caps.vendor('aitum-vertical-canvas') : null; const det = !!(vv && vv.registered);
       main.innerHTML = card('📐 Vertical canvas (9:16)', (!c ? '<p class="muted">Asking OBS…</p>' : !c.ok ? Caps.down(c, 'id="vRefresh"') : `<div class="row" style="gap:10px;flex-wrap:wrap">${UI.pill(det ? 'connected' : 'off', det ? 'Aitum Vertical Canvas detected' + (vv.answer && vv.answer.version ? ' (' + esc(vv.answer.version) + ')' : '') : 'No vertical canvas component detected in OBS')}</div>
           <table class="t" style="margin-top:10px"><tr><td>OBS</td><td class="small">${esc(c.obs.obsVersion)} · obs-websocket ${esc(c.obs.obsWebSocketVersion)}</td></tr>
@@ -586,7 +611,7 @@
           <div class="hint" style="margin-top:8px">A real vertical output is a second canvas with its own scenes and its own encoder, rendered by OBS. IXC will only show controls here after they have been tested on this PC's OBS. A resized preview is not vertical support.</div>`);
     }
     main.onclick = async (e) => { if (e.target.id === 'vRefresh') { e.target.textContent = 'Asking OBS…'; await Caps.get(true); paint(); } };
-    paint(); Caps.get().then(paint); const iv = setInterval(() => { if (App.current !== 'vertical') return clearInterval(iv); Caps.get().then(paint); }, 15000);
+    paint(); Caps.get().then(paint); const iv = setInterval(() => { if (App.current !== 'vertical-legacy') return clearInterval(iv); Caps.get().then(paint); }, 15000);
   });
 
   // ======================= AUTOMATION STUDIO =======================
