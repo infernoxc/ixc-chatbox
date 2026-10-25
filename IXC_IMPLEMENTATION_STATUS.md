@@ -372,3 +372,6 @@ Record actual evidence only. Do not mark unverified features complete.
 
 ## 2026-10-25 Phase 2 checkpoint 2
 - Live IXC = 579ecdb (swapped with user OK, verified healthy). Final build (Streams status page /api/outputs, Studio pages off menu, dev apps Advanced-only, event-driven YouTube check) built in D:\OBS\New OBS File\build\final, NOT installed; SWAP-IXC-FINAL.ps1 ready. Tests: 48/50 subset on final build, 81/90 full on prior build (known env failures only). Finding: all Aitum/multi-rtmp stream keys empty on disk; main stream points at dead relay 127.0.0.1:19350. Details in D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.
+
+## 2026-10-25 Final state
+- Installed: build final2 (C90AA344). Aitum 1.0.9 is the single stream manager (Twitch 6000 / YouTube 17000 / Kick 8000, AMD H.264 CBR, 2 s keyframe, tracks 1/3/2), all READY by saved settings. Live tests: record start/stop PASS, local encoder load PASS, Streamer.bot link reconnect PASS; live ingest, chat test, upload NOT TESTED/MEASURED. IXC start/stop controls for Aitum NOT BUILT (unverifiable without a broadcast). Details: D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.
