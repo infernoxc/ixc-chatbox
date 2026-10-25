@@ -74,14 +74,19 @@ namespace IXC {
       var plats = new Dictionary<string, object>();
       foreach (var p in Plats) {
         var mine = conf.Where(e => J.Str(e, "platform", "") == p).ToList(); if (main != null && J.Str(main, "platform", "") == p) mine.Insert(0, main);
-        var issues = new List<string>();
-        if (mine.Count > 1) issues.Add(p + " is set up " + mine.Count + " times (" + string.Join(", ", mine.Select(e => J.Str(e, "via", ""))) + "): start only one, or the platform gets two streams");
-        foreach (var e in mine) { if (!J.Bool(e, "serverSet", false)) issues.Add(J.Str(e, "via", "") + " \"" + J.Str(e, "name", "") + "\" has no server address"); if (!J.Bool(e, "keySet", false)) issues.Add(J.Str(e, "via", "") + " \"" + J.Str(e, "name", "") + "\" has no stream key"); }
+        // only a complete output (server + key) can send: incomplete leftovers are no duplicate, and only an error when nothing complete exists
+        var issues = new List<string>(); var notes = new List<string>();
+        Func<Dictionary<string, object>, bool> usable = e => J.Bool(e, "serverSet", false) && J.Bool(e, "keySet", false);
+        var ready = mine.Where(usable).ToList();
+        if (ready.Count > 1) issues.Add(p + " is set up " + ready.Count + " times (" + string.Join(", ", ready.Select(e => J.Str(e, "via", ""))) + "): start only one, or the platform gets two streams");
+        foreach (var e in mine.Where(e => !usable(e))) {
+          var why = J.Str(e, "via", "") + " \"" + J.Str(e, "name", "") + "\" has no " + (!J.Bool(e, "serverSet", false) && !J.Bool(e, "keySet", false) ? "server address or stream key" : !J.Bool(e, "serverSet", false) ? "server address" : "stream key");
+          if (ready.Count > 0) notes.Add(why + " (unused - it cannot send)"); else issues.Add(why); }
         // live: OBS's main output when it goes to this platform; plugin outputs are matched by name (which plugin output belongs to which platform
         // is only known when its OBS output name says so)
         var act = live.Where(o => (main != null && J.Str(main, "platform", "") == p && Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")) || J.Str(o, "output", "").ToLowerInvariant().Contains(p)).ToList();
         string state = !Obs.Link.Ready ? "DISCONNECTED" : act.Any(o => J.Bool(o, "reconnecting", false)) ? "CONNECTING" : act.Count > 0 ? "STREAMING" : mine.Count == 0 ? "NOT CONFIGURED" : issues.Count > 0 ? "ERROR" : "READY";
-        plats[p] = J.D("state", state, "outputs", mine, "issues", issues, "live", act, "liveNote", act.Count > 0 ? "OBS is sending (local output active); the platform's confirmation is not checked" : ""); }
+        plats[p] = J.D("state", state, "outputs", mine, "issues", issues, "notes", notes, "live", act, "liveNote", act.Count > 0 ? "OBS is sending (local output active); the platform's confirmation is not checked" : ""); }
       var unmatched = live.Where(o => !Plats.Any(p => J.Str(o, "output", "").ToLowerInvariant().Contains(p)) && !Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")).Select(o => J.Str(o, "output", "")).ToList();
       return J.D("ok", true, "obs", Obs.Link.Ready ? "connected" : Obs.Link.State, "platforms", plats, "main", main, "mainIssue", main != null && J.Bool(main, "ixcRelay", false) ? "OBS's Start Streaming button sends to " + J.Str(main, "server", "") + " (IXC's old multistream relay), which IXC no longer runs: set Settings > Stream to your main platform" : null,
         "otherActiveOutputs", unmatched, "liveError", liveErr, "note", "Settings are read from OBS's saved files, which OBS rewrites when you change them in its windows. Check All reads them again."); }

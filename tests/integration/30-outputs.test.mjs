@@ -37,3 +37,16 @@ test('Outputs: this PC\'s real OBS settings (states only)', { skip: !process.env
   console.log('REAL main', r.mainIssue || 'ok');
   assert.ok(!/live_[A-Za-z0-9]{8,}|sk_|[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}/.test(JSON.stringify(r)), 'nothing key-shaped in the result');
 });
+// the user's real shape: complete Aitum outputs for all three + leftover multi-rtmp targets without key/server -> READY, leftovers only noted
+test('Outputs: incomplete leftover targets are not duplicates and do not make a platform ERROR', async () => {
+  const d = obsDir(); const a = path.join(d, 'plugin_config', 'aitum-multistream', 'config.json'); const j = JSON.parse(fs.readFileSync(a, 'utf8'));
+  j.profiles[0].outputs.push({ name: 'Kick Output', stream_server: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app', stream_key: KEY, audio_track: 1 }); fs.writeFileSync(a, JSON.stringify(j));
+  const mr = path.join(d, 'basic', 'profiles', 'Untitled', 'obs-multi-rtmp.json'); const m = JSON.parse(fs.readFileSync(mr, 'utf8'));
+  m.targets[0]['service-param'] = { server: '', key: '' }; m.targets[1]['service-param'].key = ''; fs.writeFileSync(mr, JSON.stringify(m));
+  const obs = await fakeObs({}); cleanup.push(obs.close);
+  const c = await startCore({ env: { IXC_EP_OBS_CONFIG_DIR: d }, config: { obs: { websocketUrl: obs.url } } }); cleanup.push(() => c.stop());
+  let r; for (let i = 0; i < 40; i++) { r = (await api(c, '/api/outputs')).body; if (r.obs === 'connected') break; await new Promise(s => setTimeout(s, 250)); }
+  for (const p of ['twitch', 'youtube', 'kick']) assert.equal(r.platforms[p].state, 'READY', p + ': ' + JSON.stringify(r.platforms[p].issues));
+  assert.match(r.platforms.kick.notes.join(' '), /no server address or stream key \(unused/); assert.match(r.platforms.youtube.notes.join(' '), /no stream key \(unused/);
+  assert.equal(r.platforms.kick.outputs.find(o => o.via === 'Aitum Multistream').audioTrack, 2);
+});

@@ -501,7 +501,7 @@
           return `<div class="card"><div class="plat"><span class="logo2 ${p}">${NAME[p].slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${NAME[p]}</h3></div>${UI.pill(ST[x.state] || 'off', x.state)}</div>`
             + (x.liveNote ? `<div class="small" style="margin-top:6px">${esc(x.liveNote)}</div>` : '')
             + (x.outputs.length ? `<ul class="small" style="margin:6px 0 0 16px;padding:0">${x.outputs.map(o => `<li>${esc(o.via)}: <b>${esc(o.name)}</b> · ${o.serverSet ? esc(o.server) : '<span class="err">no server</span>'} · key ${o.keySet ? 'set' : '<span class="err">not set</span>'} · audio track ${o.audioTrack}</li>`).join('')}</ul>` : `<div class="small muted" style="margin-top:6px">No output for ${NAME[p]} in OBS. Add one in the Aitum Multistream dock (server address + stream key from ${NAME[p]}'s dashboard).</div>`)
-            + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
+            + (x.notes && x.notes.length ? `<ul class="small muted" style="margin:6px 0 0 16px;padding:0">${x.notes.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
         + `<p class="tiny muted">${esc(r.note)}${r.otherActiveOutputs && r.otherActiveOutputs.length ? ' Other active OBS outputs: ' + esc(r.otherActiveOutputs.join(', ')) : ''}</p>`;
       $('outCheck').onclick = load; }
     main.innerHTML = '<p class="muted">Reading OBS…</p>'; load();
