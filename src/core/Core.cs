@@ -150,6 +150,8 @@ namespace IXC {
     static Dictionary<string, object> S = new Dictionary<string, object>(); static string file; static readonly object L = new object();
     static readonly byte[] Entropy = Encoding.UTF8.GetBytes("IXC-OBS secrets v1");
     public static string Problem = "";
+    // null when the last write to secrets.dat worked; otherwise the reason (callers that must not claim "saved" check it)
+    public static volatile string SaveError;
     public static void Load(string dir) {
       file = Path.Combine(dir, "secrets.dat");
       if (!File.Exists(file)) return;
@@ -163,8 +165,8 @@ namespace IXC {
     public static void Save() {
       byte[] data; lock (L) data = Encoding.UTF8.GetBytes(J.Ser(S));
       try { var enc = ProtectedData.Protect(data, Entropy, DataProtectionScope.CurrentUser); var tmp = file + ".tmp"; File.WriteAllBytes(tmp, enc);
-        if (File.Exists(file)) File.Replace(tmp, file, null); else File.Move(tmp, file); }
-      catch (Exception e) { Log.Err("auth", "secrets save failed: " + e.Message); } }
+        if (File.Exists(file)) File.Replace(tmp, file, null); else File.Move(tmp, file); SaveError = null; }
+      catch (Exception e) { SaveError = e.GetType().Name; Log.Err("auth", "secrets save failed: " + e.Message); } }
     public static List<string> Keys() { lock (L) return S.Keys.ToList(); }
   }
 

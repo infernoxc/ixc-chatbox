@@ -72,10 +72,11 @@ namespace IXC {
     public override void Restart() { irc.Restart(); es.Restart(); PollNow(); }
     public override void Kick() { irc.Kick(); es.Kick(); }
     public override bool CanSend { get { return irc.Ready && irc.Authed; } }
-    public override string SendNote { get { return !Accounts.Has("twitch") ? "Sign in to Twitch (Accounts) to reply" : irc.Ready ? "Twitch sign-in expired - sign in again" : "Twitch chat is not connected"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("twitch", "Twitch") ?? (Accounts.Info("twitch") != null && !J.List(Accounts.Info("twitch"), "scopes").Contains("chat:edit") ? "Twitch: this sign-in lacks the chat permission - connect your Twitch account again" : !irc.Ready ? "Twitch chat is not connected" : !irc.Authed ? "Twitch did not accept the sign-in - connect your Twitch account again" : ""); } }
     public override async Task<string> Send(string text) {
       if (!CanSend) return SendNote;
-      try { await irc.Tx("PRIVMSG #" + Login + " :" + text); irc.EchoOwn(text); return null; } catch (Exception e) { return U.Plain(e); } }
+      await irc.SendLock.WaitAsync();
+      try { var err = await irc.TxConfirmed("PRIVMSG #" + Login + " :" + text, 5000); if (err == null) irc.EchoOwn(text); return err; } catch (Exception e) { return U.Plain(e); } finally { irc.SendLock.Release(); } }
     public override List<string> OwnNames() { var a = Accounts.Info("twitch"); var l = new List<string> { Login }; if (a != null) l.Add(J.Str(a, "login", "")); return l.Where(x => x.Length > 0).ToList(); }
     public override void PollViewers() {
       if (!Accounts.Has("twitch")) { PublicViewers(); return; }
@@ -112,6 +113,13 @@ namespace IXC {
   }
 
   public class TwitchIrc : WsLink {
+    volatile TaskCompletionSource<string> pendingSend; public readonly SemaphoreSlim SendLock = new SemaphoreSlim(1, 1);
+    // a send is only "sent" once Twitch answers with USERSTATE; a NOTICE (rate limit, slow mode, banned...) is the refusal
+    public async Task<string> TxConfirmed(string line, int waitMs) {
+      var tcs = new TaskCompletionSource<string>(); pendingSend = tcs;
+      try { await Tx(line); var done = await Task.WhenAny(tcs.Task, Task.Delay(waitMs)); if (done != tcs.Task) return "Twitch did not confirm the message, so it may not have been delivered"; return tcs.Task.Result; }
+      finally { pendingSend = null; } }
+    void ResolveSend(string err) { var t = pendingSend; if (t != null) t.TrySetResult(err); }
     readonly TwitchSource src; public volatile bool Authed; string nick = ""; bool forceAnon; string room = "";
     readonly ManualResetEventSlim welcome = new ManualResetEventSlim(false), joined = new ManualResetEventSlim(false); volatile string failure;
     public TwitchIrc(TwitchSource s) { src = s; Name = "Twitch chat"; Area = "chat"; IdleTimeoutSec = 400; }
@@ -152,11 +160,13 @@ namespace IXC {
         case "RECONNECT": Log.Info("chat", "Twitch asked IXC to reconnect"); try { ws.Abort(); } catch { } break;
         case "JOIN": if (string.Equals(login, nick, StringComparison.OrdinalIgnoreCase)) joined.Set(); break;
         case "ROOMSTATE": joined.Set(); break;
+        case "USERSTATE": ResolveSend(null); break;
         case "NOTICE": {
           var id = Get(tags, "msg-id"); var text = trailing ?? "";
           if (text.Contains("Login authentication failed") || text.Contains("Improperly formatted auth")) { failure = "auth: " + text; welcome.Set(); }
           else if (id == "msg_channel_suspended" || id == "tos_ban" || id == "msg_banned") { failure = "Twitch: " + text; joined.Set(); }
-          else if (id == "msg_ratelimit" || id == "msg_duplicate" || id == "msg_slowmode" || id == "msg_followersonly" || id == "msg_subsonly" || id == "msg_emoteonly") { Log.Info("chat", "Twitch didn't send your message: " + text); Hub.Publish("chat", J.D("type", "chat.reply", "platform", "twitch", "text", "", "error", "Twitch: " + text)); }
+          else if (id == "msg_ratelimit" || id == "msg_duplicate" || id == "msg_slowmode" || id == "msg_followersonly" || id == "msg_subsonly" || id == "msg_emoteonly") { Log.Info("chat", "Twitch didn't send your message: " + text); Hub.Publish("chat", J.D("type", "chat.reply", "platform", "twitch", "text", "", "error", "Twitch: " + text)); ResolveSend("Twitch: " + text); }
+          else if (pendingSend != null && id != null && id.StartsWith("msg_")) ResolveSend("Twitch: " + text);
           else Log.Debug("chat", "Twitch notice: " + text);
           break; }
         case "PRIVMSG": {
@@ -230,7 +240,7 @@ namespace IXC {
     public override void Restart() { ChatroomId = ""; pusher.Restart(); PollNow(); }
     public override void Kick() { pusher.Kick(); }
     public override bool CanSend { get { return Accounts.Has("kick") && !Accounts.IsInvalid("kick"); } }
-    public override string SendNote { get { return !Accounts.Has("kick") ? "Sign in to Kick (Accounts) to reply" : "Kick sign-in expired - sign in again"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("kick", "Kick") ?? ""; } }
     // channel lookup: kick.com's public channel data (has the chat room); the official API as a fallback (no chat room id)
     public bool Resolve() {
       var slug = Slug; var cached = J.Str(Cfg.D, "platforms.kick.cache", "");
@@ -384,13 +394,15 @@ namespace IXC {
     string endedVideo = ""; DateTime endedAt = DateTime.MinValue;
     bool JustEnded(string id) { return id.Length > 0 && id == endedVideo && (DateTime.Now - endedAt).TotalMinutes < 10; }
     static int EndConfirmMs { get { return int.Parse(Ep.Get("youtube_end_confirm_ms", "45000")); } }
+    static int NotLiveWaitMs { get { return int.Parse(Ep.Get("youtube_notlive_ms", Platforms.Sb != null && Platforms.Sb.Ready ? "300000" : "30000")); } }
+    public void ObsWentLive() { if (state != "connected") { Log.Debug("chat", "YouTube: OBS went live - looking for the stream now"); wake.Set(); } }
     public void StreamerBotVideo(string id) {
       if (id == null || !Regex.IsMatch(id, "^[\\w-]{11}$") || id == sbVideo) return;
       sbVideo = id; Log.Info("chat", "YouTube: Streamer.bot names your live stream " + id);
       if (state != "connected") wake.Set(); }
     public void StreamerBotEnded() { sbVideo = ""; }
     public override bool CanSend { get { return Accounts.Has("youtube") && !Accounts.IsInvalid("youtube") && VideoId.Length > 0; } }
-    public override string SendNote { get { return !Accounts.Has("youtube") ? "Connect your YouTube account (Platforms & accounts) to reply" : VideoId.Length == 0 ? "YouTube: you're not live right now" : "YouTube sign-in expired - sign in again"; } }
+    public override string SendNote { get { return Accounts.ReplyBlocker("youtube", "YouTube") ?? (VideoId.Length == 0 ? "YouTube: you're not live right now, so there is no chat to reply to" : ""); } }
     string Base { get { return Ep.Get("youtube_web", "https://www.youtube.com"); } }
     static Dictionary<string, string> Hdr() { return new Dictionary<string, string> { { "Cookie", "SOCS=CAI; CONSENT=YES+1" }, { "Accept-Language", "en-US,en;q=0.9" } }; }
     void Loop() {
@@ -403,11 +415,14 @@ namespace IXC {
             // the stream is found once; after that IXC stays on it (like a Twitch or Kick connection) and only re-opens its chat
             if (VideoId.Length == 0) {
               if (state != "connected") Set(fails == 0 ? "connecting" : "reconnecting", "looking for your live stream");
-              if (!FindLive()) { Set("unavailable", notLiveWhy + " - IXC checks again every 30 s"); wait = 30000; fails = 0; wake.WaitOne(wait); continue; } }
+              // not live: woken at once when OBS starts streaming or Streamer.bot names the stream; the timed look is only a fallback
+              // (30 s without Streamer.bot; 5 min with it, since Streamer.bot reports YouTube broadcasts itself)
+              if (!FindLive()) { Set(whyIsProblem ? "error" : "unavailable", notLiveWhy + " - IXC looks again when you go live"); wait = NotLiveWaitMs; fails = 0; wake.WaitOne(wait); continue; } }
             OpenChat(); openedAt = DateTime.Now; if (state != "connected") Log.Info("chat", "YouTube chat connected (" + VideoId + ")"); Set("connected", ""); }
           int timeout = Poll(); fails = 0; endSignals = 0; lastPollOk = DateTime.Now; lastChatVideo = VideoId; wait = Math.Max(1000, Math.Min(10000, timeout)); }
         catch (Exception e) {
           fails++; continuation = ""; var msg = U.Plain(e);
+          if (msg.StartsWith("YouTube has no channel")) { Set("error", msg + " - check the channel name (Platforms) - IXC checks again every 60 s"); fails = 0; wake.WaitOne(60000); continue; }   // a wrong name is not "not live"
           if (msg.StartsWith("ended")) {
             // YouTube's chat sometimes answers "no chat" for a moment while the stream goes on: the stream counts as ended only when
             // that keeps happening for a while; until then the chat is re-opened and the state stays as it is
@@ -434,7 +449,10 @@ namespace IXC {
     public static string LiveVideoId(string page) {
       foreach (var p in VideoIdPatterns) { var m = Regex.Match(page ?? "", p); if (m.Success) return m.Groups[1].Value; }
       return null; }
-    string notLiveWhy = "not live right now";
+    // "not live" is only said when YouTube's channel page was read and shows no stream; anything else (bot check, a page IXC does not recognise,
+    // a wrong channel name) is a problem and is shown as one (state "error")
+    string notLiveWhy = "not live right now"; bool whyIsProblem;
+    static bool IsChannelPage(string page) { return Regex.IsMatch(page ?? "", "rel=\"canonical\" href=\"https://www\\.youtube\\.com/(channel/UC|@)|\"(channelId|externalId)\":\"UC[\\w-]{22}\""); }
     bool FindLive() {
       bool found = false; Exception err = null;
       try { found = FindLiveOnPage(); } catch (Exception e) { err = e; }
@@ -456,17 +474,23 @@ namespace IXC {
         Log.Info("chat", "YouTube: the channel page doesn't show the stream (" + notLiveWhy + "); YouTube's API says you're live (" + id + ")"); return true; }
       return false; }
     bool FindLiveOnPage() {
-      notLiveWhy = "not live right now";
+      notLiveWhy = "not live right now"; whyIsProblem = false;
       var c = Channel.Trim(); var vm = Regex.Match(c, "(?:v=|youtu\\.be/|/live/|/shorts/|/embed/)([\\w-]{11})"); string page = null;
-      if (vm.Success || Regex.IsMatch(c, "^[\\w-]{11}$")) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
+      // a bare 11-character name is a channel handle (e.g. "infernoxc00") as often as a video id: the handle is tried first, the video id only if YouTube has no such channel
+      bool bare = !vm.Success && Regex.IsMatch(c, "^[\\w-]{11}$"); Http.Resp hr = null;
+      if (bare) { hr = Http.Request("GET", Base + "/@" + c + "/live", null, null, Hdr(), 15000); if (hr.Code == 404) hr = null; else bare = false; }
+      if (vm.Success || bare) { VideoId = vm.Success ? vm.Groups[1].Value : c; page = Http.Request("GET", Base + "/watch?v=" + VideoId, null, null, Hdr(), 15000).Body ?? ""; }
       else {
         string path; var m = Regex.Match(c, "youtube\\.com/(@[\\w.\\-]+|channel/UC[\\w-]{22}|c/[\\w.\\-]+|user/[\\w.\\-]+)", RegexOptions.IgnoreCase);
         if (m.Success) path = m.Groups[1].Value; else if (c.StartsWith("UC") && c.Length == 24) path = "channel/" + c; else path = "@" + c.TrimStart('@');
-        var r = Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
+        var r = hr ?? Http.Request("GET", Base + "/" + path + "/live", null, null, Hdr(), 15000);
         if (r.Code == 404) throw new Exception("YouTube has no channel \"" + c + "\"");
         if (!r.Ok) throw new Exception("YouTube unreachable (" + (r.Error ?? r.Code.ToString()) + ")");
         page = r.Body ?? ""; var id = LiveVideoId(page);
-        if (id == null) { VideoId = ""; notLiveWhy = BotCheck(page) ? BotCheckNote : "your channel has no live stream right now"; return false; } VideoId = id; }
+        if (id == null) { VideoId = ""; whyIsProblem = true;
+          if (BotCheck(page)) notLiveWhy = BotCheckNote;
+          else if (!IsChannelPage(page)) notLiveWhy = "YouTube's page for \"" + c + "\" wasn't recognised (a consent screen, a redirect or a changed page), so IXC can't tell if you're live";
+          else { whyIsProblem = false; notLiveWhy = "your channel has no live stream right now"; } return false; } VideoId = id; }
       bool live = Regex.IsMatch(page, "\"isLive(Now)?\":true") || Regex.IsMatch(page, "\"isLiveContent\":true[^}]*\"isLive\":true");
       var st = Regex.Match(page, "\"startTimestamp\":\"([^\"]+)\""); DateTime t; started = st.Success && DateTime.TryParse(st.Groups[1].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out t) ? (DateTime?)t.ToLocalTime() : null;
       if (!live) {
@@ -474,7 +498,7 @@ namespace IXC {
         // the page names a video but leaves out YouTube's "live" markers (seen on home connections in Oct 2026, and with YouTube's
         // bot check): the video's own live chat decides - a running live chat means the stream is live
         if (!JustEnded(VideoId) && LiveChatRunning(VideoId)) { Log.Info("chat", "YouTube: the page doesn't say \"live\", but the live chat of " + VideoId + " is running - connecting"); return true; }
-        notLiveWhy = BotCheck(page) ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
+        whyIsProblem = BotCheck(page); notLiveWhy = whyIsProblem ? BotCheckNote : "YouTube says the stream is not live"; VideoId = ""; return false; }
       return true; }
     // a live (not replay) chat with a continuation: the stream is on air
     bool LiveChatRunning(string id) {
@@ -538,6 +562,7 @@ namespace IXC {
       if (VideoId.Length == 0) {
         // IXC can't see the stream itself; a recent number from Streamer.bot is kept rather than replaced by "offline"
         if (Viewers.Source == "Streamer.bot" && (DateTime.Now - Viewers.At).TotalSeconds < 120) return;
+        if (state == "error") { Viewers.Fail(detail); return; }   // IXC could not look: not the same as offline
         if (state == "unavailable" || state == "off") Viewers.Set(null, false, "YouTube", null); return; }
       var body = J.Ser(J.D("context", J.D("client", J.D("clientName", "WEB", "clientVersion", clientVersion, "hl", "en")), "videoId", VideoId));
       var r = Http.Request("POST", Base + "/youtubei/v1/updated_metadata?prettyPrint=false" + (apiKey.Length > 0 ? "&key=" + apiKey : ""), body, "application/json", Hdr(), 12000);
@@ -599,6 +624,7 @@ namespace IXC {
   // ======================= Streamer.bot (optional: still works for people who already use it) =======================
   public class SbLink : WsLink {
     public string AuthState = "none"; public List<string> Broadcasters = new List<string>(); Dictionary<string, object> hello;
+    public DateTime LastEvent = DateTime.MinValue; public int EventCount;   // Streamer.bot events received (health shown in IXC > Streamer.bot)
     readonly ManualResetEventSlim gotHello = new ManualResetEventSlim(false); DateTime lastRunCheck = DateTime.MinValue; bool runCache;
     public SbLink() { Name = "Streamer.bot"; Area = "streamerbot"; MaxBackoffMs = 30000; }
     string Mode { get { return Settings.Str("platforms.streamerbot.mode"); } }
@@ -627,6 +653,8 @@ namespace IXC {
       var names = new List<string>(); Collect(r, names, 0);
       lock (Broadcasters) { Broadcasters.Clear(); Broadcasters.AddRange(names.Distinct(StringComparer.OrdinalIgnoreCase)); }
       if (names.Count > 0) Log.Info("streamerbot", "your accounts (from Streamer.bot): " + string.Join(", ", Broadcasters)); }
+    public static void CollectNames(object o, List<string> names, int depth) { Collect(o, names, depth); }
+    public static IEnumerable<string> SettingsFilesPublic() { return SettingsFiles(); }
     static void Collect(object o, List<string> names, int depth) {
       var d = o as Dictionary<string, object>; if (d == null || depth > 5) { var a = o as ArrayList; if (a != null) foreach (var x in a) Collect(x, names, depth + 1); return; }
       foreach (var kv in d) { var s = kv.Value as string; var k = kv.Key.ToLowerInvariant();
@@ -647,7 +675,7 @@ namespace IXC {
         foreach (var d in dirs) { var f = Path.Combine(d, "data", "settings.json"); if (seen.Add(f)) yield return f; } } }
     protected override void OnText(string raw) {
       var m = J.Parse(raw);
-      if (m.ContainsKey("event") && m.ContainsKey("data")) { try { SbEvents.Handle(m); } catch (Exception e) { Log.Err("streamerbot", "event: " + e.Message); } return; }
+      if (m.ContainsKey("event") && m.ContainsKey("data")) { LastEvent = DateTime.Now; EventCount++; try { SbEvents.Handle(m); } catch (Exception e) { Log.Err("streamerbot", "event: " + e.Message); } return; }
       if (J.Str(m, "request", "") == "Hello" || (!Ready && m.ContainsKey("info") && !m.ContainsKey("id"))) { hello = m; gotHello.Set(); return; }
       var id = J.Str(m, "id", null); if (id != null) Complete(id, m); }
     public Task<Dictionary<string, object>> Request(Dictionary<string, object> req, int ms) { if (!Ready) return Task.FromResult<Dictionary<string, object>>(null); var id = NewId(); req["id"] = id; return Ask(id, J.Ser(req), ms); }
@@ -663,8 +691,10 @@ namespace IXC {
       cmdCache = l; cmdAt = DateTime.Now; return l; }
     public async Task<string> SendTo(string platform, string message) {
       if (!Ready) return "Streamer.bot is not connected";
+      SentEcho.Note(platform, message);   // the event Streamer.bot sends back for this message must not be treated as new chat
       var r = await Request(J.D("request", "SendMessage", "platform", platform, "message", message, "bot", false, "internal", true), 6000);
-      if (r == null) return "no answer from Streamer.bot"; return J.Str(r, "status", "") == "ok" ? null : "Streamer.bot: " + J.Str(r, "error", "failed"); }
+      if (r == null) { SentEcho.Forget(platform, message); return "no answer from Streamer.bot, so the message may not have been sent"; }
+      if (J.Str(r, "status", "") == "ok") return null; SentEcho.Forget(platform, message); return "Streamer.bot: " + J.Str(r, "error", "failed"); }
   }
 
   // Streamer.bot events -> normalized messages (payloads differ per platform and Streamer.bot version, so parsing is tolerant)
@@ -687,6 +717,7 @@ namespace IXC {
       else if (type == "SuperChat") { cm.Kind = "superchat"; cm.Amount = Pick(G(data, "amount"), G(data, "formattedAmount")) ?? ""; }
       else if (type != "ChatMessage" && type != "Message") return;
       if (cm.Kind == "chat" && string.IsNullOrWhiteSpace(cm.Text)) return;
+      if (cm.Kind == "chat" && SentEcho.Take(cm.Platform, cm.Text)) { cm.Me = true; cm.Echo = true; }   // IXC's own reply coming back: shown as yours, never counted, run or spoken
       Chat.Ingest(cm); }
     // the live video in a Streamer.bot YouTube event: data.broadcast.id (a broadcast's id is its video id) or a videoId field
     static string VideoId(object o, int depth) {
@@ -751,6 +782,12 @@ namespace IXC {
       var l = new List<string>();
       foreach (var s in All) if ((s.Configured && s.CanSend) || (Sb.Ready && s.Id != "rumble")) l.Add(s.Id);
       return l; }
+    // the exact missing prerequisite per platform that is set up in IXC (shown when a reply has nowhere to go)
+    public static string WhyNoReply() {
+      var l = All.Where(s => s.Configured && s.Id != "rumble").Select(s => s.SendNote).Where(n => !string.IsNullOrEmpty(n)).ToList();
+      return l.Count > 0 ? string.Join("; ", l) : "no platform is set up in IXC - enable one under Platforms & accounts"; }
+    // true when a reply failed only because no IXC account is connected on that platform (the UI then shows one short line for all of them)
+    public static bool NeedsAccount(string platform) { var s = Get(platform); return s != null && s.Configured && platform != "rumble" && !s.CanSend && !Sb.Ready && Accounts.ReplyBlocker(platform, s.Label) != null && !Accounts.Has(platform); }
     public static async Task<string> Send(string platform, string text) {
       var s = Get(platform); if (s == null) return "unknown platform " + platform;
       if (s.Configured && s.CanSend) return await s.Send(text);

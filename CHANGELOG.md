@@ -3,6 +3,38 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.3.0-rc.2] - 2026-10-27 (pre-release)
+### Added
+- Streams page (menu: Multistream): Twitch / YouTube / Kick state (NOT CONFIGURED, READY, ERROR, CONNECTING, STREAMING) read from OBS Settings > Stream, Aitum Multistream and obs-multi-rtmp settings plus OBS's live outputs; stream keys are never shown (only set / not set). Check all. Optional Start / Stop through Aitum, off until a local test proves it (tools/aitum-sink-test.mjs).
+- Streamer.bot: "When IXC quits" option (leave running / close; never forced, never while OBS is live); stopping Streamer.bot while OBS is live asks first.
+### Changed
+- Audio routing follows OBS sources that were renamed (fixes "OBS has no source called IXC Music Player").
+- Multistream Studio and Vertical Studio pages are off the menu (use Aitum Multistream / Vertical Canvas in OBS).
+- Developer-app setup (client IDs) only in Advanced mode; replies go through Streamer.bot.
+- YouTube live check is event-driven (OBS going live / Streamer.bot), timed fallback only.
+
+### Added
+- Streamer.bot page in the dashboard (System > Streamer.bot): status, detected version and path, address, write-only password, Test connection, Start / Stop (only a process IXC started), optional start with IXC. Localhost only. IXC's own replies echoed back by Streamer.bot are shown as yours and never run commands or are read aloud.
+### Changed
+- Chat page: each platform chip now shows connection, live / not live and the time of the last chat message as separate facts ("not live" is no longer shown as "offline").
+- Send: a message counts as sent only when the platform confirms it (Twitch USERSTATE, Kick/YouTube API success); Twitch refusals and silence are reported as failures. Results are per platform (`kind`: sent / needs-account / failed); ALL lists every set-up platform. One short line for missing accounts.
+- Relay sign-in helper: errors are reduced to the platform error code, nothing is logged, request logging is switched off in wrangler.toml.
+- docs/DEVELOPER-SETUP.md: maintainer registration checklist (redirects, scopes, secrets, privacy notice, Google verification).
+
+## [3.3.0-rc.1] - 2026-10-19 (release candidate)
+### Added
+- **Multistream Studio**: destinations (up to 8) with encrypted write-only stream keys, a server reachability check, and a native relay that forwards OBS's single encoded stream to RTMP/RTMPS servers (off by default, no auto-start). Shared encode only: no per-destination bitrate/encoder.
+- **Vertical Studio**, **Automation Studio** and an **OBS Control** report: honest status pages built on real OBS/IXC state; unbuilt features are labelled.
+- New navigation (Overview, Chat, Platforms & Accounts, Multistream Studio, Vertical Studio, Automation Studio, OBS Control, Settings).
+- Read-only OBS capability report (`/api/obs/capabilities`, `ixc-core.exe --obs-capabilities`).
+- Reply prerequisites: IXC names the exact missing step per platform.
+### Fixed
+- YouTube: an 11-character channel name was treated as a video id; "Not live" no longer covers bot checks, unreadable pages or wrong names; Google "Testing" 7-day sign-in limit is explained.
+- Music, chat voice and overlay browser sources are reloaded when OBS opened before IXC answered.
+- TLS 1.2 for rtmps:// connections (the .NET default is TLS 1.0).
+### Known limitations
+- See docs/release-notes/v3.3.0-rc.1.md. The relay has only been tested with fake servers; Automation Studio and Vertical Studio are status pages.
+
 ## [3.2.0] - 2026-10-15
 ### Added
 - **Audio routing** page: switch the music and the chat voice (TTS) on or off **per platform** (Twitch / Kick / YouTube), independently. Works through OBS audio tracks and is read back from OBS; your other sources and unused tracks are never touched. The music dock's platform buttons are now on/off switches.

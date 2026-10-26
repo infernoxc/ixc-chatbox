@@ -54,6 +54,11 @@ namespace IXC {
     public static void OnObsEvent(string type, Dictionary<string, object> d) {
       if (type != "InputAudioTracksChanged" && type != "InputCreated" && type != "InputNameChanged") return;
       var name = J.Str(d, "inputName", J.Str(d, "oldInputName", ""));
+      if (type == "InputNameChanged") {   // IXC's source renamed in OBS: follow the new name instead of reporting it missing
+        var old = J.Str(d, "oldInputName", "");
+        foreach (var src in Sources) if (old.Length > 0 && name.Length > 0 && string.Equals(old, InputName(src), StringComparison.OrdinalIgnoreCase)) {
+          Log.Info("obs", src + " source renamed in OBS: \"" + old + "\" -> \"" + name + "\""); Settings.Set(src + ".routing.inputName", name); }
+        return; }
       foreach (var src in Sources) {
         if (!string.Equals(name, InputName(src), StringComparison.OrdinalIgnoreCase)) continue; var s = st[src];
         if (type == "InputAudioTracksChanged") { var tr = J.Obj(d, "inputAudioTracks"); s.Actual = TrackText(tr);
@@ -64,8 +69,15 @@ namespace IXC {
       var s = st[src];
       if (!Obs.Link.Ready) { s.Ok = false; s.Status = "saved - applies when OBS connects"; Changed(src); return Result(src, false, s.Status, true); }
       // right after OBS opens its WebSocket it can still be loading the scene collection ("not ready"): retry briefly
+      bool relocated = false;
       for (int attempt = 1; ; attempt++) { var r = await Once(src); var e = J.Str(r, "error", "");
-        if (!J.Bool(r, "ok", false) && e.IndexOf("not ready", StringComparison.OrdinalIgnoreCase) >= 0 && attempt < 10) { await Task.Delay(500); continue; } return r; } }
+        if (!J.Bool(r, "ok", false) && e.IndexOf("not ready", StringComparison.OrdinalIgnoreCase) >= 0 && attempt < 10) { await Task.Delay(500); continue; }
+        // the saved name is gone (renamed while IXC was closed, or another scene collection): find IXC's source by its page address, once
+        if (!J.Bool(r, "ok", false) && e.StartsWith("OBS has no source called") && !relocated) { relocated = true; string found = null;
+          try { found = await Obs.FindSource(src == "music" ? "/music/player.html" : "/chat/tts.html"); } catch (Exception) { }
+          if (found != null && !string.Equals(found, InputName(src), StringComparison.OrdinalIgnoreCase)) {
+            Log.Info("obs", src + " source found as \"" + found + "\" (saved name was \"" + InputName(src) + "\")"); Settings.Set(src + ".routing.inputName", found); continue; } }
+        return r; } }
     static async Task<Dictionary<string, object>> Once(string src) {
       var s = st[src];
       try {

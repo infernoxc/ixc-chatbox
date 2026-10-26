@@ -1,9 +1,11 @@
 // System check, repairs, backups / restore, settings reset, diagnostics export (no secrets), safe updates, restart / quit codes.
-import { test, after } from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } from 'node:child_process'; import crypto from 'node:crypto';
+import { test, after } from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } from 'node:child_process'; import crypto from 'node:crypto'; import os from 'node:os';
 import { startCore, api, settings, httpServer, json, sleep, until, fakeObs } from './harness.mjs';
 
 const cleanup = []; after(async () => { for (const f of cleanup.reverse()) await f(); });
-const zipText = (f) => execFileSync('python3', ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print("\\n".join(n+"\\n"+z.read(n).decode("utf-8","replace") for n in z.namelist()))', f]).toString();
+// python3 where it exists; otherwise tar (Windows ships bsdtar, which reads zip)
+const zipText = (f) => { try { return execFileSync('python3', ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print("\\n".join(n+"\\n"+z.read(n).decode("utf-8","replace") for n in z.namelist()))', f], { stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
+  catch { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-zip-')); execFileSync(process.platform === 'win32' ? path.join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar', ['-xf', f, '-C', d]); const out = []; const walk = (p, rel) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const r = rel ? rel + '/' + e.name : e.name; if (e.isDirectory()) walk(path.join(p, e.name), r); else out.push(r + '\n' + fs.readFileSync(path.join(p, e.name), 'utf8')); } }; walk(d, ''); return out.join('\n'); } };
 const waitExit = async (c) => until(() => c.exited != null ? { code: c.exited } : null, 8000, 'IXC exited');
 
 test('system check reports problems with fix actions; repairs run', async () => {

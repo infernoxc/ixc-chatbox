@@ -45,7 +45,7 @@ namespace IXC {
       while (true) {
         if (!Wanted()) { if (Ready) Ready = false; SetState("off", WhyNotWanted()); wake.WaitOne(5000); continue; }
         restart = false; bool connected = false; DateTime start = DateTime.Now; string err = null;
-        try { RunOnce(ref connected); } catch (Exception e) { err = Friendly(e); }
+        try { RunOnce(ref connected); } catch (Exception e) { err = Friendly(e); Log.Debug(Area, Name + " connection error (raw): " + e.GetType().Name + ": " + U.Plain(e)); }
         Ready = false; lock (Pending) { foreach (var t in Pending.Values) t.TrySetResult(null); Pending.Clear(); }
         if (connected) { try { OnDisconnected(); } catch (Exception e) { Log.Err(Area, Name + " disconnect handler: " + e.Message); } }
         if (connected && (DateTime.Now - start).TotalSeconds > 30) Failures = 0;

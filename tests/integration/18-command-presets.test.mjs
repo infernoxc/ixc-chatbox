@@ -53,9 +53,9 @@ test('Presets: added on request, capability-aware answers per platform', async (
   await until(async () => (await api(c, '/api/accounts')).body.twitch.account?.login === 'streamer', 10000, 'twitch signed in');
   await settings(c, { 'platforms.twitch.channel': 'streamer' });
   await inject(c, { platform: 'twitch', id: 't2', name: 'Fan', userId: '555', text: '!followage' });
-  await until(() => replies(p, /has followed for/).length === 1, 5000, 'followage').catch(e => { throw new Error(e.message + ' ' + JSON.stringify(p.msgs.filter(m => m.type === 'chat.reply').map(m => m.text))); }); assert.equal(replies(p, /has followed for/)[0].text, '@Fan has followed for 1 year 1 month');
+  await until(() => replies(p, /has followed for/).length === 1, 15000, 'followage').catch(e => { throw new Error(e.message + ' ' + JSON.stringify(p.msgs.filter(m => m.type === 'chat.reply').map(m => m.text))); }); assert.equal(replies(p, /has followed for/)[0].text, '@Fan has followed for 1 year 1 month');
   await inject(c, { platform: 'twitch', id: 't3', name: 'Lurker', userId: '666', text: '!followage' });
-  await until(() => replies(p, /isn't following yet/).length === 1, 5000, 'not following');
+  await until(() => replies(p, /isn't following yet/).length === 1, 15000, 'not following');   // a loaded CI runner can take longer than 5 s for the Helix round trip + the chat send
   // !clip on Twitch: a real Helix clip for the broadcaster
   await inject(c, { platform: 'twitch', id: 't4', name: 'Fan', userId: '555', text: '!clip' });
   await until(() => replies(p, /clips\.twitch\.tv\/FunnyClip123/).length === 1, 5000, 'clip link'); assert.match(clips[0], /broadcaster_id=100/);

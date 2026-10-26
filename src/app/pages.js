@@ -3,9 +3,19 @@
   const { $, esc, toast, P } = UI; const { S, ctl, page, on, repair } = App;
   const card = (title, body, cls) => `<div class="card ${cls || ''}"><h3>${title}</h3>${body}</div>`;
   const plats = ['twitch', 'kick', 'youtube', 'rumble'];
+  // The read-only OBS report (what this OBS reports about itself). One request per 15 s at most; every page that shows it says so.
+  const Caps = { data: null, at: 0, busy: null,
+    async get(force) { if (!force && this.data && Date.now() - this.at < 15000) return this.data; if (this.busy) return this.busy;
+      this.busy = IXC.api('/api/obs/capabilities').then(r => { this.data = r; this.at = Date.now(); return r; }).catch(e => { this.data = { ok: false, error: String(e.message || e) }; this.at = Date.now(); return this.data; }).finally(() => { this.busy = null; }); return this.busy; },
+    vendor(name) { const v = this.data && this.data.vendors && this.data.vendors[name]; return v || null; },
+    bytes(n) { n = +n || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B'; },
+    down(c, btn) { return '<div class="banner">OBS information is not available: ' + esc((c && c.error) || 'OBS is not connected') + '. Open OBS (IXC connects by itself) or check <a href="#obs">OBS Control</a>.</div>' + (btn ? '<div class="actions"><button class="small" ' + btn + '>Refresh</button></div>' : ''); },
+    outputsTable(c) { return c.outputs && c.outputs.length ? '<table class="t"><tr><th>OBS output</th><th>Kind</th><th>State</th><th>Sent</th><th>Dropped / total frames</th></tr>' + c.outputs.map(o => { const st = o.status || {};
+        return '<tr><td><b>' + esc(o.name) + '</b></td><td class="small">' + esc(o.kind) + '</td><td>' + UI.pill(o.active ? (st.outputReconnecting ? 'reconnecting' : 'live') : 'off', o.active ? (st.outputReconnecting ? 'Reconnecting' : 'Active') : 'Idle') + '</td><td class="small">' + (o.active ? Caps.bytes(st.outputBytes) : +st.outputBytes ? 'last stream: ' + Caps.bytes(st.outputBytes) : '-') + '</td><td class="small">' + (+st.outputTotalFrames ? (st.outputSkippedFrames || 0) + ' / ' + st.outputTotalFrames : '-') + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">OBS lists no outputs.</p>'; } };
+  const NOTIMPL = (t) => '<span class="pill st-unavailable"><i></i>Not implemented</span> <span class="small muted">' + t + '</span>';
 
   // ======================= HOME =======================
-  page('home', 'Home', (main) => {
+  page('home', 'Overview', (main) => {
     main.innerHTML = `<div id="hBanners"></div><div class="grid" id="hGrid"></div>`;
     const paint = () => {
       const st = S.status; if (!st) { $('hGrid').innerHTML = '<div class="muted">Waiting for IXC…</div>'; return; }
@@ -90,42 +100,62 @@
   });
 
   // ======================= PLATFORMS & ACCOUNTS =======================
-  page('accounts', 'Platforms & accounts', (main) => {
-    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. <b>Connect</b> your account to also reply from IXC, get follower alerts and see Twitch viewers.</p><div class="grid" id="acc"></div>`;
+  page('accounts', 'Platforms & Accounts', (main) => {
+    main.innerHTML = `<p class="muted" style="margin-top:0">Reading chat needs only your channel name. Replies, alerts and your platform sign-ins are handled by <b>Streamer.bot</b> (connect Twitch, YouTube and Kick there, under Platforms). No developer apps needed.</p><div class="grid" id="acc"></div><div class="grid" id="appsBox" style="margin-top:12px"></div>`;
     const NOTE = { twitch: 'Reads chat without signing in. Sign in for replies, follower alerts and viewer counts.', kick: 'Reads chat and viewers without signing in. Sign in to reply.', youtube: 'Finds your live stream by itself. Sign in to reply in YouTube chat.', rumble: 'Copy your "Live Stream API" link from rumble.com (Account > Live Stream API) and paste it here. Rumble doesn\'t allow apps to send chat.' };
     const paint = () => { const st = (S.status || {}).chat || {}, acc = S.accounts || {};
       $('acc').innerHTML = plats.map(p => { const s = st[p] || {}, a = acc[p] || {}, ac = a.account, fl = a.flow;
         const chan = p === 'rumble' ? `<div class="field"><label class="lbl">Live Stream API link</label><div class="val"><input type="url" id="rumbleUrl" placeholder="${ac ? '(saved - paste a new one to replace it)' : 'https://rumble.com/-livestream-api/get-data?key=…'}"><button id="rumbleSave">Save</button></div></div><div class="actions"><button data-open-url="https://rumble.com/account/livestream-api">Open rumble.com to copy it</button></div>`
           : ctl.text('platforms.' + p + '.channel', p === 'youtube' ? 'Your channel' : 'Your channel name', p === 'youtube' ? '@yourhandle or channel link' : p === 'twitch' ? 'yourname' : 'your-name');
-        const account = p === 'rumble' ? '' : !a.available ? `<div class="hint">To reply here, add your ${P[p].name} app under <b>Your apps</b> below.</div>` : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
+        const account = p === 'rumble' ? '' : !a.available ? (S.values['general.advanced'] ? `<div class="hint">Replies go through Streamer.bot. Advanced: add your own ${P[p].name} app under <b>Your apps</b> below.</div>` : '') : ac ? `<div class="row" style="margin-top:6px"><span class="grow">Signed in as <b>${esc(ac.displayName || ac.login)}</b>${ac.invalid ? ' <span class="warn">(expired)</span>' : ''}</span>${ac.invalid ? `<button class="primary" data-connect="${p}">Sign in again</button>` : ''}<button data-signout="${p}">Sign out</button></div>`
           : fl && fl.state === 'waiting' ? `<div class="banner info" style="margin-top:6px">${esc(fl.message)}${fl.userCode ? ` - code <b style="font-size:18px;letter-spacing:2px">${esc(fl.userCode)}</b>` : ''}<span class="grow"></span>${fl.url ? `<button data-open-url="${esc(fl.url)}">Open again</button>` : ''}<button data-cancel="${p}">Cancel</button></div>`
           : `<div class="actions"><button class="primary" data-connect="${p}">Connect ${P[p].name} account</button></div>${fl && fl.state === 'failed' ? `<div class="err small">${esc(fl.message)}</div>` : ''}`;
         return `<div class="card"><div class="plat"><span class="logo2 ${p}">${P[p].tag.slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${P[p].name}</h3><div class="small muted">${esc(s.configured ? s.detail || '' : '')}</div></div>${UI.pill(s.configured ? s.state : 'off')}</div>${s.configured ? `<div class="tiny muted" style="margin:6px 0 2px">Last chat message: ${s.lastMessage ? new Date(s.lastMessage).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'none since IXC started'} · ${ac ? (ac.invalid ? '⚠ sign-in expired - connect again' : 'can reply') : p === 'rumble' ? 'read-only (Rumble has no sending API)' : 'read-only until you connect the account'}</div>` : ''}
           ${ctl.toggle('platforms.' + p + '.enabled', 'Use ' + P[p].name)}${chan}${account}<div class="hint" style="margin-top:8px">${NOTE[p]}${s.configured && s.sendVia === 'streamerbot' ? '<br>Replies: sent through Streamer.bot ✓' : s.configured && !s.canSend && p !== 'rumble' ? '<br>Replies: ' + esc(s.sendNote) : ''}</div></div>`; }).join('') +
-        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(optional bridge, not needed)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
+        `<div class="card"><div class="plat"><span class="logo2 streamerbot">SB</span><div class="grow"><h3 style="margin:0">Streamer.bot <span class="tiny muted">(replies, alerts and platform sign-ins)</span></h3><div class="small muted">${esc((st.streamerbot || {}).detail || '')}</div></div>${UI.pill((st.streamerbot || {}).state || 'off')}</div>
           ${ctl.select('platforms.streamerbot.mode', 'Use Streamer.bot', [['auto', 'Automatically, when it\'s running'], ['on', 'Always (keep trying)'], ['off', 'Never']])}
-          <div class="hint">IXC does everything on its own: chat, replies (with <b>Your apps</b>), commands, timers, event messages, chat voice, music and OBS. If you still run Streamer.bot, IXC can also read its chat and send through it for platforms you haven't connected here; set this to <b>Never</b> to keep IXC fully standalone.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
-      $('acc').innerHTML += appsCard(acc.apps || {});
+          <div class="actions"><button data-go="streamerbot">Streamer.bot settings &amp; status</button></div><div class="hint">Connect your platforms inside Streamer.bot; IXC reads their chat and events and sends your replies through it. IXC's own commands, timers, chat voice, music and OBS controls keep working without it.</div>${S.values['general.advanced'] ? ctl.text('platforms.streamerbot.websocketUrl', 'WebSocket address', 'ws://127.0.0.1:8080/') : ''}</div>`;
+      paintApps();
       const rs = $('rumbleSave'); if (rs) rs.onclick = async () => { const r = await IXC.api('/api/accounts/rumble/rumble', { url: $('rumbleUrl').value }); toast(r.ok ? 'Rumble connected' : r.error, !r.ok); }; };
     // your own developer apps: replies, alerts and viewers without Streamer.bot or a relay. Secrets are never shown back.
     const APPS = [
       ['twitch', 'Twitch', 'dev.twitch.tv/console/apps', ['Click <b>Register Your Application</b>.', 'Name: anything (e.g. <i>IXC yourname</i>). OAuth Redirect URL: <code>http://localhost</code> (not used). Category: <b>Broadcaster Suite</b>. Client Type: <b>Public</b>.', 'Click <b>Create</b>, then <b>Manage</b>, and copy the <b>Client ID</b> here. Public apps have no secret.']],
-      ['google', 'YouTube (Google)', 'console.cloud.google.com/apis/library/youtube.googleapis.com', ['Create a project and click <b>Enable</b> for <b>YouTube Data API v3</b>.', '<b>OAuth consent screen</b>: External, add yourself under <b>Test users</b>.', '<b>Credentials > Create credentials > OAuth client ID</b>, type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> here.']],
+      ['google', 'YouTube (Google)', 'console.cloud.google.com/apis/library/youtube.googleapis.com', ['Create a project and click <b>Enable</b> for <b>YouTube Data API v3</b>.', '<b>OAuth consent screen</b>: External, add yourself under <b>Test users</b>, then click <b>Publish app</b> (an app left in Testing loses its sign-in every 7 days).', '<b>Credentials > Create credentials > OAuth client ID</b>, type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> here.']],
       ['kick', 'Kick', 'kick.com/settings/developer', ['Click <b>Create new app</b>.', 'Redirect URL: <code>{redirect}</code> (exactly this). Scopes: <b>Read user information</b>, <b>Read channel information</b>, <b>Write to Chat feed</b>, <b>Moderate</b>.', 'Copy the <b>Client ID</b> and <b>Client Secret</b> here.']]];
     function appsCard(apps) {
       const anyMissing = APPS.some(([k]) => !(apps[k] || {}).available);
       return `<div class="card" style="grid-column:1/-1"><h3>🔑 Your apps <span class="tiny muted">(for replies, alerts and viewer counts)</span></h3>
         <div class="hint">To send messages, Twitch, YouTube and Kick need a free developer app that belongs to you. Create it once (about 5 minutes each), paste the IDs here, then press <b>Connect</b> above. Secrets are stored encrypted on this PC only and are never shown again. ${anyMissing ? '' : '<b>All set ✓</b>'}</div>
         ${APPS.map(([k, name, url, steps]) => { const a = apps[k] || {};
-          return `<details style="margin-top:8px" ${a.available ? '' : 'open'}><summary><b>${name}</b> ${a.available ? '<span class="ok small">✓ ready</span>' : '<span class="muted small">not set up</span>'}${a.own ? '' : a.builtIn ? ' <span class="tiny muted">(using the built-in app)</span>' : ''}</summary>
+          return `<details data-k="${k}" style="margin-top:8px" ${a.available ? '' : 'open'}><summary><b>${name}</b> ${a.available ? '<span class="ok small">✓ ready</span>' : '<span class="muted small">not set up</span>'}${a.own ? '' : a.builtIn ? ' <span class="tiny muted">(using the built-in app)</span>' : ''}</summary>
             <ol class="small" style="margin:6px 0 8px 18px;padding:0"><li>Open <a href="#" data-open-url="https://${url}">${url}</a> and sign in.</li>${steps.map(x => `<li>${x.replace('{redirect}', esc(a.redirect || ''))}</li>`).join('')}</ol>
             <div class="field"><label class="lbl">Client ID</label><div class="val"><input id="app_${k}_id" value="${esc(a.id || '')}" autocomplete="off" spellcheck="false"></div></div>
-            ${k === 'twitch' ? '' : `<div class="field"><label class="lbl">Client secret</label><div class="val"><input id="app_${k}_secret" type="password" autocomplete="new-password" placeholder="${a.secretSet ? '(saved - paste a new one to replace it)' : ''}"></div></div>`}
-            <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div></details>`; }).join('')}</div>`; }
+            ${k === 'twitch' ? '' : `<div class="field"><label class="lbl">Client secret</label><div class="val"><input id="app_${k}_secret" type="password" autocomplete="new-password" placeholder="${a.secretSet ? '(saved - paste a new one to replace it)' : ''}">${a.secretSet ? ' <span class="ok small" id="app_' + k + '_saved">🔒 Secret saved</span>' : ''}</div></div>`}
+            <div class="actions"><button class="primary" data-app-save="${k}">Save</button>${a.own ? `<button data-app-clear="${k}">Remove</button>` : ''}</div><div class="small" id="app_${k}_msg" role="status" style="margin-top:6px"></div></details>`; }).join('')}</div>`; }
+    // The card is redrawn only when the saved app data changed. Whatever is typed but not saved yet (IDs, secrets, which steps are open) is kept.
+    let appsKey = null;
+    function paintApps(force, resetKey) { const box = $('appsBox'); if (!box) return; const apps = (S.accounts || {}).apps || {}, key = JSON.stringify(apps) + !!S.values['general.advanced'];
+      // developer apps are an advanced alternative to Streamer.bot: shown only in Advanced mode or when one is already saved
+      if (!S.values['general.advanced'] && !Object.values(apps).some(a => a && a.own)) { box.innerHTML = ''; appsKey = key; return; }
+      if (!force && key === appsKey && box.firstChild) return; appsKey = key;
+      const draft = {}, open = {}; box.querySelectorAll('input').forEach(i => { draft[i.id] = i.value; }); box.querySelectorAll('details').forEach(d => { open[d.dataset.k] = d.open; });
+      box.innerHTML = appsCard(apps);
+      box.querySelectorAll('input').forEach(i => { const k = i.id.split('_')[1]; if (k !== resetKey && draft[i.id] && draft[i.id] !== i.value) i.value = draft[i.id]; });
+      box.querySelectorAll('details').forEach(d => { if (d.dataset.k === resetKey) d.open = true; else if (open[d.dataset.k] !== undefined) d.open = open[d.dataset.k]; }); }
+    function appMsg(k, text, bad) { const m = $('app_' + k + '_msg'); if (m) { m.className = 'small ' + (bad ? 'err' : 'ok'); m.textContent = text; } }
     main.onclick = async (e) => { const b = e.target.closest('button,a[data-open-url]'); if (!b) return; const d = b.dataset;
-      if (d.appSave) { const k = d.appSave, body = { [k]: { id: $('app_' + k + '_id').value.trim() } }; const se = $('app_' + k + '_secret'); if (se && se.value.trim()) body[k].secret = se.value.trim();
-        const r = await IXC.api('/api/accounts/apps', body); if (se) se.value = ''; toast(r.ok ? 'Saved - now press Connect above' : r.error, !r.ok); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
-      if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r.ok) { S.accounts = Object.assign({}, S.accounts, { apps: r.apps }); paint(); } return; }
+      if (d.appSave) { const k = d.appSave, idv = $('app_' + k + '_id').value.trim(), se = $('app_' + k + '_secret'), sv = se ? se.value.trim() : '', body = { [k]: {} };
+        // a blank field means "leave it alone" (Remove is the way to clear), so an empty box can never wipe a saved ID
+        if (idv) body[k].id = idv; if (sv) body[k].secret = sv;
+        if (!idv && !sv) { appMsg(k, 'Nothing to save yet - paste the Client ID' + (k === 'twitch' ? '' : ' and the Client secret') + ' first.', true); return; }
+        b.disabled = true; const r = await IXC.api('/api/accounts/apps', body); b.disabled = false;
+        if (!r || !r.ok) { const why = (r && r.error) || 'IXC did not answer - is it running?'; appMsg(k, 'Not saved: ' + why + ' Your entries are still here.', true); toast('Not saved: ' + why, true); return; }   // fields are left exactly as typed
+        // confirm from the backend, not from what the browser remembers
+        const fresh = await IXC.api('/api/accounts'); const ap = fresh && fresh.apps && fresh.apps[k];
+        if (!ap || (idv && ap.id !== idv) || (sv && !ap.secretSet)) { appMsg(k, 'IXC said "saved" but reading the settings back did not show them. Your entries are still here - try again.', true); toast('Could not confirm the save', true); return; }
+        S.accounts = fresh; paintApps(true, k); appMsg(k, 'Saved' + (sv ? ' - the secret is stored encrypted and is never shown again' : '') + '. Now press Connect above.', false); toast('Saved - now press Connect above'); return; }
+      if (d.appClear && await UI.confirmBox('Remove your app settings for this platform? You stay signed in until the sign-in expires.', 'Remove')) { const r = await IXC.api('/api/accounts/apps', { [d.appClear]: { id: '', secret: '' } }); if (r && r.ok) { S.accounts = await IXC.api('/api/accounts'); paintApps(true, d.appClear); paint(); } else appMsg(d.appClear, 'Not removed: ' + ((r && r.error) || 'IXC did not answer'), true); return; }
+      if (d.go) { location.hash = '#' + d.go; return; }
       if (d.openUrl) { e.preventDefault(); window.open(d.openUrl, '_blank'); return; }
       if (d.connect) { b.disabled = true; const r = await IXC.api('/api/accounts/' + d.connect + '/connect', {}); b.disabled = false; if (!r.ok) toast(r.error, true); else toast('Your browser opened - finish signing in there'); }
       if (d.signout && await UI.confirmBox('Sign out of ' + P[d.signout].name + '? IXC keeps reading chat but can\'t reply there.', 'Sign out')) await IXC.api('/api/accounts/' + d.signout + '/signout', {});
@@ -256,11 +286,18 @@
   });
 
   // ======================= COMMANDS =======================
-  page('obs', 'OBS', (main) => {
+  page('obs', 'OBS Control', (main) => {
     // direct OBS connection (obs-websocket 5, built into OBS 28+): no Streamer.bot or plugin needed
     let scenes = null, sources = null, busy = false;
     const pill = (on, t) => `<span class="pill ${on ? 'st-connected' : ''}"><i></i>${t}</span>`;
     async function load() { const st = await IXC.api('/api/obs/state'); if (st.connected) { scenes = await IXC.api('/api/obs/scenes'); sources = scenes.ok ? await IXC.api('/api/obs/sources?scene=' + encodeURIComponent(scenes.current)) : null; } else { scenes = sources = null; } paint(st); }
+    function renderCaps() { const el = $('oCaps'); if (!el) return; const c = Caps.data;
+      if (!c) { el.innerHTML = card('🧾 What this OBS can do', '<p class="muted">Asking OBS…</p>'); return; }
+      el.innerHTML = card('🧾 What this OBS can do <span class="small muted">(read-only report)</span>', !c.ok ? Caps.down(c, 'id="capsRefresh"') : `<div class="small">OBS ${esc(c.obs.obsVersion)} · obs-websocket ${esc(c.obs.obsWebSocketVersion)} · ${c.requestCount} requests · ${esc(c.obs.platformDescription || c.obs.platform || '')}</div>
+        <div class="small" style="margin:6px 0">Main canvas ${c.videoSettings.baseWidth}×${c.videoSettings.baseHeight}, output ${c.videoSettings.outputWidth}×${c.videoSettings.outputHeight} at ${(c.videoSettings.fpsNumerator / c.videoSettings.fpsDenominator).toFixed(c.videoSettings.fpsDenominator === 1 ? 0 : 2)} fps · OBS CPU ${(+c.stats.cpuUsage || 0).toFixed(1)} % · ${Math.round(+c.stats.memoryUsage || 0)} MB · skipped by rendering ${c.stats.renderSkippedFrames || 0}, by the encoder ${c.stats.outputSkippedFrames || 0}</div>
+        ${Caps.outputsTable(c)}
+        <div class="small" style="margin-top:8px">OBS plugins that IXC can talk to: Aitum Multistream ${(Caps.vendor('aitum-multistream') || {}).registered ? 'detected' : 'not detected'} · Aitum Vertical Canvas ${(Caps.vendor('aitum-vertical-canvas') || {}).registered ? 'detected' : 'not detected'} · multiple canvases ${c.hasCanvasRequests ? 'known to OBS' : 'not reported'}</div>
+        <div class="actions"><button class="small" id="capsRefresh">Refresh</button> <span class="small muted">${esc(c.generatedAt)} · IXC only asked OBS for status here; nothing was changed and no stream key or password was requested.</span></div>`); }
     function paint(st) { if (App.current !== 'obs') return;
       main.innerHTML = card('🎬 Connection', `<div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(st.connected ? 'connected' : st.state)} ${st.connected ? `<span class="small">OBS ${esc(st.version)} · WebSocket ${esc(st.websocketVersion)}</span>` : `<span class="small muted">${esc(st.detail || '')}</span>`}</div>
         ${st.connected ? `<div class="row" style="gap:8px;margin-top:8px">${pill(st.streaming, st.streaming ? 'Streaming' : 'Not streaming')} ${pill(st.recording, st.recording ? 'Recording' : 'Not recording')}</div>` : ''}
@@ -270,8 +307,9 @@
         <div class="hint">IXC finds OBS and its WebSocket password by itself. Only fill these in if OBS is on another PC or you changed the port: OBS > Tools > WebSocket Server Settings > Show Connect Info. OBS 28 or newer is needed.</div>`) +
         (scenes && scenes.ok ? `<div style="height:14px"></div>` + card('🎞️ Scenes', `<div class="row" style="gap:8px;flex-wrap:wrap">${scenes.scenes.map(n => `<button class="${n === scenes.current ? 'primary' : ''}" data-scene="${esc(n)}">${esc(n)}</button>`).join('')}</div>`) : '') +
         (sources && sources.ok ? `<div style="height:14px"></div>` + card('👁️ Sources in "' + esc(sources.scene) + '"', `<table class="t">${sources.sources.map(x => `<tr><td>${esc(x.name)}</td><td style="text-align:right"><button class="small ${x.visible ? '' : 'primary'}" data-src="${esc(x.name)}" data-vis="${x.visible ? 'hide' : 'show'}">${x.visible ? 'Hide' : 'Show'}</button></td></tr>`).join('')}</table>
-          <div class="hint">Chat commands can do this too: Commands > edit a command > OBS action (e.g. !brb switches to your BRB scene).</div>`) : ''); }
+          <div class="hint">Chat commands can do this too: Commands > edit a command > OBS action (e.g. !brb switches to your BRB scene).</div>`) : ''); main.insertAdjacentHTML('beforeend', '<div style="height:14px"></div><div id="oCaps"></div>'); renderCaps(); Caps.get().then(() => { if (App.current === 'obs') renderCaps(); }); }
     main.onclick = async (e) => { const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+      if (b.id === 'capsRefresh') { b.textContent = 'Asking OBS…'; await Caps.get(true); renderCaps(); return; }
       if (b.id === 'oTest') { busy = true; b.textContent = 'Testing…'; const body = { address: $('oAddr').value.trim() || 'auto' }; if ($('oPw').value) body.password = $('oPw').value;
         const r = await IXC.api('/api/obs/connection', body); busy = false; toast(r.ok ? 'Connected to OBS ' + r.version : r.error, !r.ok); load(); }
       if (d.scene) { const r = await IXC.api('/api/obs/scene', { scene: d.scene }); if (!r.ok) toast(r.error, true); setTimeout(load, 300); }
@@ -445,5 +483,222 @@
       main.querySelectorAll('[data-open]').forEach(b => b.onclick = () => IXC.api('/api/open', { what: b.dataset.open }));
       main.querySelectorAll('[data-fix]').forEach(b => b.onclick = async () => { if (await UI.confirmBox('All phones will need a new QR code. Continue?', 'Continue')) repair(b.dataset.fix, b); }); };
     paint(); on('settings', () => { if (document.activeElement && document.activeElement.closest('#main')) return; paint(); });
+  });
+  // ======================= MULTISTREAM =======================
+  // Multistreaming and the vertical canvas are done in OBS by the Aitum plugins; IXC's own studio pages were not working, so they are off the menu.
+  // Old links land on this note; the old pages stay under #multistream-legacy / #vertical-legacy (backend unchanged).
+  // Streams: Twitch / YouTube / Kick as OBS and its plugins have them set up (read-only; /api/outputs never returns a stream key).
+  // "STREAMING" means OBS reports the output active (local), not that the platform confirmed it receives the stream.
+  page('multistream', 'Streams', (main) => {
+    const ST = { 'STREAMING': 'connected', 'CONNECTING': 'connecting', 'READY': 'idle', 'ERROR': 'error', 'NOT CONFIGURED': 'off', 'DISCONNECTED': 'disconnected' };
+    const NAME = { twitch: 'Twitch', youtube: 'YouTube', kick: 'Kick' };
+    async function load() { const r = await IXC.api('/api/outputs'); if (App.current !== 'multistream') return; paint(r); }
+    let ctlOn = false;
+    function paint(r) { ctlOn = !!(r && r.controls && r.controls.enabled);
+      if (!r || !r.ok) { main.innerHTML = card('📡 Streams', `<div class="err">${esc((r && r.error) || 'IXC could not read the stream settings')}</div>`); return; }
+      main.innerHTML = `<div class="actions" style="margin:0 0 10px"><button class="primary" id="outCheck">Check all</button>${ctlOn ? `<button data-out="start" data-p="all">Start all</button><button data-out="stop" data-p="all">Stop all</button>` : ''}<span class="small muted" style="align-self:center">OBS: ${esc(r.obs)}${ctlOn ? '' : ' · ' + esc((r.controls || {}).reason || '')}</span></div><div class="small" id="outMsg" role="status" style="margin-bottom:8px"></div>`
+        + (r.mainIssue ? `<div class="banner warn" style="margin-bottom:10px">${esc(r.mainIssue)}</div>` : '')
+        + `<div class="grid">` + ['twitch', 'youtube', 'kick'].map(p => { const x = r.platforms[p];
+          return `<div class="card"><div class="plat"><span class="logo2 ${p}">${NAME[p].slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${NAME[p]}</h3></div>${UI.pill(ST[x.state] || 'off', x.state)}</div>`
+            + (x.liveNote ? `<div class="small" style="margin-top:6px">${esc(x.liveNote)}</div>` : '')
+            + (x.outputs.length ? `<ul class="small" style="margin:6px 0 0 16px;padding:0">${x.outputs.map(o => `<li>${esc(o.via)}: <b>${esc(o.name)}</b> · ${o.serverSet ? esc(o.server) : '<span class="err">no server</span>'} · key ${o.keySet ? 'set' : '<span class="err">not set</span>'} · audio track ${o.audioTrack}</li>`).join('')}</ul>` : `<div class="small muted" style="margin-top:6px">No output for ${NAME[p]} in OBS. Add one in the Aitum Multistream dock (server address + stream key from ${NAME[p]}'s dashboard).</div>`)
+            + (x.notes && x.notes.length ? `<ul class="small muted" style="margin:6px 0 0 16px;padding:0">${x.notes.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + (ctlOn && x.state !== 'NOT CONFIGURED' ? `<div class="actions" style="margin-top:6px">${x.state === 'READY' ? `<button data-out="start" data-p="${p}">Start</button>` : ''}${x.state === 'STREAMING' || x.state === 'CONNECTING' ? `<button data-out="stop" data-p="${p}">Stop</button>` : ''}</div>` : '') + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
+        + `<p class="tiny muted">${esc(r.note)}${r.otherActiveOutputs && r.otherActiveOutputs.length ? ' Other active OBS outputs: ' + esc(r.otherActiveOutputs.join(', ')) : ''}</p>`;
+      $('outCheck').onclick = load; }
+    main.onclick = async (e) => { const b = e.target.closest('button[data-out]'); if (!b) return; const body = { platform: b.dataset.p };
+      b.disabled = true; let r = await IXC.api('/api/outputs/' + b.dataset.out, body);
+      if (r && r.needConfirm && await UI.confirmBox(r.error, 'Stop')) r = await IXC.api('/api/outputs/stop', Object.assign(body, { confirm: true }));
+      const m = $('outMsg'); if (m && r) { m.className = 'small ' + (r.ok ? 'ok' : 'err'); m.textContent = r.results ? Object.entries(r.results).map(([k, v]) => k + ': ' + v.result).join(' · ') : (r.error || ''); } load(); };
+    main.innerHTML = '<p class="muted">Reading OBS…</p>'; load();
+    const iv = setInterval(() => { if (App.current !== 'multistream') return clearInterval(iv); load(); }, 5000); });
+  for (const [id, title] of [['vertical', 'Vertical stream']]) page(id, title, (main) => {
+    main.innerHTML = card('📡 ' + title + ' is done in OBS', `<p class="small" style="margin-top:0">Use the <b>Aitum Multistream</b> dock in OBS to start and stop each platform, and its settings for bitrate and encoder. IXC shows OBS's real stream and output status under <a href="#obs">OBS Control</a>, and sends music and chat voice to each platform under <a href="#audio">Audio routing</a>.</p><p class="small">If OBS &gt; Settings &gt; Stream points at <code>rtmp://127.0.0.1:19350/live</code>, that was IXC's old relay: set it to your main platform instead.</p>`); });
+  // One OBS stream, forwarded by IXC to up to 8 destinations. Stream keys are write-only: typed here, stored encrypted, never shown again.
+  page('multistream-legacy', 'Multistream Studio (old)', (main) => {
+    let d = null, showIngest = false;
+    const MAX = 8;
+    async function load() { const r = await IXC.api('/api/multistream'); if (r && r.destinations) { d = r; paint(); } Caps.get().then(() => { if (App.current === 'multistream-legacy') paint(); }); }
+    const fmtMB = (n) => (n || 0).toFixed(n >= 10 ? 0 : 1);
+    function publishing(x) {   // is the platform actually receiving the stream? (not the same as "the server answers")
+      const r = x.relay || {};
+      if (r.state === 'live') return ['live', 'Publishing - the server accepted the stream (' + fmtMB(r.sentMB) + ' MB sent' + (r.droppedFrames ? ', ' + r.droppedFrames + ' video frames skipped' : '') + ')'];
+      if (r.state === 'connecting') return ['connecting', 'Connecting to the server…'];
+      if (r.state === 'reconnecting') return ['reconnecting', 'Not publishing: ' + (r.detail || 'connection lost')];
+      if (r.state === 'skipped') return ['off', 'Not used for this stream: ' + (r.detail || '')];
+      return ['off', d.relay.running ? (d.relay.publishing ? 'Not publishing' : 'Waiting for OBS to start streaming') : 'Not publishing (the relay is off)']; }
+    function reach(x) {   // "server reachable" only means TCP/TLS and the RTMP handshake worked - not that the key is right
+      if (x.state === 'checking') return ['connecting', 'Checking the server…'];
+      if (x.state === 'ok') return ['connected', 'Server reachable (handshake only - this does not prove the key is accepted)'];
+      if (x.state === 'failed') return ['error', 'Server not reachable: ' + x.detail];
+      return ['off', 'Server not checked']; }
+    function studioStatus() { const c = Caps.data; const head = '<h3 style="margin:0 0 8px">Stream status <span class="small muted">· from OBS</span></h3>';
+      if (!c) return card('📡 OBS', head + '<p class="muted">Asking OBS…</p>');
+      if (!c.ok) return card('📡 OBS', head + Caps.down(c, 'data-act="capsRefresh"'));
+      const ss = c.streamStatus || {}; const live = c.outputs.filter(o => o.active).length;
+      return card('📡 OBS', head + '<div class="row" style="gap:10px;flex-wrap:wrap">' + UI.pill(ss.outputActive ? 'live' : 'off', ss.outputActive ? 'OBS is streaming (' + esc(ss.outputTimecode || '') + ')' : 'OBS is not streaming') + '<span class="small muted">' + live + ' of ' + c.outputCount + ' OBS outputs active · main canvas ' + c.videoSettings.outputWidth + '×' + c.videoSettings.outputHeight + ' @ ' + (c.videoSettings.fpsNumerator / c.videoSettings.fpsDenominator) + ' fps (set in OBS: Settings › Video / Output)</span></div>' + Caps.outputsTable(c) +
+        '<div class="actions"><button class="small" data-act="capsRefresh">Refresh</button></div>'); }
+    function independentCard() { const c = Caps.data, v = c && c.ok ? Caps.vendor('aitum-multistream') : null;
+      return '<div style="height:18px"></div>' + card('🎛️ Independent outputs <span class="small muted">· own encoder, bitrate or size per destination</span>', '<div style="margin-bottom:8px">' + NOTIMPL('IXC cannot create or configure these yet.') + '</div>' +
+        '<div class="small">Giving a destination its own encoder, bitrate or resolution needs an OBS-side output (an OBS plugin, with its own encoder in OBS). ' + (v && v.registered ? 'Aitum Multistream is detected in OBS' + (v.answer && v.answer.version ? ' (version ' + esc(v.answer.version) + ')' : '') + ': set its destinations up inside OBS. IXC does not edit them yet; start/stop control from IXC has not been built or tested.' : 'No such plugin is detected in OBS' + (c && c.ok ? '' : ' (OBS is not connected)') + '.') + '</div>' +
+        '<div class="hint" style="margin-top:8px">Today: the shared-encode relay above, and OBS\'s own single stream. Nothing on this page claims per-destination bitrate or encoder control.</div>'); }
+    function relayCard() {
+      const r = d.relay, st = !r.running ? ['off', 'Off'] : r.publishing ? ['live', 'OBS is sending - forwarding to your destinations'] : ['waiting', 'On - waiting for OBS to start streaming'];
+      const obs = r.running ? `<div class="hint" style="margin-top:10px"><b>Put this in OBS</b> (Settings › Stream › Service: <b>Custom…</b>) - IXC does not change OBS for you:
+        <div class="field"><label class="lbl">Server</label><div class="val"><input type="text" id="msSrv" readonly value="${esc(r.serverUrl)}"> <button class="small" data-act="copy" data-v="${esc(r.serverUrl)}">Copy</button></div></div>
+        <div class="field"><label class="lbl">Stream key</label><div class="val"><input type="${showIngest ? 'text' : 'password'}" id="msKey" readonly value="${esc(r.streamKey)}" autocomplete="off"> <button class="small" data-act="showkey">${showIngest ? 'Hide' : 'Show'}</button> <button class="small" data-act="copy" data-v="${esc(r.streamKey)}">Copy</button></div></div>
+        <div class="small muted">This key only lets OBS on this PC talk to IXC. It is not a platform key. Keep OBS's own encoder settings (bitrate, keyframe interval 2 s) as the platforms require.</div></div>` : '';
+      return card('📡 Relay', `<div class="row" style="gap:12px;align-items:center">${UI.pill(st[0], st[1])}<span class="grow"></span>
+        ${r.running ? '<button data-act="relayStop" id="msStop">Stop relay</button>' : '<button class="primary" data-act="relayStart" id="msStart">Start relay</button>'}</div>${obs}
+        <div class="hint" style="margin-top:10px">The relay is off until you start it, and it does not start by itself. OBS encodes once; IXC copies that same stream to every destination below - nothing is re-encoded, so there is almost no extra load. Stopping OBS's stream ends all destinations.</div>`); }
+    function destCard(x) {
+      const p = publishing(x), c = reach(x), full = x.keySet ? '<span class="small">🔒 Key saved - hidden</span>' : '<span class="small muted">No stream key yet</span>';
+      return `<div class="card" data-id="${esc(x.id)}"><div class="row" style="align-items:center;gap:10px"><h3 style="margin:0" class="grow">${esc(x.name)} <span class="small muted">· ${esc(x.platform)}</span></h3>
+        <label class="switch"><input type="checkbox" data-en="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Use ${esc(x.name)}"><i></i></label></div>
+        <div class="small muted" style="margin:6px 0">${esc(x.url)} · ${full}</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">${UI.pill(p[0], p[1])}</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">${UI.pill(c[0], c[1])}</div>
+        <div class="actions" style="margin-top:10px"><button class="small" data-act="check" data-id="${esc(x.id)}">Check server</button> <button class="small" data-act="edit" data-id="${esc(x.id)}">Edit</button> <button class="small" data-act="del" data-id="${esc(x.id)}">Delete</button></div></div>`; }
+    function paint() { if (App.current !== 'multistream-legacy' || !d) return;
+      if (document.getElementById('msModal')) return;   // never redraw under an open editor
+      const n = d.destinations.length;
+      main.innerHTML = studioStatus() + `<h3 style="margin:18px 0 4px">Shared-encode destinations <span class="small muted">· IXC relay</span></h3><div class="small muted" style="margin-bottom:8px">Every destination here receives exactly the stream OBS encodes: one encoder, no extra encoding load, and the same bitrate, resolution and codecs for all. IXC cannot give one of them its own bitrate or encoder.</div>` + relayCard() + `<h3 style="margin:18px 0 8px">Destinations <span class="small muted">(${n} of ${MAX})</span></h3>` +
+        (n ? d.destinations.map(destCard).join('') : '<p class="muted">No destinations yet. Add the server address and stream key each platform shows in its own dashboard.</p>') +
+        `<div class="actions"><button class="primary" id="msAdd" ${n >= MAX ? 'disabled title="IXC manages up to ' + MAX + ' destinations"' : ''}>+ Add destination</button>${n >= MAX ? ' <span class="small muted">The limit is ' + MAX + ' destinations.</span>' : ''}</div>
+        <div class="hint" style="margin-top:12px"><b>Server reachable</b> only proves IXC can open a connection and speak RTMP with that address - it does not send your key. <b>Publishing</b> means the platform accepted your stream key and is receiving video. Use a throw-away or private stream first. Each platform has its own rules (accounts, minimum followers, keys that expire); copy the address and key from its dashboard.</div>` + independentCard(); }
+    function edit(id) {
+      const x = id ? d.destinations.find(z => z.id === id) : { platform: 'custom', name: '', url: '', enabled: true, keySet: false };
+      const pre = (pl) => d.presets.find(z => z.platform === pl) || d.presets[d.presets.length - 1];
+      App.modal(`<div id="msModal"><h3>${id ? 'Edit destination' : 'Add destination'}</h3>
+        <div class="field"><label class="lbl">Platform</label><div class="val"><select id="mP">${d.presets.map(z => `<option value="${esc(z.platform)}" ${z.platform === x.platform ? 'selected' : ''}>${esc(z.label)}</option>`).join('')}</select></div></div>
+        <div class="hint small" id="mNote">${esc(pre(x.platform).note)}</div>
+        <div class="field"><label class="lbl">Name</label><div class="val"><input type="text" id="mN" maxlength="40" value="${esc(x.name)}" placeholder="My Twitch"></div></div>
+        <div class="field"><label class="lbl">Server URL</label><div class="val"><input type="text" id="mU" value="${esc(x.url)}" placeholder="rtmp://… or rtmps://…" spellcheck="false" autocomplete="off"><div class="tiny muted" id="mS"></div></div></div>
+        <div class="field"><label class="lbl">Stream key</label><div class="val"><input type="password" id="mK" autocomplete="new-password" spellcheck="false" placeholder="${x.keySet ? '•••••••• saved - leave empty to keep it' : 'paste the key from the platform'}">
+          ${x.keySet ? '<label class="small"><input type="checkbox" id="mC"> Remove the saved key</label>' : ''}<div class="tiny muted">Stored encrypted on this PC. It is never shown again.</div></div></div>
+        <div class="field"><label class="lbl">Use this destination</label><div class="val"><label class="switch"><input type="checkbox" id="mE" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><i></i></label></div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="mSave">Save</button></div></div>`);
+      let lastSug = '';
+      const sug = () => { const z = pre($('mP').value); $('mNote').textContent = z.note; $('mS').textContent = z.url && z.suggested ? 'Suggested address - confirm it in the platform\'s dashboard.' : ''; };
+      $('mP').onchange = () => { const z = pre($('mP').value); const u = $('mU').value.trim(); if ((u === '' || u === lastSug) && z.url) { $('mU').value = z.url; lastSug = z.url; } if (!$('mN').value.trim() || d.presets.some(q => q.label === $('mN').value.trim())) $('mN').value = z.label === 'Custom' ? '' : z.label; sug(); }; sug();
+      $('mSave').onclick = async () => {
+        const body = { platform: $('mP').value, name: $('mN').value.trim(), url: $('mU').value.trim(), enabled: $('mE').checked }; if (id) body.id = id;
+        const k = $('mK').value.trim(); if (k) body.key = k; if ($('mC') && $('mC').checked) body.clearKey = true;
+        const r = await IXC.api('/api/multistream/save', body); $('mK').value = ''; if (!r.ok) { toast(r.error || 'Could not save', true); return; } App.closeModal(); toast('Saved'); load(); }; }
+    main.onclick = async (e) => { const t = e.target.closest('[data-act],#msAdd'); if (!t) return; const a = t.dataset.act, id = t.dataset.id;
+      if (t.id === 'msAdd') edit(null);
+      else if (a === 'edit') edit(id);
+      else if (a === 'del') { const x = d.destinations.find(z => z.id === id); if (await UI.confirmBox('Delete "' + x.name + '" and its saved stream key?', 'Delete')) { const r = await IXC.api('/api/multistream/delete', { id }); toast(r.ok ? 'Deleted' : r.error, !r.ok); load(); } }
+      else if (a === 'check') { const r = await IXC.api('/api/multistream/check', { id }); if (!r.ok) toast(r.error, true); load(); }
+      else if (a === 'relayStart' || a === 'relayStop') { const r = await IXC.api('/api/multistream/relay', { action: a === 'relayStart' ? 'start' : 'stop' }); if (!r.ok) toast(r.error, true); else toast(a === 'relayStart' ? 'Relay started' : 'Relay stopped'); load(); }
+      else if (a === 'capsRefresh') { t.textContent = 'Asking OBS…'; await Caps.get(true); paint(); }
+      else if (a === 'showkey') { showIngest = !showIngest; paint(); }
+      else if (a === 'copy') { try { await navigator.clipboard.writeText(t.dataset.v); toast('Copied'); } catch (err) { toast('Select the text and press Ctrl+C', true); } } };
+    main.onchange = async (e) => { const id = e.target.dataset.en; if (!id) return; const r = await IXC.api('/api/multistream/save', { id, enabled: e.target.checked }); if (!r.ok) toast(r.error, true); load(); };
+    load(); const iv = setInterval(() => { if (App.current !== 'multistream-legacy') return clearInterval(iv); load(); }, 2000);
+  });
+  // ======================= VERTICAL STUDIO =======================
+  // Honest shell: shows what OBS and its plugins really report. A 9:16 canvas with its own scenes and output needs an OBS-side component;
+  // IXC controls for it are not built yet, so none are shown.
+  page('vertical-legacy', 'Vertical Studio (old)', (main) => {
+    async function paint() { if (App.current !== 'vertical-legacy') return; const c = Caps.data;
+      const vv = c && c.ok ? Caps.vendor('aitum-vertical-canvas') : null; const det = !!(vv && vv.registered);
+      main.innerHTML = card('📐 Vertical canvas (9:16)', (!c ? '<p class="muted">Asking OBS…</p>' : !c.ok ? Caps.down(c, 'id="vRefresh"') : `<div class="row" style="gap:10px;flex-wrap:wrap">${UI.pill(det ? 'connected' : 'off', det ? 'Aitum Vertical Canvas detected' + (vv.answer && vv.answer.version ? ' (' + esc(vv.answer.version) + ')' : '') : 'No vertical canvas component detected in OBS')}</div>
+          <table class="t" style="margin-top:10px"><tr><td>OBS</td><td class="small">${esc(c.obs.obsVersion)} · obs-websocket ${esc(c.obs.obsWebSocketVersion)}</td></tr>
+          <tr><td>Multiple canvases</td><td class="small">${c.hasCanvasRequests ? 'OBS reports canvas support (it can list canvases)' : 'OBS does not report canvas support'}</td></tr>
+          <tr><td>Main canvas</td><td class="small">${c.videoSettings.baseWidth}×${c.videoSettings.baseHeight} base, ${c.videoSettings.outputWidth}×${c.videoSettings.outputHeight} output, ${c.videoSettings.fpsNumerator / c.videoSettings.fpsDenominator} fps (landscape)</td></tr>
+          <tr><td>Vertical output</td><td class="small">${det ? 'A vertical component is present in OBS; IXC does not read or control its output yet.' : 'None - there is no vertical output to show.'}</td></tr></table>
+          <div class="actions"><button class="small" id="vRefresh">Refresh</button> <span class="small muted">${esc(c.generatedAt)} · read-only</span></div>`)) +
+        '<div style="height:14px"></div>' + card('What is and is not built', `<table class="t">
+          <tr><td>See whether OBS and a vertical plugin are present</td><td><span class="pill st-connected"><i></i>Working (above)</span></td></tr>
+          <tr><td>Start / stop the vertical stream, switch its scene, show its status</td><td>${NOTIMPL('needs a vertical component in OBS and a tested control path')}</td></tr>
+          <tr><td>Portrait resolution, frame rate, destinations, layouts, presets</td><td>${NOTIMPL('set in OBS; IXC cannot edit them')}</td></tr>
+          <tr><td>9:16 preview and scene/source composition inside IXC</td><td>${NOTIMPL('OBS does not offer a way to edit another canvas from outside')}</td></tr></table>
+          <div class="hint" style="margin-top:8px">A real vertical output is a second canvas with its own scenes and its own encoder, rendered by OBS. IXC will only show controls here after they have been tested on this PC's OBS. A resized preview is not vertical support.</div>`);
+    }
+    main.onclick = async (e) => { if (e.target.id === 'vRefresh') { e.target.textContent = 'Asking OBS…'; await Caps.get(true); paint(); } };
+    paint(); Caps.get().then(paint); const iv = setInterval(() => { if (App.current !== 'vertical-legacy') return clearInterval(iv); Caps.get().then(paint); }, 15000);
+  });
+
+  // ======================= AUTOMATION STUDIO =======================
+  // Honest shell: shows what already runs automatically in IXC (real settings) and links to where each part is edited.
+  page('automation', 'Automation Studio', (main) => {
+    const V = () => S.values || {}; const cmds = () => (V()['commands.list'] || []), tms = () => (V()['timers.list'] || []);
+    const EV = [['follow', 'New follower'], ['sub', 'New subscriber'], ['gift', 'Gifted subs'], ['raid', 'Raid / host'], ['superchat', 'Super Chat / Rant'], ['member', 'New YouTube member']];
+    function paint() { if (App.current !== 'automation') return; const c = cmds(), t = tms(), evOn = EV.filter(([k]) => V()['events.' + k + '.on']);
+      const row = (name, state, link, label) => '<tr><td><b>' + name + '</b><div class="small muted">' + state + '</div></td><td style="text-align:right"><button class="small" data-go="' + link + '">' + label + '</button></td></tr>';
+      main.innerHTML = card('🤖 What runs automatically in IXC today', '<div class="hint" style="margin-bottom:8px">All of this is built into IXC - no Streamer.bot or other program is needed. These are the real settings of this IXC.</div><table class="t">' +
+        row('Chat commands', c.length ? c.filter(x => x.enabled !== false).length + ' of ' + c.length + ' custom commands on, plus the built-in ones' : 'no custom commands yet; the built-in ones work', 'commands', 'Open Commands') +
+        row('Timers', t.length ? t.filter(x => x.enabled !== false).length + ' of ' + t.length + ' timers on' + (V()['timers.enabled'] === false ? ' (timers switched off)' : '') : 'no timers yet', 'timers', 'Open Timers') +
+        row('Event messages', evOn.length ? 'on for: ' + evOn.map(([, n]) => n).join(', ') : 'all switched off', 'commands', 'Open event messages') +
+        row('Chat filters', 'link, caps, banned-word and duplicate filters', 'filters', 'Open Chat filters') +
+        row('Chat voice and music', 'chat voice (TTS) and the music queue react to chat', 'tts', 'Open Chat voice') +
+        row('OBS actions', 'a command can switch a scene or show / hide a source', 'obs', 'Open OBS Control') + '</table>') +
+        '<div style="height:14px"></div>' + card('Automation Studio - what is not built yet', `<table class="t">
+          <tr><td>Triggers beyond commands, timers and event messages (OBS events, going live, hotkeys)</td><td>${NOTIMPL('')}</td></tr>
+          <tr><td>Actions made of several steps, with conditions and branches</td><td>${NOTIMPL('')}</td></tr>
+          <tr><td>Variables, counters and saved state</td><td>${NOTIMPL('only a few fixed placeholders such as {uptime} {viewers} {song} exist')}</td></tr>
+          <tr><td>Run history and a Test / Run button for each action</td><td>${NOTIMPL('')}</td></tr>
+          <tr><td>Import / export of automations</td><td>${NOTIMPL('only a name-only import of Streamer.bot commands exists, in Commands')}</td></tr></table>
+          <div class="hint" style="margin-top:8px">These will be added one by one, each with tests, on top of the engines above, which keep working as they are. IXC does not use or copy Streamer.bot.</div>`); }
+    main.onclick = (e) => { const b = e.target.closest('[data-go]'); if (b) { e.preventDefault(); location.hash = '#' + b.dataset.go; } };
+    async function load() { const d = await IXC.api('/api/settings'); if (d && d.values) { S.values = d.values; } paint(); }
+    paint(); load(); const iv = setInterval(() => { if (App.current !== 'automation') return clearInterval(iv); load(); }, 4000);
+  });
+  // ======================= STREAMER.BOT (managed backend) =======================
+  // IXC talks to Streamer.bot's local WebSocket API. The sign-ins to Twitch / YouTube / Kick live inside Streamer.bot (one time, in its own
+  // window): IXC cannot do them for you. Status is drawn separately from the form so a refresh never wipes what is being typed.
+  page('streamerbot', 'Streamer.bot', (main) => {
+    main.innerHTML = `<p class="muted" style="margin-top:0">IXC can use <b>Streamer.bot</b> as a background helper for chat, replies and actions on Twitch, YouTube and Kick, so you don't have to register developer apps in IXC. IXC only talks to it on this PC (localhost).</p>
+      <div class="grid"><div class="card" id="sbStatus"></div><div class="card" id="sbForm"></div></div>`;
+    let d = null, formDone = false;
+    const ago = (t) => { if (!t) return 'never'; const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? s + ' s ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; };
+    const stateOf = (x) => { const l = x.link || {}; return l.ready ? ['connected', 'Connected'] : !x.installed ? ['off', 'Not found'] : !x.running ? ['off', 'Not running'] : ['reconnecting', l.detail || 'Waiting for Streamer.bot']; };
+    function paintStatus() { const x = d, [st, label] = stateOf(x), l = x.link || {}, s = x.settings;
+      const warn = [];
+      if (s && !s.serverOn) warn.push('Streamer.bot\'s WebSocket Server is switched off (in Streamer.bot: Servers/Clients > WebSocket Server > Auto Start).');
+      if (s && !s.localOnly) warn.push('Streamer.bot\'s WebSocket Server listens on ' + esc(s.address) + ', not only on this PC. Set its address to 127.0.0.1.');
+      if (s && !s.authEnabled) warn.push('Streamer.bot\'s WebSocket password is switched off. Turn on Authentication there.');
+      const tb = $('sbTest') ? $('sbTest').outerHTML : '<div class="small" id="sbTest" role="status" style="margin-top:8px"></div>';   // keep the last test result across refreshes
+      $('sbStatus').innerHTML = `<h3>Status ${UI.pill(st, label)}</h3>
+        <div class="kv small"><div>Program</div><div>${x.installed ? esc(x.path || '') : '<span class="warn">Streamer.bot.exe not found - choose its folder under Settings.</span>'}</div>
+          <div>Version</div><div>${esc(x.version || '-')}</div>
+          <div>Running</div><div>${x.running ? 'Yes' + (x.managed ? ' (started by IXC, pid ' + x.managedPid + ')' : ' (not started by IXC, IXC will not stop it)') : 'No'}</div>
+          <div>Connection</div><div>${esc(l.ready ? 'Connected' + (l.auth === 'ok' ? ', signed in with the password' : l.auth === 'not required' ? ', no password needed' : '') : (l.detail || (x.mode === 'off' ? 'Turned off' : 'Not connected')))}</div>
+          <div>Last event</div><div>${l.lastEvent ? ago(l.lastEvent) + ' (' + l.events + ' received)' : 'none yet'}</div>
+          <div>Accounts</div><div>${(l.accounts || []).length ? esc(l.accounts.join(', ')) : '<span class="muted">none reported yet</span>'}</div>
+          <div>Password</div><div>${x.passwordSet ? 'Set (' + esc(x.passwordSource) + ')' : '<span class="warn">none</span>'}</div></div>
+        ${warn.map(w => `<div class="banner" style="margin-top:8px">${w}</div>`).join('')}
+        ${x.startError ? `<div class="err small" style="margin-top:8px">${esc(x.startError)}</div>` : ''}
+        <div class="actions" style="margin-top:10px"><button class="primary" data-sb="test">Test connection</button><button data-sb="start" ${x.running || !x.installed ? 'disabled' : ''}>Start Streamer.bot</button><button data-sb="stop" ${x.managed ? '' : 'disabled'} title="${x.managed ? '' : 'Only a Streamer.bot that IXC started can be stopped here'}">Stop</button></div>
+        ${tb}
+        <div class="hint" style="margin-top:8px"><b>Signing in to Twitch, YouTube and Kick</b> is done once inside Streamer.bot's own window (Platforms tab). IXC cannot do it for you and never sees those sign-ins. After that IXC runs it in the background.</div>`; }
+    function paintForm() { if (formDone) return; formDone = true;
+      $('sbForm').innerHTML = `<h3>Settings</h3>
+        <div class="field"><label class="lbl">Use Streamer.bot</label><div class="val"><select id="sbMode"><option value="auto">Automatically, when it is running</option><option value="on">Always (keep trying)</option><option value="off">Never</option></select></div></div>
+        <div class="field"><label class="lbl">Address</label><div class="val"><input id="sbUrl" autocomplete="off" spellcheck="false" placeholder="ws://127.0.0.1:8080/"></div></div>
+        <div class="field"><label class="lbl">Password</label><div class="val"><input id="sbPw" type="password" autocomplete="new-password"> <span class="ok small" id="sbPwSaved" hidden>🔒 Saved</span></div></div>
+        <div class="tiny muted">The password is stored encrypted on this PC and never shown again. Leave it empty and IXC looks it up in Streamer.bot's own settings file.</div>
+        <div class="field"><label class="lbl">Program</label><div class="val"><input id="sbExe" autocomplete="off" spellcheck="false" placeholder="folder with Streamer.bot.exe (found automatically)"></div></div>
+        <div class="field"><label class="lbl">Start with IXC</label><div class="val"><select id="sbLaunch"><option value="never">No, I start it myself</option><option value="withIxc">Yes, keep it running in the background</option></select></div></div><div class="field"><label class="lbl">When IXC quits<div class="hint">only a Streamer.bot that IXC started; never while OBS is live, never forced</div></label><div class="val"><select id="sbOnExit"><option value="keep">Leave Streamer.bot running</option><option value="close">Close Streamer.bot</option></select></div></div>
+        <div class="actions"><button class="primary" data-sb="save">Save</button></div><div class="small" id="sbMsg" role="status" style="margin-top:6px"></div>`;
+      fillForm(); }
+    function fillForm() { const x = d, set = (id, v) => { const e = $(id); if (e) e.value = v; };
+      set('sbMode', x.mode); set('sbUrl', x.url); set('sbExe', x.exePath || ''); set('sbLaunch', x.launch); set('sbOnExit', x.onExit || 'keep'); $('sbPw').value = ''; $('sbPw').placeholder = x.passwordSet ? '(set - type a new one to replace it)' : ''; $('sbPwSaved').hidden = !x.passwordSet; }
+    const msg = (id, text, bad) => { const e = $(id); if (e) { e.className = 'small ' + (bad ? 'err' : 'ok'); e.textContent = text; } };
+    async function load() { const r = await IXC.api('/api/streamerbot'); if (r && r.mode !== undefined) { d = r; paintStatus(); paintForm(); } else if (!d) $('sbStatus').innerHTML = '<div class="err">IXC did not answer.</div>'; }
+    main.onclick = async (e) => { const b = e.target.closest('[data-sb]'); if (!b) return; const a = b.dataset.sb; b.disabled = true;
+      try {
+        if (a === 'test') { msg('sbTest', 'Testing...', false); const r = await IXC.api('/api/streamerbot/test', {}); const text = r.ok ? 'Connected' + (r.version ? ' to Streamer.bot ' + r.version : '') + (r.authRequired ? ', password accepted' : ', no password needed') + (r.accounts && r.accounts.length ? '. Accounts: ' + r.accounts.join(', ') : '. No platform account reported - sign in inside Streamer.bot.') : r.error || 'Failed'; msg('sbTest', text, !r.ok); }
+        else if (a === 'start') { const r = await IXC.api('/api/streamerbot/start', {}); toast(r.ok ? 'Starting Streamer.bot...' : r.error, !r.ok); }
+        else if (a === 'stop') { let r = await IXC.api('/api/streamerbot/stop', {}); if (!r.ok && /streaming or recording/.test(r.error || '')) { if (await UI.confirmBox(r.error, 'Stop anyway')) r = await IXC.api('/api/streamerbot/stop', { confirmLive: true }); } if (!r.ok && /did not close/.test(r.error || '')) { if (await UI.confirmBox(r.error, 'Force stop')) r = await IXC.api('/api/streamerbot/stop', { force: true, confirmLive: true }); } if (!r.ok) toast(r.error, true); }
+        else if (a === 'save') {
+          const body = { mode: $('sbMode').value, url: $('sbUrl').value.trim(), exePath: $('sbExe').value.trim(), launch: $('sbLaunch').value, onExit: $('sbOnExit').value }; const pw = $('sbPw').value; if (pw) body.password = pw;
+          const r = await IXC.api('/api/streamerbot/config', body);
+          if (!r || !r.ok) { const why = (r && r.error) || 'IXC did not answer - is it running?'; msg('sbMsg', 'Not saved: ' + why + ' Your entries are still here.', true); return; }   // entries stay as typed
+          const f = await IXC.api('/api/streamerbot');   // confirm from the backend, not from the browser
+          if (!f || f.url !== body.url || f.mode !== body.mode || f.launch !== body.launch || (pw && !f.passwordSet)) { msg('sbMsg', 'IXC said "saved" but reading the settings back did not show them. Your entries are still here - try again.', true); return; }
+          d = f; fillForm(); paintStatus(); msg('sbMsg', 'Saved.', false); }
+      } finally { b.disabled = false; load(); } };
+    load(); const iv = setInterval(() => { if (App.current !== 'streamerbot') return clearInterval(iv); load(); }, 3000);
   });
 })();

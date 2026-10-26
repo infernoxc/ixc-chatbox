@@ -36,6 +36,14 @@ namespace IXC {
       if (p == "youtube") return GoogleId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
       if (p == "kick") return KickId.Length > 0 && (SecretOf(p).Length > 0 || Relay.Length > 0);
       return false; }
+    // why IXC can't send as this account yet, in the order the streamer has to fix it (null = the account is ready): app -> sign-in -> still valid
+    public static string ReplyBlocker(string p, string label) {
+      var app = p == "youtube" ? "Google (YouTube)" : label;
+      // Streamer.bot is the normal way to reply (it holds the platform sign-ins); an own developer app is the advanced alternative
+      if (!Available(p)) return "To reply on " + label + ": connect " + label + " in Streamer.bot and keep it running (advanced alternative: turn on Advanced in Settings, add your " + app + " app under Platforms & accounts > Your apps, then connect your " + label + " account)";
+      var a = Raw(p); if (a == null) return "To reply on " + label + ": connect your " + label + " account (Platforms & accounts > Connect)";
+      if (J.Bool(a, "invalid", false)) { var why = J.Str(a, "reason", ""); return label + ": " + (why.Length > 0 ? why : "sign-in expired - connect your " + label + " account again"); }
+      return null; }
     public static string RedirectUri(string p) { return (p == "youtube" ? "http://127.0.0.1:" : "http://localhost:") + Program.Port + "/oauth/" + p; }
     // what the "Your apps" form shows: IDs (public) and whether a secret is saved, never the secret
     public static Dictionary<string, object> Apps() {
@@ -46,7 +54,13 @@ namespace IXC {
       { "twitch", "^[a-z0-9]{20,40}$" }, { "google", "^[\\w.-]{3,120}\\.apps\\.googleusercontent\\.com$" }, { "kick", "^[A-Za-z0-9]{10,64}$" } };
     // patch: { twitch: { id }, google: { id, secret }, kick: { id, secret } }. A missing field is left as it is, "" clears it.
     // Returns null when saved, otherwise the problem (then nothing is saved).
+    // Diagnostics (auth.log) name the fields and the outcome only - never a value. The write is read back before "saved" is reported.
     public static string SetApps(Dictionary<string, object> patch) {
+      var names = new List<string>(); if (patch != null) foreach (var app in new[] { "twitch", "google", "kick" }) { var d = J.Obj(patch, app); if (d == null) continue; foreach (var f in new[] { "id", "secret" }) if (d.ContainsKey(f)) names.Add(app + "." + f); }
+      string err; try { err = SetAppsCore(patch); } catch (Exception e) { err = "IXC couldn't write its encrypted settings (" + e.GetType().Name + ")"; }
+      if (err != null) Log.Info("auth", "your app settings were NOT saved (HTTP 400; fields: " + (names.Count > 0 ? string.Join(", ", names) : "none") + "): " + err);
+      return err; }
+    static string SetAppsCore(Dictionary<string, object> patch) {
       if (patch == null) return "nothing to save";
       var todo = new List<KeyValuePair<string, string>>();
       foreach (var app in new[] { "twitch", "google", "kick" }) {
@@ -58,7 +72,10 @@ namespace IXC {
           if (sec.Length > 0 && (sec.Length < 10 || sec.Length > 200 || Regex.IsMatch(sec, "\\s"))) return "That doesn't look like a client secret - copy it again";
           todo.Add(new KeyValuePair<string, string>("apps." + app + ".secret", sec)); } }
       if (todo.Count == 0) return "nothing to save";
+      var old = todo.ToDictionary(kv => kv.Key, kv => Secrets.Get(kv.Key));
       foreach (var kv in todo) Secrets.Set(kv.Key, kv.Value.Length == 0 ? null : kv.Value);
+      if (Secrets.SaveError != null) { foreach (var kv in old) Secrets.Set(kv.Key, kv.Value); return "IXC couldn't write its encrypted settings file (" + Secrets.SaveError + "), so nothing was saved"; }
+      foreach (var kv in todo) { var back = (Secrets.Str(kv.Key) ?? "").Trim(); if (back != kv.Value) return "IXC wrote your " + kv.Key.Split('.')[1] + " " + kv.Key.Split('.')[2] + " but could not read it back, so it was not kept"; }
       Log.Info("auth", "your app settings were saved (" + string.Join(", ", todo.Select(kv => kv.Key.Split('.')[1] + " " + kv.Key.Split('.')[2] + (kv.Value.Length == 0 ? " cleared" : ""))) + ")");
       Changed("twitch"); return null; }
 
@@ -98,6 +115,8 @@ namespace IXC {
       if (J.Long(a, "expiresAt", 0) - U.Now() < 300000 && !Refresh(p)) return null;
       return J.Str(Raw(p), "access", null); }
     static readonly Dictionary<string, object> refreshLocks = new Dictionary<string, object> { { "twitch", new object() }, { "youtube", new object() }, { "kick", new object() } };
+    // Google ends the sign-in of an app left in "Testing" after 7 days (refresh answers 400 invalid_grant): the usual reason a YouTube sign-in "expires"
+    const string ExpiredGoogle = "sign-in expired - connect again. If it keeps expiring after a week: Google Cloud > OAuth consent screen > Publish app (apps in Testing lose their sign-in after 7 days)";
     public static bool Refresh(string p) {
       lock (refreshLocks[p]) {
         var a = Raw(p); if (a == null) return false; if (J.Long(a, "expiresAt", 0) - U.Now() > 300000) return true;
@@ -105,7 +124,7 @@ namespace IXC {
         Http.Resp r;
         if (p == "twitch") r = Http.Request("POST", Ep.Get("twitch_id", "https://id.twitch.tv") + "/oauth2/token", "grant_type=refresh_token&refresh_token=" + Uri.EscapeDataString(rt) + "&client_id=" + TwitchId, "application/x-www-form-urlencoded", null, 12000);
         else r = Broker(p, J.D("grant_type", "refresh_token", "refresh_token", rt));
-        if (r.Code == 400 || r.Code == 401) { MarkInvalid(p, "sign-in expired - please connect again"); return false; }
+        if (r.Code == 400 || r.Code == 401) { MarkInvalid(p, p == "youtube" ? ExpiredGoogle : "sign-in expired - please connect again"); return false; }
         if (!r.Ok) { Log.Warn("auth", p + " token refresh failed: " + (r.Error ?? r.Code.ToString())); return false; }   // network trouble: keep the account, try later
         var t = J.Parse(r.Body); Apply(a, t); Save(p, a); Log.Info("auth", p + " sign-in refreshed"); return true; } }
     static void Apply(Dictionary<string, object> a, Dictionary<string, object> t) {

@@ -11,7 +11,8 @@ export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 export async function freePort() { return new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); }); }
 export function build() {
   if (built) return built; const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ixc-build-')); const app = path.join(root, 'app');
-  execFileSync('sh', [path.join(repo, 'tests/build-linux.sh'), path.join(app, 'core/ixc-core.exe')], { stdio: 'pipe' });
+  if (process.env.IXC_CORE_EXE) { fs.mkdirSync(path.join(app, 'core'), { recursive: true }); fs.copyFileSync(process.env.IXC_CORE_EXE, path.join(app, 'core/ixc-core.exe')); }   // Windows: prebuilt with src/core/build-core.ps1, no Mono needed
+  else execFileSync('sh', [path.join(repo, 'tests/build-linux.sh'), path.join(app, 'core/ixc-core.exe')], { stdio: 'pipe' });
   for (const d of ['chat', 'music', 'app', 'overlay']) fs.cpSync(path.join(repo, 'src', d), path.join(app, d), { recursive: true });
   fs.cpSync(path.join(repo, 'src/core/web'), path.join(app, 'core/web'), { recursive: true });
   fs.writeFileSync(path.join(app, 'core/VERSION'), '3.0.0');
@@ -24,7 +25,8 @@ export async function startCore(opts = {}) {
   if (!opts.keepConfig) fs.writeFileSync(path.join(dir, 'config.json'), opts.rawConfig ?? JSON.stringify(cfg, null, 2));
   if (opts.defaults) fs.writeFileSync(path.join(app, 'core/ixc.defaults.json'), JSON.stringify(opts.defaults)); else if (fs.existsSync(path.join(app, 'core/ixc.defaults.json'))) fs.rmSync(path.join(app, 'core/ixc.defaults.json'));
   const env = Object.assign({}, process.env, { IXC_TTS_FAKE: '1', IXC_OBS_CONFIG: path.join(dir, 'obs-config'), IXC_EP_NET_CHECK: 'http://127.0.0.1:1/', IXC_EP_TWITCH_GQL: 'http://127.0.0.1:1/', IXC_EP_YOUTUBE_END_CONFIRM_MS: '3000' }, opts.env || {});
-  const proc = spawn('mono', [path.join(app, 'core/ixc-core.exe'), '--test', '--config', path.join(dir, 'config.json')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const cargs = ['--test', '--config', path.join(dir, 'config.json')], sio = { env, stdio: ['ignore', 'pipe', 'pipe'] }, exe = path.join(app, 'core/ixc-core.exe');
+  const proc = process.env.IXC_CORE_EXE ? spawn(exe, cargs, sio) : spawn('mono', [exe].concat(cargs), sio);
   let out = ''; proc.stdout.on('data', d => out += d); proc.stderr.on('data', d => out += d);
   const core = { port, dir, proc, url: 'http://127.0.0.1:' + port, exited: null, output: () => out };
   proc.on('exit', (c) => { core.exited = c; });
@@ -75,6 +77,8 @@ export async function fakeTwitch(port) {
     c.ws.on('message', (d) => { for (const line of d.toString().split('\r\n').filter(Boolean)) { c.lines.push(line);
       if (line.startsWith('NICK ')) { c.nick = line.slice(5); c.send(':tmi.twitch.tv 001 ' + c.nick + ' :Welcome, GLHF!'); }
       if (line.startsWith('PASS ')) c.pass = line.slice(5);
+      // like Twitch: USERSTATE confirms an accepted message, a NOTICE refuses it. s.sendMode = 'silent' never answers, 'ratelimit' refuses
+      if (line.startsWith('PRIVMSG ')) { const ch = line.split(' ')[1]; if (s.sendMode === 'ratelimit') c.send('@msg-id=msg_ratelimit :tmi.twitch.tv NOTICE ' + ch + ' :Your message was not sent because you are sending messages too quickly.'); else if (s.sendMode !== 'silent') c.send('@badges=;display-name=x :tmi.twitch.tv USERSTATE ' + ch); }
       if (line.startsWith('JOIN ')) { c.chan = line.slice(5); c.send(':' + c.nick + '!' + c.nick + '@' + c.nick + '.tmi.twitch.tv JOIN ' + c.chan); c.send('@room-id=1 :tmi.twitch.tv ROOMSTATE ' + c.chan); } } }); }, port);
   s.msg = (tags, login, text, chan = '#streamer') => { for (const c of s.live()) c.send('@' + Object.entries(tags).map(([k, v]) => k + '=' + v).join(';') + ' :' + login + '!' + login + '@' + login + '.tmi.twitch.tv PRIVMSG ' + chan + ' :' + text); };
   s.raw = (line) => { for (const c of s.live()) c.send(line); };
@@ -89,7 +93,17 @@ export async function fakeObs(opts = {}) {
       if (m.op !== 6) return; const { requestType: t, requestId: id, requestData: q = {} } = m.d; st.calls.push(t); let ok = true, comment = '', data = {};
       const fail = (cm) => { ok = false; comment = cm; };
       switch (t) {
-        case 'GetVersion': data = { obsVersion: '31.0.0' }; break;
+        case 'GetVersion': data = { obsVersion: '31.0.0', obsWebSocketVersion: '5.5.0', rpcVersion: 1, platform: 'windows', platformDescription: 'Windows 11', availableRequests: opts.requests || ['GetVersion', 'GetOutputList', 'GetOutputStatus', 'GetVideoSettings', 'GetStreamStatus', 'GetRecordStatus', 'GetProfileList', 'GetHotkeyList', 'GetStats', 'CallVendorRequest', 'StartOutput', 'StopOutput', 'GetStreamServiceSettings', 'GetOutputSettings', 'SetVideoSettings'] }; break;
+        case 'PressInputPropertiesButton': (st.pressed = st.pressed || []).push(q.inputName + '|' + q.propertyName); break;
+        case 'GetOutputList': data = { outputs: opts.outputs || [{ outputName: 'adv_stream', outputKind: 'rtmp_output', outputWidth: 1920, outputHeight: 1080, outputActive: false, outputFlags: { OBS_OUTPUT_AUDIO: true, OBS_OUTPUT_VIDEO: true } }, { outputName: 'aitum_out_1', outputKind: 'rtmp_output', outputWidth: 1280, outputHeight: 720, outputActive: true, outputFlags: { OBS_OUTPUT_AUDIO: true, OBS_OUTPUT_VIDEO: true } }] }; break;
+        case 'GetOutputStatus': data = { outputActive: q.outputName === 'aitum_out_1', outputReconnecting: false, outputTimecode: '00:00:05.000', outputDuration: 5000, outputCongestion: 0.1, outputBytes: 123456, outputSkippedFrames: 1, outputTotalFrames: 300, outputSettingsSecret: 'must-not-be-copied' }; break;
+        case 'GetVideoSettings': data = { baseWidth: 1920, baseHeight: 1080, outputWidth: 1920, outputHeight: 1080, fpsNumerator: 60, fpsDenominator: 1, extra: 'ignored' }; break;
+        case 'GetProfileList': data = { currentProfileName: 'Untitled', profiles: ['Untitled'] }; break;
+        case 'GetHotkeyList': data = { hotkeys: ['ReplayBuffer.Save', 'OBSBasic.StartStreaming', 'Aitum Multistream.Start all'] }; break;
+        case 'GetStats': data = { cpuUsage: 3.5, memoryUsage: 512, activeFps: 60, averageFrameRenderTime: 2.1, renderSkippedFrames: 0, outputSkippedFrames: 0 }; break;
+        case 'GetCanvasList': data = { canvases: [{ canvasName: 'Main', canvasUuid: 'u-main', canvasFlags: { MAIN: true }, streamKey: 'SECRET-CANVAS-KEY' }, { canvasName: 'Vertical', canvasUuid: 'u-vert', canvasFlags: { MAIN: false } }] }; break;
+        case 'CallVendorRequest': if (q.vendorName === 'aitum-vertical-canvas' && opts.verticalVendor) data = { vendorName: q.vendorName, requestType: q.requestType, responseData: q.requestType === 'status' ? { streaming: false, recording: false, backtrack: false, virtualcam: false } : { scenes: ['Vertical scene'] } }; else if (q.vendorName === 'aitum-multistream' && opts.aitum) { const A = opts.aitum, rd = q.requestData || {}, nm = rd[A.param], i = A.names.indexOf(nm); A.calls.push({ type: q.requestType, data: rd }); if (q.requestType === 'get_outputs') data = { vendorName: q.vendorName, requestType: q.requestType, responseData: { outputs: A.names.map(n => ({ name: n, vertical: false })), success: true } }; else if (i < 0) fail('output not found'); else { const on = 'aitum_multi_output_' + i; if (q.requestType === 'start_output' && !opts.outputs.some(o => o.outputName === on)) opts.outputs.push({ outputName: on, outputKind: 'rtmp_output', outputActive: true }); if (q.requestType === 'stop_output') opts.outputs.splice(0, opts.outputs.length, ...opts.outputs.filter(o => o.outputName !== on)); data = { vendorName: q.vendorName, requestType: q.requestType, responseData: { success: true } }; } } else if (q.vendorName === 'aitum-multistream' && opts.vendors !== false) data = { vendorName: q.vendorName, requestType: q.requestType, responseData: { version: '1.0.8' } }; else fail('vendor not found: ' + q.vendorName); break;
+        case 'GetStreamServiceSettings': case 'GetOutputSettings': case 'GetProfileParameter': st.forbidden = (st.forbidden || 0) + 1; data = { streamServiceSettings: { key: 'SECRET-STREAM-KEY' } }; break;
         case 'GetSceneList': data = { scenes: st.scenes.map(n => ({ sceneName: n })), currentProgramSceneName: st.current }; break;
         case 'GetCurrentProgramScene': data = { currentProgramSceneName: st.current, sceneName: st.current }; break;
         case 'CreateScene': if (st.scenes.includes(q.sceneName)) fail('exists'); else { st.scenes.push(q.sceneName); st.items[q.sceneName] = []; } break;
@@ -123,3 +137,16 @@ export async function startRelay() {
   for (let i = 0; i < 300; i++) { await sleep(200); try { const r = await fetch('http://127.0.0.1:' + port + '/health'); if (r.ok) break; } catch {} }
   return { port, url: 'http://127.0.0.1:' + port, proc, output: () => out, stop: async () => { proc.kill('SIGTERM'); await sleep(300); try { proc.kill('SIGKILL'); } catch {} } }; }
 export async function until(fn, ms = 8000, label = 'condition') { const t0 = Date.now(); let last; while (Date.now() - t0 < ms) { try { last = await fn(); if (last) return last; } catch (e) { last = e; } await sleep(100); } throw new Error('timeout: ' + label + (last instanceof Error ? ' (' + last.message + ')' : '')); }
+
+// Streamer.bot WebSocket API (fake): Hello (+ password challenge when a password is given), Authenticate, Subscribe, GetBroadcaster, GetCommands, SendMessage.
+export async function fakeStreamerBot({ password = 'sb-Secret-Pass-12345', port } = {}) {
+  const { createHash } = await import('node:crypto'); const H = (x) => createHash('sha256').update(x).digest('base64'); const sb = { sends: [] };
+  const srv = await wsServer((c) => {
+    c.send(JSON.stringify({ request: 'Hello', info: { name: 'Streamer.bot', version: '1.0.7', instanceId: 'abc' }, authentication: password ? { salt: 's', challenge: 'c' } : undefined }));
+    c.ws.on('message', (d) => { const m = JSON.parse(d.toString()); const ok = (x = {}) => c.send(JSON.stringify(Object.assign({ id: m.id, status: 'ok' }, x)));
+      if (m.request === 'Authenticate') { if (m.authentication === H(H(password + 's') + 'c')) { c.authed = true; ok(); } else c.send(JSON.stringify({ id: m.id, status: 'error', error: 'bad password' })); }
+      else if (password && !c.authed) c.send(JSON.stringify({ id: m.id, status: 'error', error: 'authentication required' }));
+      else if (m.request === 'GetBroadcaster') ok({ platforms: { kick: { broadcastUserName: 'mykick' }, twitch: { broadcastUserName: 'mytwitch' } } });
+      else if (m.request === 'GetCommands') ok({ commands: [] });
+      else if (m.request === 'SendMessage') { sb.sends.push(m); ok(); } else ok(); }); }, port);
+  sb.srv = srv; sb.url = srv.url + '/'; sb.close = srv.close; return sb; }

@@ -53,7 +53,7 @@ test('Kick + YouTube + Rumble together; one platform failing never stops the oth
   const c = await startCore({ env: { IXC_EP_KICK_WEB: kweb.url, IXC_EP_KICK_PUSHER: pusher.url + '/app/k', IXC_EP_YOUTUBE_WEB: yt.url, IXC_EP_RUMBLE_API: rumble.url + '/api', IXC_EP_TWITCH_IRC: 'ws://127.0.0.1:1/' },
     config: { viewers: { refreshSec: 15 }, platforms: { twitch: { enabled: true, channel: 'down' }, kick: { enabled: true, channel: 'My_Chan' }, youtube: { enabled: true, channel: '@mychan' }, streamerbot: { mode: 'off' } } } }); cleanup.push(c.stop);
   const r = await api(c, '/api/accounts/rumble/rumble', { url: 'https://rumble.com/-livestream-api/get-data?key=SECRETKEY123' }); assert.equal(r.status, 200, JSON.stringify(r.body));
-  const p = await page(c, 'chat', ['chat', 'viewers']); ytReady = true;
+  const p = await page(c, 'chat', ['chat', 'viewers']); await p.wait('chat.history', 8000, 'the page is registered'); ytReady = true;   // Kick may already be subscribed: a message sent before the core handled this page's hello would not reach it
   await until(() => pusher.live().length && pusher.live()[0].lines.includes('chatrooms.999.v2'), 8000, 'kick subscribed to the chat room');
   pusher.live()[0].send({ event: 'App\\Events\\ChatMessageEvent', channel: 'chatrooms.999.v2', data: JSON.stringify({ id: 'k1', content: 'insane [emote:37226:KEKW]', sender: { id: 5, username: 'ShadowSniper', slug: 'shadowsniper', identity: { color: '#00FF00', badges: [{ type: 'vip' }] } } }) });
   const km = (await p.wait((x) => x.type === 'chat.msg' && x.m.id === 'k1', 6000)).m; assert.equal(km.roles.vip, true); assert.equal(km.parts[1].name, 'KEKW'); assert.match(km.parts[1].url, /files\.kick\.com\/emotes\/37226/);
@@ -115,7 +115,7 @@ test('YouTube: finds the live stream when the page has no canonical link (other 
   await until(async () => (await api(c, '/api/chat/status')).body.platforms.youtube.state === 'unavailable', 15000, 'not live');
   // YouTube's "confirm you're not a bot" page is named as such (not "not live")
   botWall = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@nocanon' } });
-  await until(async () => /not a bot/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'bot check named');
+  await until(async () => { const y = (await api(c, '/api/chat/status')).body.platforms.youtube; return /not a bot/.test(y.detail || '') && y.state === 'error'; }, 15000, 'bot check named, as a problem (not "Not live")');
   // a scheduled stream says so
   botWall = false; upcoming = true; await api(c, '/api/settings', { patch: { 'platforms.youtube.channel': '@NOCANON' } });
   await until(async () => /scheduled/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 15000, 'scheduled named');

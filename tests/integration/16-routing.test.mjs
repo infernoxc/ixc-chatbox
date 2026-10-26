@@ -45,8 +45,27 @@ test('Routing: music and TTS ON/OFF per platform, applied in OBS and read back',
 
   // settings survive a restart and are re-applied to OBS when IXC connects again (OBS was changed meanwhile)
   await api(c, '/api/music/route', { platform: 'kick', on: false });
+  await c.stop(); for (const k of [1, 2, 3]) obs.st.tracks['IXC Music Player'][k] = true;   // changed while IXC is closed (before, this raced IXC's apply on connect)
   let c2 = await c.restart(); cleanup.push(() => c2.stop());
-  for (const k of [1, 2, 3]) obs.st.tracks['IXC Music Player'][k] = true;
   await until(async () => { const r2 = (await api(c2, '/api/music/route')).body; return r2.ok && r2.mode === 'custom' && T('IXC Music Player') === '101' ? r2 : null; }, 15000, 'music route kept and re-applied after restart');
   const t2 = (await api(c2, '/api/tts/route')).body; assert.deepEqual(t2.on, { twitch: true, kick: true, youtube: false }, 'TTS choice kept separately');
+});
+
+
+// renamed in OBS (the user's collection had "MUSIC — IXC Music Player"): routing follows the source instead of reporting it missing
+test('Routing: follows a source renamed in OBS, live and while IXC was closed', async () => {
+  const obs = await fakeObs({}); cleanup.push(obs.close);
+  const c = await startCore({ config: { obs: { websocketUrl: obs.url } } }); cleanup.push(() => c.stop());
+  await until(async () => (await api(c, '/api/music/route')).body.ok, 10000, 'music routed');
+  const ren = (a, b) => { obs.st.inputs[b] = obs.st.inputs[a]; delete obs.st.inputs[a]; obs.st.tracks[b] = obs.st.tracks[a]; delete obs.st.tracks[a];
+    for (const k of Object.keys(obs.st.items)) obs.st.items[k] = obs.st.items[k].map(n => n === a ? b : n); };
+  // live rename: the InputNameChanged event updates the saved name
+  ren('IXC Music Player', 'MUSIC — IXC Music Player'); obs.event('InputNameChanged', { oldInputName: 'IXC Music Player', inputName: 'MUSIC — IXC Music Player' });
+  await until(async () => { const r = (await api(c, '/api/music/route')).body; return r.input === 'MUSIC — IXC Music Player' && r.ok ? r : null; }, 8000, 'live rename followed');
+  // renamed while IXC was closed: found again by the player page address on the next apply
+  await c.stop(); ren('MUSIC — IXC Music Player', 'Song player'); ren('IXC TTS', 'CHAT — IXC TTS');
+  const c2 = await c.restart(); cleanup.push(() => c2.stop());
+  await until(async () => { const m = (await api(c2, '/api/music/route')).body, t = (await api(c2, '/api/tts/route')).body;
+    return m.ok && m.input === 'Song player' && t.ok && t.input === 'CHAT — IXC TTS' ? m : null; }, 15000, 'offline rename found by address');
+  assert.equal(Object.keys(obs.st.inputs).filter(n => /player/i.test(n)).length, 1, 'no duplicate player source created');
 });

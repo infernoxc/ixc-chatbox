@@ -99,10 +99,16 @@
   function sys(text, bad) { const el = document.createElement('div'); el.className = 'msg sys'; el.innerHTML = `<div class="body ${bad ? 'warn' : ''}">${esc(text)}</div>`; list.appendChild(el); toBottom(); }
   function del(p, id, login) { list.querySelectorAll('.msg').forEach(el => { if (el.dataset.p === p && ((id && el.dataset.id === id) || (!id && login && el.dataset.login === String(login).toLowerCase()))) el.remove(); }); }
   // ---------- platforms + viewers ----------
+  function ago(t) { const d = Math.max(0, Math.round((Date.now() - t) / 1000)); return d < 60 ? d + 's' : d < 3600 ? Math.round(d / 60) + 'm' : d < 86400 ? Math.round(d / 3600) + 'h' : Math.round(d / 86400) + 'd'; }
+  setInterval(() => { try { paintChips(); } catch (e) { } }, 20000);
   function paintChips() {
     const order = ['twitch', 'kick', 'youtube', 'rumble'];
     let h = order.filter(p => plats[p] && plats[p].configured).map(p => { const s = plats[p]; const v = viewers && viewers.platforms && viewers.platforms[p];
-      const n = v && v.state === 'live' ? `<b>${UI.num(v.count)}</b>` : v && v.state === 'offline' ? '<span class="tiny">offline</span>' : '';
+      // three separate facts: connection (dot + word when not connected), channel live or not, and when the last chat message arrived
+      const conn = s.state === 'connected' ? '' : `<span class="tiny">${esc(s.state === 'unavailable' ? 'waiting for a live chat' : (UI.STATE[s.state] || s.state))}</span>`;
+      const live = v && v.state === 'live' ? `<b>${UI.num(v.count)}</b> <span class="tiny">live</span>` : v && v.state === 'offline' ? '<span class="tiny">not live</span>' : '';
+      const last = s.state === 'connected' ? `<span class="tiny" title="Time of the last chat message received from ${esc(P[p].name)}">${s.lastMessage ? 'msg ' + ago(s.lastMessage) : 'no msgs yet'}</span>` : '';
+      const n = [conn, live, last].filter(Boolean).join(' · ');
       return `<span class="chip st-${esc(s.state)} ${hideP.has(p) ? 'hide' : ''}" data-p="${p}" title="${esc(P[p].name + ': ' + (UI.STATE[s.state] || s.state) + (s.detail ? ' - ' + s.detail : '') + (s.canSend ? '' : '\n' + (s.sendNote || '')))} (click: show/hide here)"><i></i>${P[p].name} ${n}</span>`; }).join('');
     if (!h) h = '<span class="muted small">No platform connected yet - <a href="#" id="setupLink">connect your accounts</a></span>';
     // always visible: viewers right now (all platforms) and how many people wrote in chat in the last 10 minutes
@@ -162,7 +168,13 @@
   let CMDS = [], FROM = {}, USERS = [], sugItems = [], sel = 0, sugAt = 0; const input = $('msgIn'), sug = $('sug');
   async function send() { const text = input.value.trim(); if (!text) return; const to = sendTargets[tIdx] || 'all'; input.value = ''; hideSug();
     const r = await link.ask({ type: 'chat.send', platform: to, message: text }, 'chat.sent', 15000); const res = r.results || [];
-    const bad = res.filter(x => !x.ok); if (!res.length) toast('Not sent: ' + (r.error || 'IXC is not running'), true); else if (bad.length) toast('Not sent to ' + bad.map(x => (P[x.platform] ? P[x.platform].name : x.platform) + ': ' + x.error).join('; '), true); }
+    const nm = (x) => x.label || (P[x.platform] ? P[x.platform].name : x.platform), good = res.filter(x => x.ok), needs = res.filter(x => !x.ok && x.kind === 'needs-account'), bad = res.filter(x => !x.ok && x.kind !== 'needs-account');
+    // one line per outcome, not one long setup message per platform
+    const parts = []; if (good.length) parts.push('Sent to ' + good.map(nm).join(', '));
+    if (needs.length) parts.push('Not sent to ' + needs.map(nm).join(', ') + ': no account connected (Platforms & accounts > Connect)');
+    bad.forEach(x => parts.push('Not sent to ' + nm(x) + ': ' + String(x.error || 'failed').replace(/^[A-Za-z ]+: /, '')));
+    if (res.length === 1 && res[0].platform === 'all' && !res[0].ok) { toast('Not sent: no platform account is connected for replies yet (Platforms & accounts > Connect)', true); return; }
+    if (!res.length) toast('Not sent: ' + (r.error || 'IXC is not running'), true); else toast(parts.join(' | '), !good.length || needs.length + bad.length > 0); }
   $('sendBtn').onclick = send;
   function hideSug() { sug.classList.remove('show'); sugItems = []; }
   function showSug() {
@@ -184,7 +196,7 @@
   const link = IXC.connect({ role: 'chat', topics: ['chat', 'tts', 'viewers', 'settings', 'reload'], onState: (up) => { $('conn').classList.toggle('show', !up); if (up) link.send({ type: 'chat.suggest' }); }, on: (m) => {
     switch (m.type) {
       case 'chat.history': list.innerHTML = ''; (m.messages || []).forEach(add); (m.messages || []).forEach(seen); follow = true; toBottom(); paintChips(); break;
-      case 'chat.msg': add(m.m); seen(m.m); break;
+      case 'chat.msg': add(m.m); seen(m.m); { const pl = plats[m.m.platform]; if (pl && !m.m.me && (!m.m.kind || m.m.kind === 'chat')) { pl.lastMessage = m.m.at || Date.now(); paintChips(); } } break;
       case 'chat.del': del(m.platform, m.id, m.login); break;
       case 'chat.clear': list.querySelectorAll('.msg[data-p="' + m.platform + '"]').forEach(el => el.remove()); break;
       case 'chat.reply': if (m.error) sys((P[m.platform] ? P[m.platform].name : '') + ': ' + (m.text ? '"' + m.text + '" was not sent - ' : '') + m.error, true); else if (m.text) sys('IXC: ' + m.text); break;
