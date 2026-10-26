@@ -2,6 +2,17 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+
+## [3.3.0-rc.2] - 2026-10-27 (pre-release)
+### Added
+- Streams page (menu: Multistream): Twitch / YouTube / Kick state (NOT CONFIGURED, READY, ERROR, CONNECTING, STREAMING) read from OBS Settings > Stream, Aitum Multistream and obs-multi-rtmp settings plus OBS's live outputs; stream keys are never shown (only set / not set). Check all. Optional Start / Stop through Aitum, off until a local test proves it (tools/aitum-sink-test.mjs).
+- Streamer.bot: "When IXC quits" option (leave running / close; never forced, never while OBS is live); stopping Streamer.bot while OBS is live asks first.
+### Changed
+- Audio routing follows OBS sources that were renamed (fixes "OBS has no source called IXC Music Player").
+- Multistream Studio and Vertical Studio pages are off the menu (use Aitum Multistream / Vertical Canvas in OBS).
+- Developer-app setup (client IDs) only in Advanced mode; replies go through Streamer.bot.
+- YouTube live check is event-driven (OBS going live / Streamer.bot), timed fallback only.
+
 ### Added
 - Streamer.bot page in the dashboard (System > Streamer.bot): status, detected version and path, address, write-only password, Test connection, Start / Stop (only a process IXC started), optional start with IXC. Localhost only. IXC's own replies echoed back by Streamer.bot are shown as yours and never run commands or are read aloud.
 ### Changed
