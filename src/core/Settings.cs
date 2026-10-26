@@ -35,7 +35,8 @@ namespace IXC {
       S("platforms.twitch.channel", "", 60); S("platforms.kick.channel", "", 60); S("platforms.youtube.channel", "", 200);
       E("platforms.streamerbot.mode", "auto", "auto", "on", "off"); S("platforms.streamerbot.websocketUrl", "ws://127.0.0.1:8080/", 200); S("platforms.streamerbot.settingsPath", "auto", 400);
       S("platforms.streamerbot.exePath", "", 400); E("platforms.streamerbot.launch", "never", "never", "withIxc");   // managed Streamer.bot: where it is, and whether IXC starts it
-      E("platforms.streamerbot.onExit", "keep", "keep", "close");   // when IXC quits: leave a Streamer.bot IXC started running, or ask it to close
+      E("platforms.streamerbot.onExit", "keep", "keep", "close");
+      E("streams.aitumParam", "", "", "output", "name", "outputName");   // set only after AITUM-SINK-TEST.ps1 proved the field (empty = Start/Stop off)   // when IXC quits: leave a Streamer.bot IXC started running, or ask it to close
       Adv("platforms.streamerbot.websocketUrl"); Adv("platforms.streamerbot.settingsPath");
       // chat display + filters
       L("chat.dockPlatforms", 8, "twitch", "kick", "youtube", "rumble");

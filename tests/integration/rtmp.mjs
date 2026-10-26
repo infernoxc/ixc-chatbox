@@ -42,7 +42,7 @@ export class ChunkWriter {
 }
 
 // ----- a fake platform ingest -----
-// opts: { reject: 'NetStream.Publish.BadName' | null, streamId: 7, tls: {key, cert} | null, rejectNth }
+// opts: { reject: 'NetStream.Publish.BadName' | null, streamId: 7, tls: {key, cert} | null, rejectNth, port (default: any free) }
 export async function fakeDestination(opts = {}) {
   const info = { conns: 0, live: [], all: [] }; const socks = new Set();
   const handler = (sock) => { socks.add(sock); sock.on('close', () => socks.delete(sock)); sock.on('error', () => {}); const n = ++info.conns;
@@ -65,7 +65,7 @@ export async function fakeDestination(opts = {}) {
         if (hs === 1 && buf.length >= 1536) { buf = buf.subarray(1536); hs = 2; if (buf.length) parser.push(buf); buf = Buffer.alloc(0); } }
       else parser.push(d); }); };
   const srv = opts.tls ? tls.createServer({ key: opts.tls.key, cert: opts.tls.cert }, handler) : net.createServer(handler);
-  await new Promise(r => srv.listen(0, '127.0.0.1', r)); const port = srv.address().port;
+  await new Promise(r => srv.listen(opts.port || 0, '127.0.0.1', r)); const port = srv.address().port;
   return { port, info, url: (opts.tls ? 'rtmps' : 'rtmp') + '://127.0.0.1:' + port + '/app', live: () => info.all.filter(c => c.published && !c.closed), dropAll: () => { for (const s of socks) s.destroy(); },
     close: () => new Promise(r => { for (const s of socks) s.destroy(); srv.close(r); }) }; }
 

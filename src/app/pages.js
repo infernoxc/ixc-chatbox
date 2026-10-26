@@ -493,17 +493,22 @@
     const ST = { 'STREAMING': 'connected', 'CONNECTING': 'connecting', 'READY': 'idle', 'ERROR': 'error', 'NOT CONFIGURED': 'off', 'DISCONNECTED': 'disconnected' };
     const NAME = { twitch: 'Twitch', youtube: 'YouTube', kick: 'Kick' };
     async function load() { const r = await IXC.api('/api/outputs'); if (App.current !== 'multistream') return; paint(r); }
-    function paint(r) {
+    let ctlOn = false;
+    function paint(r) { ctlOn = !!(r && r.controls && r.controls.enabled);
       if (!r || !r.ok) { main.innerHTML = card('📡 Streams', `<div class="err">${esc((r && r.error) || 'IXC could not read the stream settings')}</div>`); return; }
-      main.innerHTML = `<div class="actions" style="margin:0 0 10px"><button class="primary" id="outCheck">Check all</button><span class="small muted" style="align-self:center">OBS: ${esc(r.obs)} · start and stop each platform in OBS's Aitum Multistream dock</span></div>`
+      main.innerHTML = `<div class="actions" style="margin:0 0 10px"><button class="primary" id="outCheck">Check all</button>${ctlOn ? `<button data-out="start" data-p="all">Start all</button><button data-out="stop" data-p="all">Stop all</button>` : ''}<span class="small muted" style="align-self:center">OBS: ${esc(r.obs)}${ctlOn ? '' : ' · ' + esc((r.controls || {}).reason || '')}</span></div><div class="small" id="outMsg" role="status" style="margin-bottom:8px"></div>`
         + (r.mainIssue ? `<div class="banner warn" style="margin-bottom:10px">${esc(r.mainIssue)}</div>` : '')
         + `<div class="grid">` + ['twitch', 'youtube', 'kick'].map(p => { const x = r.platforms[p];
           return `<div class="card"><div class="plat"><span class="logo2 ${p}">${NAME[p].slice(0, 2)}</span><div class="grow"><h3 style="margin:0">${NAME[p]}</h3></div>${UI.pill(ST[x.state] || 'off', x.state)}</div>`
             + (x.liveNote ? `<div class="small" style="margin-top:6px">${esc(x.liveNote)}</div>` : '')
             + (x.outputs.length ? `<ul class="small" style="margin:6px 0 0 16px;padding:0">${x.outputs.map(o => `<li>${esc(o.via)}: <b>${esc(o.name)}</b> · ${o.serverSet ? esc(o.server) : '<span class="err">no server</span>'} · key ${o.keySet ? 'set' : '<span class="err">not set</span>'} · audio track ${o.audioTrack}</li>`).join('')}</ul>` : `<div class="small muted" style="margin-top:6px">No output for ${NAME[p]} in OBS. Add one in the Aitum Multistream dock (server address + stream key from ${NAME[p]}'s dashboard).</div>`)
-            + (x.notes && x.notes.length ? `<ul class="small muted" style="margin:6px 0 0 16px;padding:0">${x.notes.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
+            + (x.notes && x.notes.length ? `<ul class="small muted" style="margin:6px 0 0 16px;padding:0">${x.notes.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + (ctlOn && x.state !== 'NOT CONFIGURED' ? `<div class="actions" style="margin-top:6px">${x.state === 'READY' ? `<button data-out="start" data-p="${p}">Start</button>` : ''}${x.state === 'STREAMING' || x.state === 'CONNECTING' ? `<button data-out="stop" data-p="${p}">Stop</button>` : ''}</div>` : '') + (x.issues.length ? `<ul class="small err" style="margin:6px 0 0 16px;padding:0">${x.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') + `</div>`; }).join('') + `</div>`
         + `<p class="tiny muted">${esc(r.note)}${r.otherActiveOutputs && r.otherActiveOutputs.length ? ' Other active OBS outputs: ' + esc(r.otherActiveOutputs.join(', ')) : ''}</p>`;
       $('outCheck').onclick = load; }
+    main.onclick = async (e) => { const b = e.target.closest('button[data-out]'); if (!b) return; const body = { platform: b.dataset.p };
+      b.disabled = true; let r = await IXC.api('/api/outputs/' + b.dataset.out, body);
+      if (r && r.needConfirm && await UI.confirmBox(r.error, 'Stop')) r = await IXC.api('/api/outputs/stop', Object.assign(body, { confirm: true }));
+      const m = $('outMsg'); if (m && r) { m.className = 'small ' + (r.ok ? 'ok' : 'err'); m.textContent = r.results ? Object.entries(r.results).map(([k, v]) => k + ': ' + v.result).join(' · ') : (r.error || ''); } load(); };
     main.innerHTML = '<p class="muted">Reading OBS…</p>'; load();
     const iv = setInterval(() => { if (App.current !== 'multistream') return clearInterval(iv); load(); }, 5000); });
   for (const [id, title] of [['vertical', 'Vertical stream']]) page(id, title, (main) => {

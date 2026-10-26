@@ -48,9 +48,9 @@ namespace IXC {
       var aitum = ReadJson(Path.Combine(ObsDir, "plugin_config", "aitum-multistream", "config.json"));
       if (aitum != null) { var pn = ActiveProfileName();
         foreach (var po in (J.Get(aitum, "profiles") as ArrayList) ?? new ArrayList()) { var pd = po as Dictionary<string, object>; if (pd == null || J.Str(pd, "name", "") != pn) continue;
-          foreach (var oo in (J.Get(pd, "outputs") as ArrayList) ?? new ArrayList()) { var o = oo as Dictionary<string, object>; if (o == null) continue;
+          int ai = 0; foreach (var oo in (J.Get(pd, "outputs") as ArrayList) ?? new ArrayList()) { var o = oo as Dictionary<string, object>; if (o == null) continue; var idx = ai++;
             var e = Entry("Aitum Multistream", J.Str(o, "name", ""), J.Str(o, "stream_server", ""), J.Str(o, "stream_key", "").Length > 0, J.Int(o, "audio_track", 0) + 1);
-            e["platform"] = PlatformOf(J.Str(o, "name", ""), J.Str(o, "stream_server", "")); e["ownEncoder"] = o.ContainsKey("video_encoder") && J.Str(o, "video_encoder", "").Length > 0; l.Add(e); } } }
+            e["platform"] = PlatformOf(J.Str(o, "name", ""), J.Str(o, "stream_server", "")); e["ownEncoder"] = o.ContainsKey("video_encoder") && J.Str(o, "video_encoder", "").Length > 0; e["index"] = idx; l.Add(e); } } }
       var mr = ReadJson(Path.Combine(prof, "obs-multi-rtmp.json"));
       if (mr != null) { var mix = new Dictionary<int, int>();
         foreach (var ao in (J.Get(mr, "audio_configs") as ArrayList) ?? new ArrayList()) { var a = ao as Dictionary<string, object>; if (a != null) mix[J.Int(a, "id", 0)] = J.Int(a, "mixerId", 0) + 1; }
@@ -68,6 +68,10 @@ namespace IXC {
         l.Add(J.D("output", name, "reconnecting", s != null && J.Bool(s, "outputReconnecting", false), "bytes", s == null ? 0 : J.Long(s, "outputBytes", 0), "congestion", s == null ? 0.0 : J.Num(s, "outputCongestion", 0))); }
       return l; }
 
+    // an OBS output belongs to platform p when its name says so, or it is Aitum's output for p (aitum_multi_output_<n> or containing the output's name)
+    static bool Mine(string obsName, string p, List<Dictionary<string, object>> mine) {
+      var n = obsName.ToLowerInvariant(); if (n.Contains(p)) return true;
+      return mine.Any(e => J.Str(e, "via", "") == "Aitum Multistream" && (n == "aitum_multi_output_" + J.Int(e, "index", -1) || (J.Str(e, "name", "").Length > 0 && n.Contains(J.Str(e, "name", "").ToLowerInvariant())))); }
     public static async Task<Dictionary<string, object>> Status() {
       Dictionary<string, object> main; var conf = Configured(out main); var live = new List<Dictionary<string, object>>(); string liveErr = null;
       try { live = await LiveOutputs(); } catch (Exception e) { liveErr = U.Plain(e); }
@@ -84,16 +88,50 @@ namespace IXC {
           if (ready.Count > 0) notes.Add(why + " (unused - it cannot send)"); else issues.Add(why); }
         // live: OBS's main output when it goes to this platform; plugin outputs are matched by name (which plugin output belongs to which platform
         // is only known when its OBS output name says so)
-        var act = live.Where(o => (main != null && J.Str(main, "platform", "") == p && Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")) || J.Str(o, "output", "").ToLowerInvariant().Contains(p)).ToList();
+        var act = live.Where(o => (main != null && J.Str(main, "platform", "") == p && Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")) || Mine(J.Str(o, "output", ""), p, mine)).ToList();
         string state = !Obs.Link.Ready ? "DISCONNECTED" : act.Any(o => J.Bool(o, "reconnecting", false)) ? "CONNECTING" : act.Count > 0 ? "STREAMING" : mine.Count == 0 ? "NOT CONFIGURED" : issues.Count > 0 ? "ERROR" : "READY";
         plats[p] = J.D("state", state, "outputs", mine, "issues", issues, "notes", notes, "live", act, "liveNote", act.Count > 0 ? "OBS is sending (local output active); the platform's confirmation is not checked" : ""); }
-      var unmatched = live.Where(o => !Plats.Any(p => J.Str(o, "output", "").ToLowerInvariant().Contains(p)) && !Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")).Select(o => J.Str(o, "output", "")).ToList();
+      var unmatched = live.Where(o => !Plats.Any(p => Mine(J.Str(o, "output", ""), p, conf.Where(e => J.Str(e, "platform", "") == p).ToList())) && !Regex.IsMatch(J.Str(o, "output", ""), "^(adv_stream|simple_stream)$")).Select(o => J.Str(o, "output", "")).ToList();
       return J.D("ok", true, "obs", Obs.Link.Ready ? "connected" : Obs.Link.State, "platforms", plats, "main", main, "mainIssue", main != null && J.Bool(main, "ixcRelay", false) ? "OBS's Start Streaming button sends to " + J.Str(main, "server", "") + " (IXC's old multistream relay), which IXC no longer runs: set Settings > Stream to your main platform" : null,
         "otherActiveOutputs", unmatched, "liveError", liveErr, "note", "Settings are read from OBS's saved files, which OBS rewrites when you change them in its windows. Check All reads them again."); }
 
+    // ---------- Start / Stop through Aitum Multistream (obs-websocket vendor "aitum-multistream", requests start_output / stop_output) ----------
+    // Off until AITUM-SINK-TEST.ps1 proved, against a local fake ingest, which field Aitum reads the output name from; that field is saved as
+    // streams.aitumParam. Only complete (READY) Aitum outputs are started, never one that is already running or starting, never NOT CONFIGURED.
+    static readonly HashSet<string> busy = new HashSet<string>();
+    public static string ControlsOff { get { return Settings.Str("streams.aitumParam").Length == 0 ? "Start/Stop from IXC is off until the safe Aitum test has passed (D:\\OBS\\New OBS File\\AITUM-SINK-TEST.ps1). Use the Aitum Multistream dock in OBS." : null; } }
+    static Dictionary<string, object> AitumOutput(Dictionary<string, object> plat) {
+      var l = J.Get(plat, "outputs") as List<Dictionary<string, object>>; if (l == null) return null;
+      return l.FirstOrDefault(e => J.Str(e, "via", "") == "Aitum Multistream" && J.Bool(e, "serverSet", false) && J.Bool(e, "keySet", false)); }
+    public static async Task<Dictionary<string, object>> Control(string which, bool start, bool confirm) {
+      var off = ControlsOff; if (off != null) return J.D("ok", false, "error", off);
+      if (!Obs.Link.Ready) return J.D("ok", false, "error", "OBS isn't connected");
+      var targets = which == "all" ? Plats.ToList() : Plats.Contains(which) ? new List<string> { which } : null; if (targets == null) return J.D("ok", false, "error", "unknown platform " + which);
+      var st = await Status(); var plats = J.Obj(st, "platforms"); var results = new Dictionary<string, object>();
+      if (!start && !confirm && targets.Any(p => { var s = J.Str(J.Obj(plats, p), "state", ""); return s == "STREAMING" || s == "CONNECTING"; }))
+        return J.D("ok", false, "needConfirm", true, "error", "This stops a stream that is live. Confirm to stop it.");
+      foreach (var p in targets) {
+        var pl = J.Obj(plats, p); var state = J.Str(pl, "state", ""); var o = AitumOutput(pl); string res;
+        if (o == null) res = state == "NOT CONFIGURED" ? "skipped: not configured" : "skipped: no complete Aitum output for " + p;
+        else if (start && state != "READY") res = state == "STREAMING" || state == "CONNECTING" ? "skipped: already running" : "skipped: " + state + " (" + string.Join("; ", (J.Get(pl, "issues") as List<string>) ?? new List<string>()) + ")";
+        else if (!start && state != "STREAMING" && state != "CONNECTING") res = "skipped: not running";
+        else {
+          lock (busy) { if (busy.Contains(p)) { results[p] = J.D("ok", false, "result", "skipped: already " + (start ? "starting" : "stopping")); continue; } busy.Add(p); }
+          try {
+            var r = await Obs.Link.Call("CallVendorRequest", J.D("vendorName", "aitum-multistream", "requestType", start ? "start_output" : "stop_output", "requestData", J.D(Settings.Str("streams.aitumParam"), J.Str(o, "name", ""))));
+            res = (start ? "start" : "stop") + " sent to Aitum (\"" + J.Str(o, "name", "") + "\")"; Log.Info("obs", "streams: " + res + " for " + p); }
+          catch (Exception e) { res = "failed: " + U.Plain(e); Log.Warn("obs", "streams: " + p + " " + res); }
+          finally { lock (busy) busy.Remove(p); } }
+        results[p] = J.D("ok", !res.StartsWith("failed"), "result", res); }
+      return J.D("ok", results.Values.Cast<Dictionary<string, object>>().All(x => J.Bool(x, "ok", false)), "results", results, "note", "Started means Aitum accepted the request; watch the state change to STREAMING (OBS sending) here and the platform's own dashboard."); }
+
     public static bool Api(Ctx ctx, string path, string m) {
-      if (path != "/api/outputs") return false;
-      try { Http.Json(ctx, Status().Result); } catch (Exception e) { Http.Json(ctx, 500, J.D("ok", false, "error", U.Plain(e))); }
-      return true; }
+      if (path == "/api/outputs") {
+        try { var s = Status().Result; s["controls"] = J.D("enabled", ControlsOff == null, "reason", ControlsOff); Http.Json(ctx, s); } catch (Exception e) { Http.Json(ctx, 500, J.D("ok", false, "error", U.Plain(e))); }
+        return true; }
+      if ((path == "/api/outputs/start" || path == "/api/outputs/stop") && m == "POST") {
+        var b = Http.BodyJson(ctx); var r = Control(J.Str(b, "platform", "all"), path.EndsWith("start"), J.Bool(b, "confirm", false)).Result;
+        Http.Json(ctx, J.Bool(r, "ok", false) || J.Bool(r, "needConfirm", false) || r.ContainsKey("results") ? 200 : 400, r); return true; }
+      return false; }
   }
 }
