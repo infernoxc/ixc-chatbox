@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="Segoe UI, Arial, sans-serif" font-size="15">
+  <rect width="900" height="520" fill="#1e1f22"/>
+  <text x="24" y="38" fill="#ffffff" font-size="22" font-weight="bold">Streamer.bot – the 3 settings IXC needs (illustration)</text>
+  <g>
+    <rect x="24" y="60" width="270" height="430" rx="10" fill="#2b2d31" stroke="#5865f2"/>
+    <text x="40" y="92" fill="#8ea1ff" font-weight="bold">1  Platforms</text>
+    <text x="40" y="122" fill="#ddd">Twitch › Accounts</text>
+    <rect x="40" y="132" width="230" height="34" rx="6" fill="#3ba55d"/><text x="155" y="155" fill="#fff" text-anchor="middle">Broadcaster: Connect</text>
+    <text x="40" y="196" fill="#ddd">YouTube › Accounts</text>
+    <rect x="40" y="206" width="230" height="34" rx="6" fill="#3ba55d"/><text x="155" y="229" fill="#fff" text-anchor="middle">Broadcaster: Connect</text>
+    <text x="40" y="270" fill="#ddd">Kick (Kick.bot window)</text>
+    <rect x="40" y="280" width="230" height="34" rx="6" fill="#3ba55d"/><text x="155" y="303" fill="#fff" text-anchor="middle">Log in with Kick</text>
+    <text x="40" y="346" fill="#aaa" font-size="13">Kick.bot DLLs go into</text>
+    <text x="40" y="366" fill="#ffd166" font-size="13">&lt;Streamer.bot folder&gt;\dlls</text>
+    <text x="40" y="396" fill="#aaa" font-size="13">Keep ONE Streamer.bot folder.</text>
+  </g>
+  <g>
+    <rect x="315" y="60" width="270" height="430" rx="10" fill="#2b2d31" stroke="#5865f2"/>
+    <text x="331" y="92" fill="#8ea1ff" font-weight="bold">2  Stream Apps › OBS</text>
+    <text x="331" y="122" fill="#aaa" font-size="13">right-click › Add</text>
+    <g fill="#ddd"><text x="331" y="156">Name</text><text x="331" y="196">Host</text><text x="331" y="236">Port</text><text x="331" y="276">Password</text></g>
+    <g fill="#ffffff"><rect x="420" y="138" width="150" height="26" rx="4" fill="#1e1f22"/><text x="430" y="156">OBS</text>
+      <rect x="420" y="178" width="150" height="26" rx="4" fill="#1e1f22"/><text x="430" y="196">127.0.0.1</text>
+      <rect x="420" y="218" width="150" height="26" rx="4" fill="#1e1f22"/><text x="430" y="236">4455</text>
+      <rect x="420" y="258" width="150" height="26" rx="4" fill="#1e1f22"/><text x="430" y="276">••••••••</text></g>
+    <text x="331" y="316" fill="#ddd">☑ Auto Connect   ☑ Reconnect</text>
+    <text x="331" y="350" fill="#aaa" font-size="13">Password = OBS › Tools ›</text>
+    <text x="331" y="368" fill="#aaa" font-size="13">WebSocket Server Settings</text>
+    <rect x="331" y="390" width="238" height="34" rx="6" fill="#3ba55d"/><text x="450" y="413" fill="#fff" text-anchor="middle">right-click › Connect</text>
+  </g>
+  <g>
+    <rect x="606" y="60" width="270" height="430" rx="10" fill="#2b2d31" stroke="#5865f2"/>
+    <text x="622" y="92" fill="#8ea1ff" font-weight="bold">3  Servers/Clients ›</text>
+    <text x="622" y="112" fill="#8ea1ff" font-weight="bold">    WebSocket Server</text>
+    <g fill="#ddd"><text x="622" y="156">Address</text><text x="622" y="196">Port</text><text x="622" y="236">Endpoint</text><text x="622" y="276">Password</text></g>
+    <g fill="#ffffff"><rect x="716" y="138" width="145" height="26" rx="4" fill="#1e1f22"/><text x="726" y="156">127.0.0.1</text>
+      <rect x="716" y="178" width="145" height="26" rx="4" fill="#1e1f22"/><text x="726" y="196">8080</text>
+      <rect x="716" y="218" width="145" height="26" rx="4" fill="#1e1f22"/><text x="726" y="236">/</text>
+      <rect x="716" y="258" width="145" height="26" rx="4" fill="#1e1f22"/><text x="726" y="276">••••••••</text></g>
+    <text x="622" y="316" fill="#ddd">☑ Auto Start  ☑ Authentication</text>
+    <rect x="622" y="332" width="238" height="34" rx="6" fill="#3ba55d"/><text x="741" y="355" fill="#fff" text-anchor="middle">Start Server</text>
+    <text x="622" y="398" fill="#aaa" font-size="13">Then in IXC › Streamer.bot:</text>
+    <text x="622" y="418" fill="#ffd166" font-size="13">ws://127.0.0.1:8080/</text>
+    <rect x="622" y="430" width="238" height="34" rx="6" fill="#5865f2"/><text x="741" y="453" fill="#fff" text-anchor="middle">Test connection</text>
+  </g>
+</svg>

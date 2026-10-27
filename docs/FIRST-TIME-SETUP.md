@@ -45,8 +45,12 @@ Time needed: about 45 minutes the first time. You never need to create developer
 3. The **setup assistant** opens in your browser: enter your channel names (Twitch name, YouTube @handle, Kick name) > it sets up
    OBS and tests everything.
 4. Open OBS: menu **Docks** shows **IXC**, **IXC ChatBox**, **IXC Music**. Tick them and drag them where you like.
+
+   ![IXC ChatBox dock](images/chatbox-dock.png) ![IXC Music dock](images/music-dock.png)
 5. In the IXC dashboard (tray icon bottom right > **Open**) > **Updates & diagnostics** > **System check**: everything should be
    green. If something is red, press its **Fix** button.
+
+   ![IXC System check](images/diagnostics.png)
 
 ## Part 3 – Streamer.bot (download, sign in, connect to OBS and IXC)
 
@@ -69,6 +73,8 @@ Time needed: about 45 minutes the first time. You never need to create developer
    - Start Streamer.bot again. In the **Kick.bot** window, log in with your Kick account.
    - A **"Kick.bot – Update available"** window means the `dlls\Kick.bot.dll` that Streamer.bot loads is old. Copy the new ZIP's
      DLLs into **that** `dlls` folder (the one next to the `Streamer.bot.exe` you start).
+
+![Streamer.bot settings IXC needs (illustration)](images/streamerbot-setup.svg)
 
 **Connect Streamer.bot to OBS**
 
@@ -110,6 +116,8 @@ To keep your PC smooth, the video is encoded **once** (OBS's main stream) and Ai
    horizontal one.
 
 ## Going live (every time)
+
+![Going live order (illustration)](images/go-live-order.svg)
 
 1. Open **Streamer.bot**, then **OBS** (IXC is already running in the tray).
 2. Look at IXC **System check**: all green.

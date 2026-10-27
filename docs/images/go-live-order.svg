@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" font-family="Segoe UI, Arial, sans-serif" font-size="15">
+  <rect width="900" height="260" fill="#ffffff"/>
+  <text x="24" y="36" font-size="22" font-weight="bold" fill="#111">Going live – every time (illustration)</text>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
+  <g stroke="#333" stroke-width="1.5">
+    <rect x="20" y="70" width="150" height="120" rx="10" fill="#fef7e0"/>
+    <rect x="195" y="70" width="150" height="120" rx="10" fill="#e8f0fe"/>
+    <rect x="370" y="70" width="150" height="120" rx="10" fill="#e6f4ea"/>
+    <rect x="545" y="70" width="150" height="120" rx="10" fill="#f3e8fd"/>
+    <rect x="720" y="70" width="160" height="120" rx="10" fill="#fde8e8"/>
+  </g>
+  <g text-anchor="middle" fill="#111">
+    <text x="95" y="105" font-weight="bold">1</text><text x="95" y="130">Open</text><text x="95" y="150">Streamer.bot</text><text x="95" y="170">then OBS</text>
+    <text x="270" y="105" font-weight="bold">2</text><text x="270" y="130">IXC</text><text x="270" y="150">System check</text><text x="270" y="170">all green</text>
+    <text x="445" y="105" font-weight="bold">3</text><text x="445" y="130">OBS</text><text x="445" y="150">Start Streaming</text><text x="445" y="170">(Twitch) FIRST</text>
+    <text x="620" y="105" font-weight="bold">4</text><text x="620" y="130">Aitum dock</text><text x="620" y="150">Start Kick,</text><text x="620" y="170">then YouTube</text>
+    <text x="800" y="105" font-weight="bold">5</text><text x="800" y="130">During stream</text><text x="800" y="150">F10 = clip</text><text x="800" y="170">F9 = vertical clip</text>
+  </g>
+  <g stroke="#555" stroke-width="2" marker-end="url(#a)"><path d="M170,130 L193,130"/><path d="M345,130 L368,130"/><path d="M520,130 L543,130"/><path d="M695,130 L718,130"/></g>
+  <text x="24" y="225" fill="#444" font-size="14">Ending: Aitum Stop (Kick, YouTube) → OBS Stop Streaming. Aitum refuses to start while OBS's main stream is not running.</text>
+</svg>
