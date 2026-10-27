@@ -3,6 +3,12 @@
 For people who have **never** used OBS, IXC or Streamer.bot. Follow the parts in order. Every click is written out.
 Time needed: about 45 minutes the first time. You never need to create developer apps or client IDs.
 
+**Before you start:** to stream to three sites at once you need about **25 Mbit/s of free upload** (your stream is sent three times).
+Test at speedtest.net and look at *Upload*. If it is lower, use a lower bitrate in Part 1 step 3 or stream to fewer sites.
+
+**About the pictures:** the IXC screenshots use demo data (example account names). OBS, Streamer.bot and Aitum have their own windows
+that look a little different in every version, so for those the steps name the exact menu and button to click.
+
 ![How the pieces connect](images/setup-overview.svg)
 
 | Program | What it does for you |
@@ -25,7 +31,8 @@ Time needed: about 45 minutes the first time. You never need to create developer
 3. **Settings** (bottom right) > **Output** > **Output Mode: Advanced** > tab **Streaming**:
    - **Video Encoder**: your graphics card's hardware encoder: *AMD HW H.264 (AVC)* (AMD), *NVIDIA NVENC H.264* (NVIDIA)
      or *QuickSync H.264* (Intel).
-   - **Rate Control: CBR**, **Bitrate: 6000** Kbps (Twitch's usual limit; Kick allows up to 8000), **Keyframe Interval: 2 s**,
+   - **Rate Control: CBR**, **Bitrate: 6000** Kbps (a safe value for Twitch; if you have the upload speed and Twitch plays smoothly for viewers, 8000 also works,
+     and Kick and YouTube accept it), **Keyframe Interval: 2 s**,
      **Preset: Quality**.
    - **Audio Track: 1**.
 4. Same window > **Output** > tab **Recording**: **Recording Path**: a folder with free space (e.g. `D:\OBS\Recordings`),
@@ -48,24 +55,109 @@ Time needed: about 45 minutes the first time. You never need to create developer
 5. In the IXC dashboard (tray icon bottom right > **Open**) > **Updates & diagnostics** > **System check**: everything should be
    green. If something is red, press its **Fix** button.
 
-## Part 3 – Streamer.bot (15 min)
+## Part 3 – Streamer.bot (20 min)
 
-Streamer.bot keeps your platform sign-ins, so IXC can **reply** in chat, run **commands** and show **alerts**.
+**What Streamer.bot is for:** it keeps your Twitch, YouTube and Kick sign-ins, so IXC can **reply** in chat, run **commands** and
+show **alerts** without you creating developer apps. The chain is: **platforms ⇄ Streamer.bot ⇄ IXC**, and Streamer.bot ⇄ **OBS**
+(so Streamer.bot can switch scenes and see when you go live).
 
-1. Download from **streamer.bot** > **Download** > the ZIP. Right-click > **Extract All** into a folder you keep, e.g.
-   `C:\Streamer.bot` (not the Downloads folder). Double-click **Streamer.bot.exe**.
-2. **Twitch**: **Platforms** > **Twitch** > **Accounts** > **Broadcaster: Connect** > sign in to Twitch in the browser >
-   **Authorize**. (Optional second account for a chat bot: **Bot: Connect**.)
-3. **YouTube**: **Platforms** > **YouTube** > **Accounts** > **Broadcaster: Connect** > sign in with Google > **Allow**.
-4. **Kick**: Kick works in Streamer.bot through the **Kick.bot** extension (kick.bot). Install it from its own page following its
-   instructions, then sign in to Kick in its window. **When Kick.bot shows "Update available", click Update**: old versions cannot
-   receive Kick events and show this window every time Streamer.bot starts.
-5. **WebSocket Server** (this is how IXC talks to Streamer.bot): **Servers/Clients** > **WebSocket Server** > **Address
-   127.0.0.1**, **Port 8080**, tick **Auto Start**, tick **Authentication** and set a password > **Start Server**.
-6. **OBS** (optional, for Streamer.bot actions in OBS): **Stream Apps** > **OBS** > right-click > **Add** > host **127.0.0.1**,
-   port **4455**, the password from Part 1 step 8, tick **Auto Connect** > **Connect**.
-7. In IXC > **System** > **Streamer.bot**: paste the WebSocket password from step 5 > **Save** > **Test connection** shows your
-   accounts. **Start with IXC**: leave **No** if you open Streamer.bot yourself.
+![How Streamer.bot, IXC, OBS and your platforms connect](images/guide/streamerbot-chain.svg)
+
+| Connection | Address | Password |
+|---|---|---|
+| Streamer.bot → OBS | `127.0.0.1` port `4455` (OBS's WebSocket server, Part 1 step 8) | OBS's WebSocket password |
+| IXC → Streamer.bot | `ws://127.0.0.1:8080/` (Streamer.bot's WebSocket server, step 3.6) | Streamer.bot's WebSocket password |
+| IXC → OBS | `127.0.0.1` port `4455` | IXC finds it by itself |
+
+> These passwords are **not** your platform passwords and **not** stream keys. They only protect the connections on your own PC.
+
+### 3.1 Download and install Streamer.bot
+
+1. Open **streamer.bot** in your browser and click **Download**. Save the ZIP (for example `Streamer.bot-x64-1.0.7.zip`).
+2. Open your **Downloads** folder, right-click the ZIP > **Extract All…** > choose a folder you will keep, for example
+   `C:\Streamer.bot` (not the Downloads folder) > **Extract**.
+3. **Keep only ONE Streamer.bot folder.** If you ever download it again, delete the old folder first (two copies cause confusing
+   problems, for example a Kick.bot update that "doesn't stick").
+4. Open the folder and double-click **Streamer.bot.exe**. If Windows asks about the firewall, choose **Private networks** > **Allow
+   access**. Streamer.bot opens; its folder contains a `dlls` folder (you need it in 3.4).
+
+### 3.2 Sign in to Twitch and YouTube
+
+1. In Streamer.bot open the **Platforms** tab.
+2. **Twitch:** click **Twitch** > **Accounts** > **Broadcaster** > **Connect**. Your browser opens: sign in to Twitch and click
+   **Authorize**. Streamer.bot then shows your channel name. (Optional: **Bot** > **Connect** for a second chat-bot account.)
+3. **YouTube:** click **YouTube** > **Accounts** > **Broadcaster** > **Connect**. Sign in with the Google account of your channel and
+   click **Allow**.
+4. Streamer.bot's own window walks you through each sign-in; the exact button names can differ slightly between versions.
+
+### 3.3 Why Kick needs an add-on (Kick.bot)
+
+Streamer.bot talks to Kick through a free add-on called **Kick.bot**. It is a ZIP of files that you copy into Streamer.bot's `dlls`
+folder.
+
+### 3.4 Install Kick.bot
+
+1. Close **Streamer.bot** (File > Exit, or the window's ✕).
+2. Download the Kick.bot ZIP from the Kick.bot project's own page (search for *Kick.bot for Streamer.bot*, and make sure you use the
+   project's own link). The file is named like `Kick.bot-v1.2.0.1.zip`.
+3. Right-click the ZIP > **Extract All…** > **Extract**.
+4. Copy **all the files from the extracted folder** (`Kick.bot.dll`, `PusherClient.dll`, `WebSocket4Net.dll`,
+   `SuperSocket.ClientEngine.dll`, and the other `.dll` files; also `actions.txt`) into the **`dlls`** folder inside **your Streamer.bot
+   folder**. If Windows asks **Replace the files in the destination**, choose that.
+5. Open **Streamer.bot.exe** again.
+6. **The "Kick.bot – Update available" window:** if it appears, your `dlls\Kick.bot.dll` is older than the newest version. Copy the
+   newest files into the **`dlls` folder of the Streamer.bot you actually run** (see 3.1 step 3), then restart Streamer.bot. It must
+   say *No update available* in Streamer.bot's log (the **Log** tab).
+7. **Log in to Kick:** use Kick.bot's own window or Streamer.bot's **Platforms > Kick** tab (this appears once Kick.bot is installed),
+   click **Connect** or **Login**, and sign in to Kick in the browser. The Streamer.bot log should then say
+   *Connected as <your Kick name>*.
+
+### 3.5 Connect Streamer.bot to OBS
+
+1. In **OBS**: **Tools** > **WebSocket Server Settings** > tick **Enable WebSocket server**, **Server Port: 4455**, tick **Enable
+   Authentication**, click **Show Connect Info** and note the **Server Password** > **OK**.
+2. In **Streamer.bot**: open **Stream Apps** > **OBS**. Right-click the list > **Add** (or **Add Connection**).
+3. Fill in: **Name:** `OBS`, **Host:** `127.0.0.1`, **Port:** `4455`, **Password:** the OBS Server Password, tick **Auto Connect** and
+   **Reconnect**.
+4. Click **OK** and then **Connect**. It must show **Connected** (OBS must be open).
+
+### 3.6 Switch on Streamer.bot's WebSocket server (this is the door IXC uses)
+
+1. In Streamer.bot open **Servers/Clients** > **WebSocket Server**.
+2. **Address:** `127.0.0.1` (only your own PC), **Port:** `8080`, **Endpoint:** `/`.
+3. Tick **Auto Start**. Tick **Authentication** and type a **password** you will remember. Write it down on paper.
+4. Click **Start Server** (and **Save** if the window has that button). The server must show as running.
+
+### 3.7 Connect IXC to Streamer.bot
+
+1. Open IXC (tray icon bottom right > **Open**) > left menu **System** > **Streamer.bot**.
+2. **Use Streamer.bot:** *Automatically, when it is running*.
+3. **Address:** `ws://127.0.0.1:8080/`
+4. **Password:** the one from 3.6. (You can also leave the box empty; IXC then reads it from Streamer.bot's own settings file.)
+5. **Start with IXC:** *No, I start it myself*. **When IXC quits:** *Leave Streamer.bot running*.
+6. Click **Save**, then **Test connection**.
+
+What you should see (demo data):
+
+![IXC Streamer.bot page, connected](images/guide/ixc-streamerbot.png)
+
+The **Status** pill is green **Connected**, and *Connected to Streamer.bot 1.x, password accepted* lists your Twitch / Kick account names.
+
+| If you see | Do this |
+|---|---|
+| *Not running* / connection refused | Start Streamer.bot, then **Servers/Clients > WebSocket Server > Start Server**. |
+| *refused the password* | The password in IXC and in Streamer.bot differ. Type it again in IXC and **Save**. |
+| Warning: *WebSocket Server is switched off* | Tick **Auto Start** in Streamer.bot's WebSocket Server and start it (3.6). |
+| Warning: *listens on ..., not only on this PC* | Set Streamer.bot's WebSocket address to `127.0.0.1` (3.6). |
+| *No platform account reported* | Sign in on Streamer.bot's **Platforms** tab (3.2 and 3.4). |
+| Kick shows no events | Kick.bot is old or in the wrong folder (3.4), or you are not logged in to Kick there. |
+
+### 3.8 Check the whole chain
+
+1. OBS is open. Streamer.bot: **Stream Apps > OBS** shows **Connected**.
+2. Streamer.bot's **Log** tab: *Connected as …* for Twitch and Kick; the WebSocket server is running.
+3. IXC > **Streamer.bot**: green **Connected**, accounts listed. IXC > **Chat**: write a test message in your own chat and see it
+   appear in IXC.
 
 ## Part 4 – Twitch, Kick and YouTube at once (10 min)
 
@@ -80,9 +172,15 @@ To keep your PC smooth, the video is encoded **once** (OBS's main stream) and Ai
      **Video Encoder: Main Encoder**; **Audio Track: 2**.
    - **YouTube**: Server `rtmps://a.rtmps.youtube.com:443/live2`; Key = YouTube Studio > **Create** > **Go live** > **Stream key**;
      **Video Encoder: Main Encoder**; **Audio Track: 3**.
-4. In IXC > **Streams**: Twitch, YouTube and Kick should all say **READY** (keys are never shown, only "set").
-5. Music per platform: IXC > **Audio routing**: switch music on for the platforms you want (Twitch = track 1, Kick = 2,
-   YouTube = 3).
+4. In IXC > **Streams** (menu, under *Platforms & Accounts*): Twitch, YouTube and Kick should all say **READY** (keys are never
+   shown, only "set"). **READY does not prove your stream arrives**; that only shows when you are live (see *Going live*, step 5).
+5. Music per platform: IXC > **Audio routing**: under *How this works* tick the track each site uses (Twitch = track 1, Kick = 2,
+   YouTube = 3), then switch music and chat voice on for the platforms you want. A switch takes effect at once and IXC checks with OBS
+   that it changed. Music is silent on a site you switch off (useful against a copyright strike on one platform).
+
+![IXC Audio routing](images/guide/ixc-audio-routing.png)
+
+   Also put your game and microphone on tracks **1, 2 and 3** (OBS > **Edit > Advanced Audio Properties**), so every site hears them.
 
 ## Part 5 – Vertical clips (Shorts / TikTok), optional (5 min)
 
@@ -98,7 +196,8 @@ To keep your PC smooth, the video is encoded **once** (OBS's main stream) and Ai
 2. Look at IXC **System check**: all green.
 3. OBS: **Start Streaming** (main platform, e.g. Twitch) **first**.
 4. Aitum dock: **Start** Kick, then **Start** YouTube (Aitum refuses while the main stream is not running).
-5. Check each platform's dashboard shows you live. Press **F10** / **F9** for clips any time.
+5. Check each platform's dashboard shows you live, with picture and sound, and that OBS (bottom right) shows dropped and skipped
+   frames near **0%**. If it is red, lower the bitrate and restart. Press **F10** / **F9** for clips any time.
 6. Ending: Aitum **Stop** both, then OBS **Stop Streaming**.
 
 ## If something goes wrong
@@ -112,5 +211,11 @@ To keep your PC smooth, the video is encoded **once** (OBS's main stream) and Ai
 | "OBS has no source called IXC Music Player" | IXC > System check > **Repair OBS** (3.3.0 also follows renamed sources). |
 | Kick.bot "Update available" window | Click **Update** in that window. |
 | Streamer.bot keeps reopening | IXC > Streamer.bot > **Start with IXC: No**. |
+| Kick or YouTube does not start in Aitum | Press OBS **Start Streaming** first, then start them in the Aitum dock. |
+| `!clip` or F10 saves nothing | Start the **Replay Buffer** (OBS Controls panel, or tick *Automatically start replay buffer when streaming*). |
+| Anything else | IXC > **Updates & diagnostics > Diagnostics** makes a ZIP for support (no passwords or keys inside). |
+
+**Not covered by automatic tests:** whether each platform really receives your stream. That needs your real accounts and keys, which
+tests never use. Your first live minute is that test.
 
 More help: [GUIDE.md](GUIDE.md) · [TROUBLESHOOTING.md](TROUBLESHOOTING.md)

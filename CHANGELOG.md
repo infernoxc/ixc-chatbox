@@ -2,6 +2,10 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Fixed
+- The Streams page now has its own entry in the IXC menu (it could only be reached by its address).
+### Changed
+- docs/FIRST-TIME-SETUP.md: IXC screenshots (Streamer.bot page, Audio routing), upload-speed check, Streamer.bot connection troubleshooting table, 8000 kbps note, go-live checks.
 
 ## [3.3.0] - 2026-10-27
 First official 3.3.0 release: everything from 3.3.0-rc.1 to rc.3 below.

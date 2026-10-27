@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" font-family="Segoe UI, Arial, sans-serif" font-size="14">
+  <rect width="900" height="300" fill="#ffffff"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
+  <g stroke="#333" stroke-width="1.5">
+    <rect x="20" y="105" width="170" height="90" rx="10" fill="#f3e8fd"/>
+    <rect x="260" y="105" width="190" height="90" rx="10" fill="#e6f4ea"/>
+    <rect x="520" y="105" width="150" height="90" rx="10" fill="#e8f0fe"/>
+    <rect x="730" y="105" width="160" height="90" rx="10" fill="#fef7e0"/>
+  </g>
+  <g text-anchor="middle" fill="#111">
+    <text x="105" y="140" font-weight="bold">Twitch · YouTube · Kick</text><text x="105" y="162">sign-ins live here</text><text x="105" y="180">(Kick via Kick.bot)</text>
+    <text x="355" y="140" font-weight="bold">Streamer.bot</text><text x="355" y="162">WebSocket server</text><text x="355" y="180">127.0.0.1:8080 + password</text>
+    <text x="595" y="140" font-weight="bold">IXC</text><text x="595" y="162">Streamer.bot page:</text><text x="595" y="180">ws://127.0.0.1:8080/</text>
+    <text x="810" y="140" font-weight="bold">OBS</text><text x="810" y="162">WebSocket</text><text x="810" y="180">127.0.0.1:4455 + password</text>
+  </g>
+  <g stroke="#555" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)">
+    <path d="M192 150 H258"/><path d="M452 150 H518"/>
+  </g>
+  <g stroke="#555" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)">
+    <path d="M740 150 H672"/>
+    <path d="M355 197 V250 H810 V197"/>
+  </g>
+  <g fill="#333" text-anchor="middle" font-size="13">
+    <text x="225" y="140">3.2 / 3.4</text><text x="485" y="140">3.7</text><text x="706" y="140">auto</text>
+    <text x="580" y="270">3.5: Streamer.bot &#8596; OBS (Stream Apps &gt; OBS, port 4455)</text>
+  </g>
+</svg>
