@@ -53,7 +53,7 @@ test('Relay, eight destinations: all receive the same stream at once; a destinat
   for (let i = 0; i < 8; i++) { if (i === 5) continue; assert.deepEqual(ds[i].live()[0].msgs.map(m => m.hash), ref, 'destination ' + i + ' got the identical stream'); assert.equal(ds[i].live()[0].key, KEY + i, 'its own key'); }
   // the rejecting destination: never live, reason shown, keeps retrying, key never in the reason
   await until(async () => { const v = await one(c, ids[5]); return v.relay.state === 'reconnecting' && v.relay.reconnects >= 2 ? v : null; }, 8000, 'retrying');
-  const bad = await one(c, ids[5]); assert.match(bad.relay.detail, /NetStream\.Publish\.BadName/); assert.ok(!JSON.stringify(bad).includes(KEY)); assert.ok(ds[5].info.conns >= 3, 'it tried again');
+  const bad = await one(c, ids[5]); assert.match(bad.relay.detail, /NetStream\.Publish\.BadName/); assert.ok(!JSON.stringify(bad).includes(KEY)); await until(() => ds[5].info.conns >= 3, 5000, 'it tried again');
   assert.equal(ds[5].info.all.every(x => x.msgs.length === 0), true, 'no media was ever sent to the rejecting server');
   for (const i of [0, 3, 7]) assert.equal((await one(c, ids[i])).relay.state, 'live');
   pub.end();

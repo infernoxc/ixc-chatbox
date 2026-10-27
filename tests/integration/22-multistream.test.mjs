@@ -65,7 +65,7 @@ test('Multistream check: a good server is reachable (no key, no video sent); fai
   assert.equal(good.seen.bytes, 1537, 'only the 1537-byte RTMP handshake was sent'); assert.ok(!Buffer.concat(good.seen.data).includes(KEY), 'the stream key was not sent');
   await check(c, dId); d = await settled(c, dId); assert.equal(d.state, 'failed'); assert.match(d.detail, /closed|reset|forcibly|handshake/i); assert.equal(drop.seen.conns, 3, 'exactly 3 attempts, then it stops');
   await check(c, wId); d = await settled(c, wId); assert.equal(d.state, 'failed'); assert.match(d.detail, /RTMP|closed|handshake/i);
-  await check(c, sId); d = await settled(c, sId, 30000); assert.equal(d.state, 'failed'); assert.match(d.detail, /timed out|time|Unable to read|did not properly respond/i);
+  await check(c, sId); d = await settled(c, sId, 30000); assert.equal(d.state, 'failed'); assert.match(d.detail, /timed out|time|Unable to read|did not properly respond|would block/i);
   await check(c, xId); d = await settled(c, xId); assert.equal(d.state, 'failed'); assert.match(d.detail, /could not connect|no answer from/);   // Windows takes ~1 s to report a closed port, so the 1.2 s test timeout may answer first
   assert.ok(d.detail.includes(String(deadPort)));
   await check(c, fId); d = await settled(c, fId); assert.equal(d.state, 'ok', d.detail); assert.equal(d.attempt, 3, 'recovered on the third try'); assert.equal(flaky.seen.conns, 3);

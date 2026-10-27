@@ -57,7 +57,7 @@ test('YouTube: Google refusing the token refresh (app in Testing, 7 days) marks 
   const acc = await until(async () => { const a = (await api(c, '/api/accounts')).body.youtube.account; return a?.invalid ? a : null; }, 20000, 'sign-in marked expired');
   assert.ok(refreshCalls >= 1, 'a refresh was attempted');
   assert.match(acc.reason, /Publish app/, 'tells the streamer about the 7-day Testing limit');
-  assert.match((await api(c, '/api/chat/status')).body.platforms.youtube.detail, /not a bot/, 'chat reading (no sign-in needed) is unaffected');
+  await until(async () => /not a bot/.test((await api(c, '/api/chat/status')).body.platforms.youtube.detail || ''), 10000, 'chat reading (no sign-in needed) is unaffected');   // the chat status follows a moment after the account is marked expired
 });
 
 test('YouTube: a genuinely offline channel is "unavailable" (Not live); a wrong name or a page IXC cannot read is an error with the real reason', async () => {

@@ -25,7 +25,7 @@ test('navigation: the eight Stage 1 pages in order, every existing feature still
   for (const keep of ['Commands', 'Timers', 'Chat filters', 'Music', 'Song requests', 'Audio routing', 'Chat voice (TTS)', 'Voices for people', 'Overlays & docks', 'Phone remote', 'Updates & diagnostics']) assert.ok(nav.includes(keep), 'existing page lost from the navigation: ' + keep);
   const ids = await p.$$eval('#navList a', a => a.map(x => x.dataset.p)); assert.equal(new Set(ids).size, ids.length, 'no duplicate entries'); await shot(p, '01-nav');
   for (const id of ids) { await p.evaluate((h) => { location.hash = '#' + h; }, id); await p.waitForTimeout(350); assert.equal(await p.evaluate(() => document.querySelector('#navList a.sel')?.dataset.p), id, 'selected nav entry for ' + id); if (id === 'chat') assert.equal(await p.locator('#main iframe').count(), 1, 'chat page is the chat panel'); else assert.ok((await text(p)).length > 20, id + ' page is empty'); assert.equal(await p.locator('#main .banner.err').count(), 0, id + ' shows a page error'); }
-  const titles = { home: 'Overview', accounts: 'Platforms & Accounts', multistream: 'Multistream', vertical: 'Vertical stream', automation: 'Automation Studio', obs: 'OBS Control', settings: 'Settings', chat: 'Chat' };
+  const titles = { home: 'Overview', accounts: 'Platforms & Accounts', multistream: 'Streams', vertical: 'Vertical stream', automation: 'Automation Studio', obs: 'OBS Control', settings: 'Settings', chat: 'Chat' };
   for (const [id, t] of Object.entries(titles)) { await p.evaluate((h) => { location.hash = '#' + h; }, id); await p.waitForTimeout(250); assert.equal(await p.textContent('#pageTitle'), t); }
   await p.close(); assert.deepEqual(errors, []);
 });
