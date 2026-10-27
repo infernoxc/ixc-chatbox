@@ -48,24 +48,41 @@ Time needed: about 45 minutes the first time. You never need to create developer
 5. In the IXC dashboard (tray icon bottom right > **Open**) > **Updates & diagnostics** > **System check**: everything should be
    green. If something is red, press its **Fix** button.
 
-## Part 3 – Streamer.bot (15 min)
+## Part 3 – Streamer.bot (download, sign in, connect to OBS and IXC)
 
-Streamer.bot keeps your platform sign-ins, so IXC can **reply** in chat, run **commands** and show **alerts**.
+**Download and start**
+1. Go to the official site **[streamer.bot](https://streamer.bot)** > **Download** > download the ZIP.
+2. Right-click the ZIP > **Extract All…** > choose a folder you keep, for example **`C:\Streamer.bot`** (not Downloads).
+   ⚠ Keep **only one** Streamer.bot folder. Two copies cause confusion (updates land in the wrong one).
+3. Open that folder > double-click **`Streamer.bot.exe`**. If Windows asks, **More info** > **Run anyway**.
 
-1. Download from **streamer.bot** > **Download** > the ZIP. Right-click > **Extract All** into a folder you keep, e.g.
-   `C:\Streamer.bot` (not the Downloads folder). Double-click **Streamer.bot.exe**.
-2. **Twitch**: **Platforms** > **Twitch** > **Accounts** > **Broadcaster: Connect** > sign in to Twitch in the browser >
-   **Authorize**. (Optional second account for a chat bot: **Bot: Connect**.)
-3. **YouTube**: **Platforms** > **YouTube** > **Accounts** > **Broadcaster: Connect** > sign in with Google > **Allow**.
-4. **Kick**: Kick works in Streamer.bot through the **Kick.bot** extension (kick.bot). Install it from its own page following its
-   instructions, then sign in to Kick in its window. **When Kick.bot shows "Update available", click Update**: old versions cannot
-   receive Kick events and show this window every time Streamer.bot starts.
-5. **WebSocket Server** (this is how IXC talks to Streamer.bot): **Servers/Clients** > **WebSocket Server** > **Address
-   127.0.0.1**, **Port 8080**, tick **Auto Start**, tick **Authentication** and set a password > **Start Server**.
-6. **OBS** (optional, for Streamer.bot actions in OBS): **Stream Apps** > **OBS** > right-click > **Add** > host **127.0.0.1**,
-   port **4455**, the password from Part 1 step 8, tick **Auto Connect** > **Connect**.
-7. In IXC > **System** > **Streamer.bot**: paste the WebSocket password from step 5 > **Save** > **Test connection** shows your
-   accounts. **Start with IXC**: leave **No** if you open Streamer.bot yourself.
+**Sign in to your platforms**
+
+4. **Twitch**: **Platforms** > **Twitch** > **Accounts** > **Broadcaster Account** > **Connect** > log in to Twitch in the browser >
+   **Authorize**. Optional: a second Twitch account for a chat bot under **Bot Account** > **Connect**.
+5. **YouTube**: **Platforms** > **YouTube** > **Accounts** > **Broadcaster** > **Connect** > choose your Google account >
+   **Allow**.
+6. **Kick** (needs the free **Kick.bot** extension):
+   - Download the latest **`Kick.bot-vX.Y.Z.zip`** from the Kick.bot project page.
+   - Close Streamer.bot. Open the ZIP and copy **all its `.dll` files** (Kick.bot.dll, PusherClient.dll, WebSocket4Net.dll, …)
+     into the **`dlls`** folder **inside your Streamer.bot folder** (e.g. `C:\Streamer.bot\dlls`). Replace existing files.
+   - Start Streamer.bot again. In the **Kick.bot** window, log in with your Kick account.
+   - A **"Kick.bot – Update available"** window means the `dlls\Kick.bot.dll` that Streamer.bot loads is old. Copy the new ZIP's
+     DLLs into **that** `dlls` folder (the one next to the `Streamer.bot.exe` you start).
+
+**Connect Streamer.bot to OBS**
+
+7. **Stream Apps** > **OBS** > right-click in the list > **Add**:
+   **Name** `OBS`, **Host** `127.0.0.1`, **Port** `4455`, **Password** = the OBS WebSocket password from Part 1 step 8,
+   tick **Auto Connect** and **Reconnect** > **OK** > right-click the entry > **Connect**. Status turns **Connected**.
+
+**Connect Streamer.bot to IXC**
+
+8. **Servers/Clients** > **WebSocket Server**: **Address** `127.0.0.1`, **Port** `8080`, **Endpoint** `/`, tick **Auto Start**,
+   tick **Enable Authentication** and type a password > **Start Server**.
+9. In IXC: **System** > **Streamer.bot**: **Address** `ws://127.0.0.1:8080/`. IXC reads the password from Streamer.bot's
+   settings by itself. If it can't, paste the password from step 8 > **Save**. Press **Test connection**: it shows your accounts.
+   **Start with IXC**: **No** (you open Streamer.bot yourself). Now IXC replies in chat through Streamer.bot.
 
 ## Part 4 – Twitch, Kick and YouTube at once (10 min)
 
