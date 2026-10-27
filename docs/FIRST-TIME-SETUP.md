@@ -52,8 +52,12 @@ that look a little different in every version, so for those the steps name the e
 3. The **setup assistant** opens in your browser: enter your channel names (Twitch name, YouTube @handle, Kick name) > it sets up
    OBS and tests everything.
 4. Open OBS: menu **Docks** shows **IXC**, **IXC ChatBox**, **IXC Music**. Tick them and drag them where you like.
+
+   ![IXC ChatBox dock](images/chatbox-dock.png) ![IXC Music dock](images/music-dock.png)
 5. In the IXC dashboard (tray icon bottom right > **Open**) > **Updates & diagnostics** > **System check**: everything should be
    green. If something is red, press its **Fix** button.
+
+   ![IXC System check](images/diagnostics.png)
 
 ## Part 3 – Streamer.bot (20 min)
 
@@ -152,6 +156,10 @@ The **Status** pill is green **Connected**, and *Connected to Streamer.bot 1.x, 
 | *No platform account reported* | Sign in on Streamer.bot's **Platforms** tab (3.2 and 3.4). |
 | Kick shows no events | Kick.bot is old or in the wrong folder (3.4), or you are not logged in to Kick there. |
 
+The three settings in one picture (illustration with the values from a working PC; your window may look a little different):
+
+![Streamer.bot settings IXC needs (illustration)](images/streamerbot-setup.svg)
+
 ### 3.8 Check the whole chain
 
 1. OBS is open. Streamer.bot: **Stream Apps > OBS** shows **Connected**.
@@ -191,6 +199,8 @@ To keep your PC smooth, the video is encoded **once** (OBS's main stream) and Ai
    horizontal one.
 
 ## Going live (every time)
+
+![Going live order (illustration)](images/go-live-order.svg)
 
 1. Open **Streamer.bot**, then **OBS** (IXC is already running in the tray).
 2. Look at IXC **System check**: all green.
