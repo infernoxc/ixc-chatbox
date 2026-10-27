@@ -3,6 +3,9 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-27
+First official 3.3.0 release: everything from 3.3.0-rc.1 to rc.3 below.
+
 ## [3.3.0-rc.3] - 2026-10-27 (pre-release)
 ### Added
 - docs/FIRST-TIME-SETUP.md: complete beginner guide (OBS, IXC, Streamer.bot incl. Kick.bot, Aitum Multistream with one shared encoder, replay and vertical clips, troubleshooting) with an overview diagram.
