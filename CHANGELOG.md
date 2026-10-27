@@ -3,6 +3,10 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.3.0-rc.3] - 2026-10-27 (pre-release)
+### Added
+- docs/FIRST-TIME-SETUP.md: complete beginner guide (OBS, IXC, Streamer.bot incl. Kick.bot, Aitum Multistream with one shared encoder, replay and vertical clips, troubleshooting) with an overview diagram.
+
 ## [3.3.0-rc.2] - 2026-10-27 (pre-release)
 ### Added
 - Streams page (menu: Multistream): Twitch / YouTube / Kick state (NOT CONFIGURED, READY, ERROR, CONNECTING, STREAMING) read from OBS Settings > Stream, Aitum Multistream and obs-multi-rtmp settings plus OBS's live outputs; stream keys are never shown (only set / not set). Check all. Optional Start / Stop through Aitum, off until a local test proves it (tools/aitum-sink-test.mjs).
