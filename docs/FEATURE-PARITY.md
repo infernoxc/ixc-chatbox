@@ -48,7 +48,7 @@ needs it to start or to read chat. A streamer who runs it, as the author does, g
 | | **Your own app IDs entered in IXC** | `Accounts.SetApps`, Your apps card | ✅ 3.1.0 | auto (mock) `11` |
 | | Tokens encrypted (DPAPI), never in logs or config | `Secrets` | ✅ | auto (mock) |
 | **Moderation** | Delete message / timeout / ban from the panel | `Moderation.cs`: Twitch Helix, YouTube Data API, Kick public API (timeout/ban only) | ✅ 3.1.0 | auto (mock) `15`; manual: **not done** (Kick request fields not verified against Kick's docs from here) |
-| **Commands** | Built-ins `!np !queue !skip !uptime !wrongsong !ttsskip !ttson !ttsoff !pause !resume !viewers !songs` | `Commands.cs` | ✅ | auto (mock) `03` |
+| **Commands** | Built-ins `!np !queue !skip !uptime !wrongsong !ttsskip !ttson !ttsoff !pause !resume !viewers !songs !previous !shuffle !repeat !volume !ttsvolume !ttsspeed !ttsvoice !ttspause !ttsresume !ttsclear` | `Commands.cs` | ✅ | auto (mock) `03`, `31` |
 | | Custom text commands: permission, cooldowns, aliases, platforms, variables | `Commands.cs`, editor in app | ✅ | auto (mock) |
 | | Different reply per platform | `responses` per command | ✅ 3.1.0 | auto (mock) `13` |
 | | OBS actions from a command (`!brb` → scene) | `obs` per command | ✅ 3.1.0 | auto (mock) `14` |

@@ -375,3 +375,6 @@ Record actual evidence only. Do not mark unverified features complete.
 
 ## 2026-10-25 Final state
 - Installed: build final2 (C90AA344). Aitum 1.0.9 is the single stream manager (Twitch 6000 / YouTube 17000 / Kick 8000, AMD H.264 CBR, 2 s keyframe, tracks 1/3/2), all READY by saved settings. Live tests: record start/stop PASS, local encoder load PASS, Streamer.bot link reconnect PASS; live ingest, chat test, upload NOT TESTED/MEASURED. IXC start/stop controls for Aitum NOT BUILT (unverifiable without a broadcast). Details: D:\OBS\New OBS File\IXC_REPAIR_STATUS.md.
+
+## 2026-10-29 Music and voice chat commands
+- Added builtins prev, shuffle, repeat, volume, ttsclear, ttspause, ttsresume, ttsvolume, ttsspeed, ttsvoice (Commands.cs) and ready-made entries for them plus skip/pause/resume/queue/ttsskip/ttson/ttsoff. Moderators only by default. Test 31 passes with 03 and 18 (5/5 on Mono). NOT tested: on the user PC (needs a new build), real TTS voice switch audio.

@@ -24,7 +24,7 @@ Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC 
   - busy-chat limits;
   - lists of people and words never to read.
 - **Voices for people:** give regulars their own voice, speed and volume. You can also set a voice for moderators, VIPs, subscribers, or a whole platform.
-- **Moderators** can type `!ttsskip`, `!ttson` and `!ttsoff` (you can turn this off).
+- **Moderators** can type `!ttsskip`, `!ttson` and `!ttsoff` (you can turn this off). Add more voice and music commands (`!shuffle`, `!volume 40`, `!ttsvoice`, `!ttsvolume`, `!ttsspeed` ...) from Commands > Ready-made commands.
 - **`!tts message`** is read first. Read mode **"Only !tts"** reads nothing else.
 
 ## Music

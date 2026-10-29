@@ -2,6 +2,8 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Added
+- Chat commands for the music player and the chat voice, moderators only by default: `!shuffle`, `!repeat` (on, off or flip), `!volume` (40, +10, -10), `!previous` / `!prev`, `!ttsvolume`, `!ttsspeed`, `!ttsvoice` (lists voices or picks one), `!ttspause`, `!ttsresume`, `!ttsclear`. Add them from Commands > Ready-made commands, together with `!skip`, `!pause`, `!resume`, `!queue`, `!ttsskip`, `!ttson`, `!ttsoff`. Test 31.
 ### Fixed
 - The Streams page now has its own entry in the IXC menu (it could only be reached by its address).
 ### Changed
