@@ -4,7 +4,10 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 ## [Unreleased]
 ### Added
 - Chat commands for the music player and the chat voice, moderators only by default: `!shuffle`, `!repeat` (on, off or flip), `!volume` (40, +10, -10), `!previous` / `!prev`, `!ttsvolume`, `!ttsspeed`, `!ttsvoice` (lists voices or picks one), `!ttspause`, `!ttsresume`, `!ttsclear`. Add them from Commands > Ready-made commands, together with `!skip`, `!pause`, `!resume`, `!queue`, `!ttsskip`, `!ttson`, `!ttsoff`. Test 31.
-- Chat voice: optional Azure Speech voices (official Microsoft service, free tier about 500,000 characters a month). Paste your own region and key on the Chat voice page (stored encrypted, never shown again); IXC then offers Indian English and Hindi voices (male and female, Hinglish reads well), multilingual voices and a soft whispering voice. Custom voices in `tts.voices` can set `engine: azure` and a `style`. Not enabled until you add a key.
+- Chat voice: Azure AI Speech as the main engine, with Windows voices as backup (docs/VOICES.md). Paste your own region and key on the Chat voice page (stored encrypted, never shown again). The voice list comes from Azure itself: native Indian English and Hindi voices (male and female), multilingual voices that list Hindi, and a soft whisper voice.
+- Speech engine choice: Automatic, Azure only, Windows only. The backup Windows voice always speaks the same language, and Devanagari text needs a Hindi voice. When none is installed, the message says what to install.
+- Azure timeout, retries and a cooldown after errors (no repeated calls; Azure comes back by itself). Skip and Clear abort a voice that is still being made. Long messages are split at sentence ends.
+- 🎧 Preview here: hear a voice in the dashboard before choosing it (not on stream, not queued). Language filter for the voice list, status lines for Azure and the offline backup, and a pronunciation list (`word=how to say it`).
 ### Fixed
 - Custom voices added in settings show up straight away (the voice list was cached for 10 seconds).
 - The Streams page now has its own entry in the IXC menu (it could only be reached by its address).

@@ -4,6 +4,7 @@
 //   chat -> filters (off / platform / role / own account / bots / never-speak / blocked words / commands / rate limits) -> cleanup -> queue
 //   queue -> (drop stale) -> synthesize (Edge neural voice, or the offline Windows voice) -> tts.html plays it -> next
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -21,10 +22,12 @@ namespace IXC {
   public class TtsItem {
     public int N, Priority, Rate, Pitch, Volume = 100; public string Text, Said, User, Login, Platform, MsgId, VoiceKey, Status = "queued", Engine = "", Error = ""; public DateTime At = DateTime.Now, PlayedAt;
     public byte[] Audio; public string Mime = "audio/mpeg"; public Task Synth; public int SynthMs;
+    public volatile bool Cancelled; public volatile Action Abort;   // skip / clear stops a voice request that is still running
+    public void Cancel() { Cancelled = true; var a = Abort; if (a != null) a(); }
     public Dictionary<string, object> View() { return J.D("n", N, "text", Said, "user", User, "platform", Platform, "voice", VoiceKey, "status", Status, "engine", Engine, "priority", Priority,
       "at", At.ToString("HH:mm:ss"), "age", (int)(DateTime.Now - At).TotalSeconds, "error", Error, "replayable", true); }
   }
-  public class Voice { public string Key, Label, Name, Engine = "edge", Style; public int Rate, Pitch; public bool IsNew; }
+  public class Voice { public string Key, Label, Name, Engine = "edge", Style, Locale, Gender, Kind = ""; public int Rate, Pitch; public bool IsNew; }
 
   public static class Tts {
     static readonly object L = new object();
@@ -35,7 +38,7 @@ namespace IXC {
     public static readonly Dictionary<string, int> FilterCounts = new Dictionary<string, int>();
     static readonly LinkedList<DateTime> recentTimes = new LinkedList<DateTime>(); static readonly Dictionary<string, DateTime> lastByUser = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
     static readonly LinkedList<KeyValuePair<string, DateTime>> recentTexts = new LinkedList<KeyValuePair<string, DateTime>>();
-    static string edgeError = "", azureError = ""; static int edgeFails; static DateTime edgeOffUntil = DateTime.MinValue; static string lastEngine = ""; static bool pausedPlayback;
+    static string edgeError = ""; static int edgeFails; static DateTime edgeOffUntil = DateTime.MinValue; static string lastEngine = ""; static bool pausedPlayback;
 
     static readonly string[] DefaultBots = { "streamerbot", "streamer.bot", "streamer_bot", "nightbot", "streamelements", "moobot", "fossabot", "wizebot", "botrix", "botrixoficial", "kickbot", "sery_bot", "soundalerts", "streamlabs", "commanderroot", "ixc" };
     public static bool On { get { return Settings.Bool("tts.on"); } }
@@ -45,7 +48,11 @@ namespace IXC {
     static bool B(string k) { return Settings.Bool("tts." + k); }
     public static Dictionary<string, object> SettingsView() {
       var d = new Dictionary<string, object>(); foreach (var kv in Settings.Snapshot(true)) if (kv.Key.StartsWith("tts.")) d[kv.Key.Substring(4)] = kv.Value;
-      d["enabled"] = On; d["azureReady"] = AzureTts.Ready; d["azureKeySet"] = Secrets.Has("azure.speechKey"); return d; }
+      d["enabled"] = On; d["azureReady"] = AzureTts.Ready; d["azureKeySet"] = Secrets.Has("azure.speechKey"); d["azure"] = AzureTts.View(); d["offline"] = OfflineView(); return d; }
+    public static Dictionary<string, object> OfflineView() {
+      bool hi = Sapi.Has("hi"), inEn = Sapi.Has("en-IN"); var all = Sapi.List();
+      return J.D("voices", all, "hindi", hi, "indianEnglish", inEn, "on", B("fallback") && S("engine") != "azure",
+        "message", all.Count == 0 ? "No Windows voices found - there is no offline backup" : (hi ? "" : "No Hindi Windows voice (install the Hindi speech pack). ") + (inEn ? "" : "No English (India) Windows voice (install the English (India) speech pack). ") + (hi && inEn ? "Hindi and Indian English Windows voices installed." : "")); }
 
     // ---------- voices ----------
     static Dictionary<string, Voice> voiceCache; static DateTime voiceAt; static string sapiBest; static DateTime sapiAt = DateTime.MinValue;
@@ -64,31 +71,28 @@ namespace IXC {
       add("uk-female", "UK female - Sonia", "en-GB-SoniaNeural", 0, 0, true);
       add("jarvis", "Jarvis-style - Ryan (UK)", "en-GB-RyanNeural", 6, -3, false);
       add("au-male", "Australian male - William", "en-AU-WilliamNeural", 0, 0, true);
-      if (AzureTts.Ready) {   // official Azure Speech voices: only offered once the user has pasted their own key
-        Action<string, string, string, int, int, string> az = (k, label, name, rate, pitch, style) => v[k] = new Voice { Key = k, Label = label, Name = name, Rate = rate, Pitch = pitch, Engine = "azure", Style = style, IsNew = true };
-        az("az-in-female", "Azure Indian female - Neerja (reads Hinglish)", "en-IN-NeerjaNeural", 0, 0, null); az("az-in-male", "Azure Indian male - Prabhat (reads Hinglish)", "en-IN-PrabhatNeural", 0, 0, null);
-        az("az-hi-female", "Azure Hindi female - Swara", "hi-IN-SwaraNeural", 0, 0, null); az("az-hi-male", "Azure Hindi male - Madhur", "hi-IN-MadhurNeural", 0, 0, null);
-        az("az-multi-female", "Azure multilingual female - Ava", "en-US-AvaMultilingualNeural", 0, 0, null); az("az-multi-male", "Azure multilingual male - Andrew", "en-US-AndrewMultilingualNeural", 0, 0, null);
-        az("az-whisper", "Azure soft whisper (slow, low, whispering style)", "en-US-JennyNeural", -15, -4, "whispering"); }
+      foreach (var av in AzureTts.MenuVoices()) v[av.Key] = av;   // official Azure voices: only after the user added a key, and only the ones Azure itself lists
+      AzureTts.MaybeRefresh();
       var cv = Settings.Obj("tts.voices");
       foreach (var kv in cv) { var d = kv.Value as Dictionary<string, object>; if (d == null) continue; var name = J.Str(d, "voice", ""); if (name.Length == 0 || !Regex.IsMatch(name, "^[A-Za-z]{2,3}-[A-Za-z]{2,4}-\\w+Neural$")) continue;
         Voice old; v.TryGetValue(kv.Key, out old);
         v[kv.Key] = new Voice { Key = kv.Key, Name = name, Label = J.Str(d, "label", old != null && old.Name == name ? old.Label : kv.Key + " - " + name), Rate = ParseNum(J.Str(d, "rate", "0")), Pitch = ParseNum(J.Str(d, "pitch", "0")),
-          Engine = J.Str(d, "engine", "edge") == "azure" ? "azure" : "edge", Style = Regex.IsMatch(J.Str(d, "style", ""), "^[a-z][a-z-]{2,30}$") ? J.Str(d, "style", "") : null }; }
+          Engine = J.Str(d, "engine", "edge") == "azure" ? "azure" : "edge", Locale = LocaleOf(name), Style = Regex.IsMatch(J.Str(d, "style", ""), "^[a-z][a-z-]{2,30}$") ? J.Str(d, "style", "") : null }; }
       if ((DateTime.Now - sapiAt).TotalMinutes > 10) { sapiBest = Sapi.Best(null); sapiAt = DateTime.Now; }
       v["local"] = new Voice { Key = "local", Label = "Windows voice (offline, " + (sapiBest ?? "none installed") + ")", Name = "", Engine = "sapi" };
       voiceCache = v; voiceAt = DateTime.Now; return v; }
     static int ParseNum(string s) { var m = Regex.Match(s ?? "", "[-+]?\\d+"); return m.Success ? int.Parse(m.Value, CultureInfo.InvariantCulture) : 0; }
-    public static List<object> VoiceList() { return Voices().Values.Select(v => (object)J.D("key", v.Key, "label", v.Label, "engine", v.Engine, "isNew", v.IsNew)).ToList(); }
+    public static List<object> VoiceList() { return Voices().Values.Select(v => (object)J.D("key", v.Key, "label", v.Label, "engine", v.Engine, "isNew", v.IsNew, "locale", v.Locale ?? LocaleOf(v.Name), "kind", v.Kind)).ToList(); }
 
     public static void Init() {
+      AzureTts.Load();
       watchdog = new Timer(_ => Watch(), null, 1000, 1000);
       stateT = new Timer(_ => Hub.Publish("tts", StateMsg()));
       unduckT = new Timer(_ => { bool idle; lock (L) idle = current == null || current.Status != "playing"; if (idle) Music.Duck(false); });
       Settings.Changed += k => {
         if (!k.StartsWith("tts.")) return;
-        if (k == "tts.voices" || k == "tts.azure.region") voiceCache = null;
-        if (k == "tts.on" && !On) { lock (L) { foreach (var it in Queue) { it.Status = "cancelled (TTS off)"; AddHistory(it); } Queue.Clear(); } StopPlayback("TTS turned off"); }
+        if (k == "tts.voices" || k == "tts.azure.region" || k == "tts.engine") voiceCache = null;
+        if (k == "tts.on" && !On) { lock (L) { foreach (var it in Queue) { it.Cancel(); it.Status = "cancelled (TTS off)"; AddHistory(it); } Queue.Clear(); } StopPlayback("TTS turned off"); }
         if (k == "tts.paused") { if (Paused) { Hub.Publish("tts.play", J.D("type", "tts.pause")); pausedPlayback = true; } else { Hub.Publish("tts.play", J.D("type", "tts.resume")); pausedPlayback = false; lock (L) if (current != null) currentUntil = DateTime.Now.AddSeconds(30); Pump(); } }
         Changed(); }; }
     static void Watch() {
@@ -170,6 +174,7 @@ namespace IXC {
       if (c != null && !B("readEmotes") && c.EmoteNames.Count > 0) t = string.Join(" ", t.Split(' ').Where(w => !c.EmoteNames.Contains(w)));
       t = UrlRe.Replace(t, B("readLinks") ? "$0" : " link ");
       t = Regex.Replace(t, "@([\\w.]+)", m => SpeakName(m.Groups[1].Value));
+      t = Pronounce(t);
       if (!B("readEmoji")) { t = Regex.Replace(t, "[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]", " "); t = Regex.Replace(t, "[\\u2600-\\u27BF\\uFE0F\\u200D\\u2B00-\\u2BFF\\u2300-\\u23FF]", " "); }
       t = Regex.Replace(t, "\\b\\d{7,}\\b", " a long number ");                          // numbers first, so "10000" is never shortened below
       t = Regex.Replace(t, "\\b(\\d{1,6})(k)\\b", "$1 thousand", RegexOptions.IgnoreCase);
@@ -181,6 +186,12 @@ namespace IXC {
       t = Regex.Replace(t, "\\s+", " ").Trim();
       if (!t.Any(char.IsLetterOrDigit) || Regex.IsMatch(t, "^(link\\s*)+$")) return null;
       int max = I("maxChars"); if (t.Length > max) { var cut = t.LastIndexOf(' ', max); t = t.Substring(0, cut > max / 2 ? cut : max); }
+      return t; }
+
+    // the user's pronunciation list: "word=how to say it", whole words only, any script (Devanagari vowel signs count as part of a word)
+    static string Pronounce(string t) {
+      foreach (var line in Settings.List("tts.pronounce")) { int eq = line.IndexOf('='); if (eq < 1) continue; string w = line.Substring(0, eq).Trim(), say = line.Substring(eq + 1).Trim(); if (w.Length == 0) continue;
+        t = Regex.Replace(t, "(?<![\\p{L}\\p{M}\\p{N}])" + Regex.Escape(w) + "(?![\\p{L}\\p{M}\\p{N}])", say.Replace("$", "$$"), RegexOptions.IgnoreCase); }
       return t; }
 
     // ---------- playback loop ----------
@@ -199,6 +210,7 @@ namespace IXC {
             current = it; it.Status = "preparing"; currentUntil = DateTime.Now.AddSeconds(40); }
           Changed();
           var syn = EnsureSynth(it); if (!syn.Wait(35000)) it.Error = "the voice took too long";
+          if (it.Cancelled) return;   // skipped or cleared while the voice was being made
           lock (L) { var nx = Queue.OrderByDescending(q => q.Priority).ThenBy(q => q.At).FirstOrDefault(); if (nx != null) EnsureSynth(nx); }   // prepare the next one while this plays
           if (it.Audio == null) { Interlocked.Increment(ref Failed); Finish(it, "failed: " + (it.Error.Length > 0 ? it.Error : "no audio")); return; }
           lock (L) { if (current != it) return; it.Status = "playing"; it.PlayedAt = DateTime.Now; currentUntil = DateTime.Now.AddSeconds(8 + it.Audio.Length / (it.Mime == "audio/wav" ? 32000.0 : 6000.0)); }
@@ -214,7 +226,7 @@ namespace IXC {
       unduckT.Change(Queue.Count > 0 && !Paused ? 1500 : 350, Timeout.Infinite);   // the next message follows quickly: keep the music down in between
       Hub.Publish("tts", J.D("type", "tts.done", "n", it.N)); Changed(); Pump(); }
     static void AddHistory(TtsItem it) { lock (L) { History.Remove(it); History.AddLast(it); while (History.Count > 40) History.RemoveFirst(); int k = 0; foreach (var h in History.Reverse()) if (++k > 5 && h != current) { h.Audio = null; h.Synth = null; } } }
-    static void StopPlayback(string why) { Hub.Publish("tts.play", J.D("type", "tts.stop")); TtsItem c; lock (L) c = current; if (c != null) Finish(c, why); else Music.Duck(false); }
+    static void StopPlayback(string why) { Hub.Publish("tts.play", J.D("type", "tts.stop")); TtsItem c; lock (L) c = current; if (c != null) { c.Cancel(); Finish(c, why); } else Music.Duck(false); }
 
     static Task EnsureSynth(TtsItem it) {
       lock (it) { if (it.Audio != null) return Task.FromResult(0); if (it.Synth == null) it.Synth = Task.Run(() => Synthesize(it)); return it.Synth; } }
@@ -223,37 +235,63 @@ namespace IXC {
       int rate = Math.Max(-50, Math.Min(150, v.Rate + I("speed") + it.Rate)), pitch = Math.Max(-50, Math.Min(50, v.Pitch + I("pitch") + it.Pitch));
       try {
         if (Program.TestMode && Environment.GetEnvironmentVariable("IXC_TTS_FAKE") == "1") { it.Audio = Sapi.Silence(Math.Min(4000, 300 + it.Said.Length * 40)); it.Mime = "audio/wav"; it.Engine = "test voice"; return; }
-        if (v.Engine == "azure") {
-          for (int a = 0; a < 2 && it.Audio == null; a++) {
-            try { var b = AzureTts.Synth(it.Said, v.Name, v.Style, rate, pitch); if (b != null && b.Length > 800) { it.Audio = b; it.Mime = "audio/mpeg"; it.Engine = "Azure Speech (" + v.Name + (v.Style != null ? ", " + v.Style : "") + ")"; azureError = ""; } else azureError = "empty audio"; }
-            catch (Exception e) { azureError = U.Plain(e); if (azureError.Contains("rejected")) break; } }
-          if (it.Audio == null) Log.Warn("tts", "Azure voice failed (" + azureError + ")"); }
-        if (v.Engine == "edge" && DateTime.Now > edgeOffUntil) {
+        // engine: auto = Azure when set up (Edge's free voices otherwise), Windows voice as backup; azure = Azure only; windows = Windows voices only
+        string eng = S("engine"), online = ""; bool windowsOnly = eng == "windows" || v.Engine == "sapi";
+        bool azure = !windowsOnly && (v.Engine == "azure" || eng == "azure" || (v.Engine == "edge" && AzureTts.Ready));   // the Edge voice names are Azure voice names too
+        if (azure) {
+          try { var b = AzureTts.Speak(it.Said, v, rate, pitch, it); it.Audio = b; it.Mime = "audio/mpeg"; it.Engine = "Azure Speech (" + v.Name + (v.Style != null ? ", " + v.Style : "") + ")"; }
+          catch (AzureError e) { if (e.Kind == "cancelled") { it.Error = "cancelled"; return; } online = e.Message; } }
+        else if (!windowsOnly && v.Engine == "edge" && DateTime.Now > edgeOffUntil) {
           for (int a = 0; a < 2 && it.Audio == null; a++) {
             try { var b = EdgeTts.Synth(it.Said, v.Name, rate, pitch); if (b != null && b.Length > 800) { it.Audio = b; it.Mime = "audio/mpeg"; it.Engine = "Edge neural (" + v.Name + ")"; edgeFails = 0; edgeError = ""; } else edgeError = "empty audio"; }
             catch (Exception e) { edgeError = U.Plain(e); } }
-          if (it.Audio == null && Interlocked.Increment(ref edgeFails) >= 2) { edgeOffUntil = DateTime.Now.AddSeconds(60); Log.Warn("tts", "neural voice failed (" + edgeError + ") - using the offline Windows voice for 60 s"); } }
-        if (it.Audio == null && (v.Engine == "sapi" || B("fallback"))) {
-          try { string used; it.Audio = Sapi.Synth(it.Said, v.Engine == "sapi" ? null : v.Name, rate, out used); it.Mime = "audio/wav"; it.Engine = "Windows offline (" + used + ")"; }
-          catch (Exception e) { it.Error = "offline voice: " + U.Plain(e); } }
-        if (it.Audio == null && it.Error == "") it.Error = v.Engine == "azure" && azureError.Length > 0 ? azureError : edgeError.Length > 0 ? edgeError : "no voice available"; }
+          if (it.Audio == null) { online = edgeError; if (Interlocked.Increment(ref edgeFails) >= 2) { edgeOffUntil = DateTime.Now.AddSeconds(60); Log.Warn("tts", "neural voice failed (" + edgeError + ") - using the offline Windows voice for 60 s"); } } }
+        else if (!windowsOnly) online = "the online voice is paused after errors (" + edgeError + ")";
+        if (it.Audio == null && !it.Cancelled && (windowsOnly || (eng != "azure" && B("fallback")))) {
+          string err; var name = Sapi.Pick(v.Engine == "sapi" ? null : NeededLocale(v, it.Said), GenderOf(v), out err);
+          if (name == null) it.Error = err + (online.Length > 0 ? " (online voice: " + online + ")" : "");
+          else try { string used; it.Audio = Sapi.SynthWith(it.Said, name, rate, out used); it.Mime = "audio/wav"; it.Engine = "Windows offline (" + used + ")" + (online.Length > 0 ? " - backup, online voice: " + online : ""); }
+            catch (Exception e) { it.Error = "offline voice: " + U.Plain(e); } }
+        if (it.Audio == null && it.Error == "") it.Error = online.Length > 0 ? online : "no voice available"; }
       catch (Exception e) { it.Error = U.Plain(e); }
       finally { it.SynthMs = (int)sw.ElapsedMilliseconds; if (it.Audio != null) { Interlocked.Add(ref synthMsTotal, it.SynthMs); Interlocked.Increment(ref synthCount); lastEngine = it.Engine; } } }
+    // ---------- languages ----------
+    public static string LocaleOf(string name) { var m = Regex.Match(name ?? "", "^([a-z]{2,3}-[A-Z]{2,4})-"); return m.Success ? m.Groups[1].Value : null; }
+    public static string LanguageName(string loc) { return loc == "hi-IN" ? "Hindi (hi-IN)" : loc == "en-IN" ? "English (India)" : loc != null && loc.StartsWith("hi") ? "Hindi" : loc != null && loc.StartsWith("en") ? "English (" + loc + ")" : loc; }
+    static readonly Regex Devanagari = new Regex("[\\u0900-\\u097F]");
+    // the language a Windows backup voice must speak: Hindi when the voice is Hindi or the text is written in Devanagari (English Windows voices skip it), else the voice's own
+    static string NeededLocale(Voice v, string text) { var loc = v.Locale ?? LocaleOf(v.Name) ?? "en-IN"; return Devanagari.IsMatch(text ?? "") ? "hi-IN" : loc; }
+    static string GenderOf(Voice v) { return !string.IsNullOrEmpty(v.Gender) ? v.Gender : Regex.IsMatch(v.Name ?? "", "Neerja|Swara|Jenny|Aria|Sonia|Ava|Female", RegexOptions.IgnoreCase) ? "Female" : "Male"; }
+    // long text -> parts of at most max characters, cut after sentence ends (. ! ? ।), then commas, then spaces
+    public static List<string> Split(string text, int max) {
+      var r = new List<string>(); text = (text ?? "").Trim(); if (text.Length <= max) { r.Add(text); return r; }
+      var cur = new StringBuilder();
+      foreach (var s in Regex.Split(text, "(?<=[.!?\\u0964\\u0965])\\s+")) {
+        var piece = s;
+        while (piece.Length > max) { int cut = piece.LastIndexOf(", ", max, StringComparison.Ordinal); if (cut < max / 3) cut = piece.LastIndexOf(' ', max); if (cut < max / 3) cut = max - 1;
+          if (cur.Length > 0) { r.Add(cur.ToString()); cur.Clear(); } r.Add(piece.Substring(0, cut + 1).Trim()); piece = piece.Substring(cut + 1).Trim(); }
+        if (cur.Length > 0 && cur.Length + 1 + piece.Length > max) { r.Add(cur.ToString()); cur.Clear(); }
+        if (piece.Length > 0) { if (cur.Length > 0) cur.Append(' '); cur.Append(piece); } }
+      if (cur.Length > 0) r.Add(cur.ToString()); return r.Where(x => x.Length > 0).ToList(); }
+    public static void VoicesChanged() { voiceCache = null; Changed(); }
 
     // ---------- state for docks / phones / diagnostics ----------
     public static Dictionary<string, object> StateMsg() {
       lock (L) return J.D("type", "tts.state", "settings", SettingsView(), "current", current == null ? null : current.View(), "paused", Paused,
         "queue", Queue.OrderByDescending(q => q.Priority).ThenBy(q => q.At).Select(q => q.View()).ToList(), "history", History.Reverse().Take(15).Select(h => h.View()).ToList(),
         "skipped", Skipped.Reverse().Take(12).ToList(), "players", Hub.Count("tts"), "engine", EngineStatus(), "speaking", current != null && current.Status == "playing", "route", Routing.Info("tts")); }
-    static string EngineStatus() { return DateTime.Now < edgeOffUntil ? "offline Windows voice (neural voice failed: " + edgeError + ")" : lastEngine.Length > 0 ? lastEngine : "Edge neural (ready)"; }
+    static string EngineStatus() { var az = AzureTts.State; if (S("engine") == "windows") return "Windows voices only" + (lastEngine.StartsWith("Windows") ? " - last: " + lastEngine : "");
+      if (az == "paused" || az == "rejected") return "Azure: " + J.Str(AzureTts.View(), "message", "") + (lastEngine.Length > 0 ? " - last: " + lastEngine : "");
+      if (AzureTts.Ready) return lastEngine.Length > 0 ? lastEngine : "Azure Speech (ready)";
+      return DateTime.Now < edgeOffUntil ? "offline Windows voice (neural voice failed: " + edgeError + ")" : lastEngine.Length > 0 ? lastEngine : "Edge neural (ready)"; }
     public static bool Speaking { get { lock (L) return current != null && current.Status == "playing"; } }
     public static Dictionary<string, object> DiagInfo() {
-      lock (L) return J.D("enabled", On, "paused", Paused, "voice", S("voice"), "engine", EngineStatus(), "neuralError", edgeError, "queue", Queue.Count, "current", current == null ? null : current.Said,
+      lock (L) return J.D("enabled", On, "paused", Paused, "voice", S("voice"), "engine", EngineStatus(), "neuralError", edgeError, "azure", AzureTts.View(), "engineSetting", S("engine"), "queue", Queue.Count, "current", current == null ? null : current.Said,
         "played", Played, "failed", Failed, "queued", Enqueued, "avgSynthMs", synthCount == 0 ? 0 : (int)(synthMsTotal / synthCount), "ttsSourcesConnected", Hub.Count("tts"),
         "notRead", new Dictionary<string, int>(FilterCounts), "offlineVoices", Sapi.List()); }
     public static TtsItem Replay(int n) { TtsItem h; lock (L) h = History.FirstOrDefault(x => x.N == n); if (h == null) return null;
       return Enqueue(new TtsItem { Text = h.Text, Said = h.Said, User = h.User, Platform = h.Platform, VoiceKey = h.VoiceKey, Rate = h.Rate, Pitch = h.Pitch, Volume = h.Volume, Priority = 2, Audio = h.Audio, Mime = h.Mime, Engine = h.Engine }); }
-    public static void Clear() { lock (L) { foreach (var it in Queue) { it.Status = "cleared"; AddHistory(it); } Queue.Clear(); } Changed(); }
+    public static void Clear() { lock (L) { foreach (var it in Queue) { it.Cancel(); it.Status = "cleared"; AddHistory(it); } Queue.Clear(); } Changed(); }
     public static void SkipNow() { StopPlayback("skipped"); }
     public static TtsItem Say(string text, string voice, int prio) {
       text = (text ?? "").Trim(); if (text.Length == 0) return null; var clean = Clean(text, null) ?? text; if (clean.Length > 500) clean = clean.Substring(0, 500);
@@ -279,8 +317,15 @@ namespace IXC {
       if (path == "/api/tts/clear" && m == "POST") { Clear(); Http.Json(ctx, J.D("ok", true)); return true; }
       if (path == "/api/tts/replay" && m == "POST") { var it = Replay(J.Int(Http.BodyJson(ctx), "n", 0)); Http.Json(ctx, it == null ? 404 : 200, J.D("n", it == null ? 0 : it.N)); return true; }
       if (path == "/api/tts/azure" && m == "POST") { var b = Http.BodyJson(ctx); var err = AzureTts.Configure(J.Str(b, "region", null), J.Str(b, "key", null), J.Bool(b, "remove", false));
-        if (err == null) { voiceCache = null; Changed(); } Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "ready", AzureTts.Ready, "region", AzureTts.Region, "keySet", Secrets.Has("azure.speechKey"))); return true; }
-      if (path == "/api/tts/azure-test" && m == "POST") { string err; int n = AzureTts.Test(out err); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "bytes", n)); return true; }
+        string check = null; if (err == null && !J.Bool(b, "remove", false) && AzureTts.Ready) check = AzureTts.FetchCatalog();   // loads the voice list and so checks the key once
+        if (err == null) VoicesChanged(); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "ready", AzureTts.Ready, "region", AzureTts.Region, "keySet", Secrets.Has("azure.speechKey"), "checkError", check, "azure", AzureTts.View())); return true; }
+      if (path == "/api/tts/azure-test" && m == "POST") { string err; int n = AzureTts.Test(out err); VoicesChanged(); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "bytes", n, "azure", AzureTts.View())); return true; }
+      // preview: made like a chat message but only returned to the dashboard - not queued, not played in OBS, music not lowered
+      if (path == "/api/tts/preview" && m == "POST") { var b = Http.BodyJson(ctx); var text = Clean(J.Str(b, "text", ""), null);
+        if (text == null) { Http.Json(ctx, 400, J.D("ok", false, "error", "Type a test sentence")); return true; } if (text.Length > 300) text = text.Substring(0, 300);
+        var it = new TtsItem { Text = text, Said = text, User = "preview", Platform = "test", VoiceKey = J.Str(b, "voice", S("voice")) };
+        var t = Task.Run(() => Synthesize(it)); if (!t.Wait(35000)) { it.Cancel(); it.Error = "the voice took too long"; }
+        Http.Json(ctx, it.Audio == null ? 502 : 200, J.D("ok", it.Audio != null, "error", it.Audio == null ? it.Error : null, "engine", it.Engine, "mime", it.Mime, "ms", it.SynthMs, "audio", it.Audio == null ? null : Convert.ToBase64String(it.Audio))); return true; }
       if (path == "/api/tts/user" && m == "POST") { var b = Http.BodyJson(ctx); var err = SetUserVoice(J.Str(b, "name", ""), J.Str(b, "platform", "*"), J.Bool(b, "remove", false) ? null : J.Obj(b, "voice")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return true; }
       return false; }
     // the v2 dock sends {voice, speed, enabled, ...}: map those names to settings keys
@@ -306,40 +351,164 @@ namespace IXC {
   }
 
   // ---------------- Azure Speech (official Microsoft service; the user's own key, free tier about 500,000 characters a month) ----------------
-  // The key is stored encrypted in secrets.dat (like the Spotify secret), is never shown again and never written to a log or an error text.
+  // The key is stored encrypted in secrets.dat (Windows DPAPI, current user - the same protection Windows Credential Manager uses), is never shown
+  // again and never written to a log or an error text. Limits: the key sits on this PC, so anything running as this Windows user could read it;
+  // a separate token server would be needed for stronger protection (see docs/VOICES.md). The voice list comes from Azure itself (voices/list).
+  public class AzureError : Exception {
+    public string Kind;   // auth, region, network, timeout, quota, server, bad, cancelled, skipped
+    public AzureError(string kind, string msg) : base(msg) { Kind = kind; }
+    public bool Transient { get { return Kind == "network" || Kind == "timeout" || Kind == "server"; } }
+  }
   public static class AzureTts {
     public static string Region { get { return (Settings.Str("tts.azure.region") ?? "").Trim().ToLowerInvariant(); } }
     static bool GoodRegion(string r) { return Regex.IsMatch(r ?? "", "^[a-z0-9]{3,30}$"); }
     public static bool Ready { get { return GoodRegion(Region) && !string.IsNullOrEmpty(Secrets.Str("azure.speechKey")); } }
+    static int TimeoutMs { get { return Math.Max(3, Settings.Int("tts.azure.timeoutSec")) * 1000; } }
+
+    // ---- circuit breaker: two failures in a row -> no Azure calls for tts.azure.cooldownSec, then one trial request; a rejected key or an unknown region stops calls until Save ----
+    static readonly object BL = new object(); static int fails; static DateTime offUntil = DateTime.MinValue; static bool configBad, probing; static DateTime warnAt = DateTime.MinValue;
+    public static string LastError = "";
+    public static void Reset() { lock (BL) { fails = 0; offUntil = DateTime.MinValue; configBad = false; probing = false; LastError = ""; } }
+    static bool Enter(out string why) {
+      lock (BL) {
+        why = null; if (!Ready) { why = "Azure Speech is not set up (add the region and key on the Chat voice page)"; return false; }
+        if (configBad) { why = LastError; return false; }
+        if (DateTime.Now < offUntil) { why = "Azure is paused for " + (int)Math.Ceiling((offUntil - DateTime.Now).TotalSeconds) + " s after errors (" + LastError + ")"; return false; }
+        if (fails >= 2) { if (probing) { why = "Azure is being re-checked"; return false; } probing = true; }
+        return true; } }
+    static void Ok() { lock (BL) { fails = 0; offUntil = DateTime.MinValue; probing = false; LastError = ""; } }
+    static void Fail(AzureError e) {
+      lock (BL) { probing = false; if (e.Kind == "cancelled" || e.Kind == "skipped") return; LastError = e.Message;
+        if (e.Kind == "auth") configBad = true;   // an unknown region looks the same as no internet, so it only pauses
+        else if (e.Kind != "bad" && ++fails >= 2) offUntil = DateTime.Now.AddSeconds(Math.Max(10, Settings.Int("tts.azure.cooldownSec")));
+        if ((DateTime.Now - warnAt).TotalSeconds > 30) { warnAt = DateTime.Now; Log.Warn("tts", "Azure Speech: " + e.Message); } } }
+    public static string State { get { lock (BL) return !Ready ? "off" : configBad ? "rejected" : DateTime.Now < offUntil ? "paused" : Catalog == null ? "unchecked" : "ready"; } }
+    public static Dictionary<string, object> View() {
+      string st = State, msg;
+      lock (BL) msg = st == "off" ? (Secrets.Has("azure.speechKey") ? "Key saved - add the region" : "Not set up") : st == "rejected" ? LastError + " - check the key and region, then press Save"
+        : st == "paused" ? "Not reachable (" + LastError + "). Using the Windows voice; trying Azure again in " + (int)Math.Ceiling((offUntil - DateTime.Now).TotalSeconds) + " s"
+        : st == "unchecked" ? "Saved - press Test to load the voice list" : "Ready - " + Catalog.Count + " voices from Azure";
+      return J.D("state", st, "message", msg, "region", Region, "keySet", Secrets.Has("azure.speechKey"), "voices", Catalog == null ? 0 : Catalog.Count, "lastError", LastError); }
+
     public static string Configure(string region, string key, bool remove) {
-      if (remove) { Secrets.Set("azure.speechKey", null); return null; }
+      if (remove) { Secrets.Set("azure.speechKey", null); Reset(); SetCatalog(null); return null; }
       region = (region ?? "").Trim().ToLowerInvariant(); key = (key ?? "").Trim();
       if (region.Length > 0 && !GoodRegion(region)) return "The region looks like centralindia, eastus or southeastasia (letters and numbers only)";
       if (key.Length > 0 && !Regex.IsMatch(key, "^[A-Za-z0-9]{20,100}$")) return "That doesn't look like an Azure Speech key (32 or more letters and numbers, no spaces)";
       if (region.Length == 0 && !GoodRegion(Region)) return "Type the region of your Speech resource first (shown next to the key in Azure, for example centralindia)";
       if (key.Length == 0 && !Secrets.Has("azure.speechKey")) return "Paste the key from your Speech resource in Azure";
-      if (region.Length > 0) { var e = Settings.Set("tts.azure.region", region); if (e != null) return e; }
-      if (key.Length > 0) Secrets.Set("azure.speechKey", key);
+      if (region.Length > 0 && region != Region) { var e = Settings.Set("tts.azure.region", region); if (e != null) return e; SetCatalog(null); }
+      if (key.Length > 0) { Secrets.Set("azure.speechKey", key); SetCatalog(null); }
+      Reset();
       return Secrets.SaveError == null ? null : "Could not save the key (" + Secrets.SaveError + ")"; }
-    public static byte[] Synth(string text, string voice, string style, int ratePct, int pitchHz) {
-      var key = Secrets.Str("azure.speechKey"); var region = Region; if (!Ready) throw new Exception("Azure Speech is not set up");
-      var url = Ep.Get("AZURE_TTS", "https://" + region + ".tts.speech.microsoft.com/cognitiveservices/v1");
-      var req = (HttpWebRequest)WebRequest.Create(url); req.Method = "POST"; req.Timeout = 15000; req.ReadWriteTimeout = 15000; req.UserAgent = "IXC";
-      req.ContentType = "application/ssml+xml"; req.Headers["Ocp-Apim-Subscription-Key"] = key; req.Headers["X-Microsoft-OutputFormat"] = "audio-24khz-48kbitrate-mono-mp3";
-      string rate = (ratePct >= 0 ? "+" : "") + ratePct + "%", pitch = (pitchHz >= 0 ? "+" : "") + pitchHz + "Hz";
-      var body = System.Security.SecurityElement.Escape(text); var inner = "<prosody pitch='" + pitch + "' rate='" + rate + "'>" + body + "</prosody>";
-      if (!string.IsNullOrEmpty(style)) inner = "<mstts:express-as style='" + style + "'>" + inner + "</mstts:express-as>";
-      var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='" + voice + "'>" + inner + "</voice></speak>";
-      var data = Encoding.UTF8.GetBytes(ssml); req.ContentLength = data.Length;
-      try { using (var s = req.GetRequestStream()) s.Write(data, 0, data.Length);
+
+    // ---- one HTTP request; errors become AzureError with a plain reason (never the key) ----
+    static HttpWebRequest Req(string url, string method, TtsItem it) {
+      var req = (HttpWebRequest)WebRequest.Create(url); req.Method = method; req.Timeout = TimeoutMs; req.ReadWriteTimeout = TimeoutMs; req.UserAgent = "IXC";
+      req.Headers["Ocp-Apim-Subscription-Key"] = Secrets.Str("azure.speechKey");
+      if (it != null) it.Abort = () => { try { req.Abort(); } catch { } };
+      return req; }
+    static byte[] Run(HttpWebRequest req, byte[] body, TtsItem it) {
+      try {
+        if (it != null && it.Cancelled) throw new AzureError("cancelled", "cancelled");
+        if (body != null) { req.ContentLength = body.Length; using (var s = req.GetRequestStream()) s.Write(body, 0, body.Length); }
         using (var resp = (HttpWebResponse)req.GetResponse()) using (var ms = new MemoryStream()) { resp.GetResponseStream().CopyTo(ms); return ms.ToArray(); } }
-      catch (WebException e) { var r = e.Response as HttpWebResponse;
-        if (r != null) { int code = (int)r.StatusCode; throw new Exception(code == 401 || code == 403 ? "Azure rejected the key or the region (HTTP " + code + ")" : code == 429 ? "Azure's free quota is used up or there were too many requests (429)" : "Azure Speech error (HTTP " + code + ")"); }
-        throw new Exception("Azure Speech could not be reached (" + e.Status + ")"); } }
-    // "Test key" button: a real request, nothing is played and nothing is read out in chat
+      catch (WebException e) {
+        if (it != null && it.Cancelled) throw new AzureError("cancelled", "cancelled");
+        var r = e.Response as HttpWebResponse;
+        if (r != null) { int code = (int)r.StatusCode; r.Close();
+          if (code == 401 || code == 403) throw new AzureError("auth", "Azure rejected the key or the region (HTTP " + code + ")");
+          if (code == 429) throw new AzureError("quota", "Azure's free quota is used up or there were too many requests (429)");
+          if (code == 400) throw new AzureError("bad", "Azure could not read this voice or text (HTTP 400)");
+          throw new AzureError(code >= 500 ? "server" : "bad", "Azure Speech error (HTTP " + code + ")"); }
+        if (e.Status == WebExceptionStatus.NameResolutionFailure) throw new AzureError("region", "Azure region '" + Region + "' was not found (or there is no internet)");
+        if (e.Status == WebExceptionStatus.Timeout) throw new AzureError("timeout", "Azure Speech did not answer within " + TimeoutMs / 1000 + " s");
+        throw new AzureError("network", "Azure Speech could not be reached (" + e.Status + ")"); }
+      finally { if (it != null) it.Abort = null; } }
+    static byte[] Request(string text, Voice v, int ratePct, int pitchHz, TtsItem it) {
+      var url = Ep.Get("AZURE_TTS", "https://" + Region + ".tts.speech.microsoft.com/cognitiveservices/v1");
+      var req = Req(url, "POST", it); req.ContentType = "application/ssml+xml"; req.Headers["X-Microsoft-OutputFormat"] = "audio-24khz-48kbitrate-mono-mp3";
+      return Run(req, Encoding.UTF8.GetBytes(Ssml(text, v, ratePct, pitchHz)), it); }
+    public static string Ssml(string text, Voice v, int ratePct, int pitchHz) {
+      string rate = (ratePct >= 0 ? "+" : "") + ratePct + "%", pitch = (pitchHz >= 0 ? "+" : "") + pitchHz + "Hz", lang = v.Locale ?? Tts.LocaleOf(v.Name) ?? "en-US";
+      var inner = "<prosody pitch='" + pitch + "' rate='" + rate + "'>" + System.Security.SecurityElement.Escape(text) + "</prosody>";
+      if (!string.IsNullOrEmpty(v.Style)) inner = "<mstts:express-as style='" + v.Style + "'>" + inner + "</mstts:express-as>";
+      return "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='" + lang + "'><voice name='" + v.Name + "'>" + inner + "</voice></speak>"; }
+
+    // a chat message: long text is split at sentence ends, each part is one request (with tts.azure.retries retries for network errors), MP3 parts are joined
+    public static byte[] Speak(string text, Voice v, int ratePct, int pitchHz, TtsItem it) {
+      string why; if (!Enter(out why)) throw new AzureError("skipped", why);
+      var all = new MemoryStream(); int retries = Math.Max(0, Math.Min(2, Settings.Int("tts.azure.retries")));
+      try {
+        foreach (var part in Tts.Split(text, 220)) {
+          byte[] b = null;
+          for (int a = 0; b == null; a++) {
+            try { b = Request(part, v, ratePct, pitchHz, it); }
+            catch (AzureError e) { if (e.Kind == "cancelled" || !e.Transient || a >= retries) throw; } }
+          if (b.Length < 200) throw new AzureError("server", "Azure answered without audio");
+          all.Write(b, 0, b.Length); } }
+      catch (AzureError e) { Fail(e); throw; }
+      Ok(); return all.ToArray(); }
+
+    // ---- voice catalogue from Azure, kept in azure-voices.json (not secret) so it survives restarts ----
+    public static List<Dictionary<string, object>> Catalog; static DateTime catalogAt; static int refreshing;
+    static string CatalogFile { get { return Path.Combine(Cfg.DataDir ?? ".", "azure-voices.json"); } }
+    static void SetCatalog(List<Dictionary<string, object>> list) {
+      Catalog = list; catalogAt = DateTime.Now; Tts.VoicesChanged();
+      try { if (list == null) File.Delete(CatalogFile); else File.WriteAllText(CatalogFile, J.Ser(J.D("region", Region, "at", DateTime.UtcNow.ToString("o"), "voices", list))); } catch { } }
+    public static void Load() {
+      try { if (!File.Exists(CatalogFile)) return; var d = J.Parse(File.ReadAllText(CatalogFile)); if (J.Str(d, "region", "") != Region) return;
+        var arr = d.ContainsKey("voices") ? d["voices"] as ArrayList : null; if (arr == null) return;
+        Catalog = arr.Cast<object>().OfType<Dictionary<string, object>>().ToList(); DateTime at; catalogAt = DateTime.TryParse(J.Str(d, "at", ""), null, DateTimeStyles.RoundtripKind, out at) ? at.ToLocalTime() : DateTime.MinValue; } catch { } }
+    public static string FetchCatalog() {
+      try { if (!Ready) return "Azure Speech is not set up";
+        var url = Ep.Get("AZURE_VOICES", "https://" + Region + ".tts.speech.microsoft.com/cognitiveservices/voices/list");
+        var raw = Encoding.UTF8.GetString(Run(Req(url, "GET", null), null, null)); var arr = J.S.Deserialize<ArrayList>(raw);
+        var keep = new List<Dictionary<string, object>>();
+        foreach (var o in arr.Cast<object>().OfType<Dictionary<string, object>>()) {
+          string name = J.Str(o, "ShortName", ""), loc = J.Str(o, "Locale", ""); if (!Regex.IsMatch(name, "^[A-Za-z]{2,3}-[A-Za-z]{2,4}-\\w+$")) continue;
+          if (J.Str(o, "VoiceType", "Neural") != "Neural" || J.Str(o, "Status", "") == "Deprecated") continue;
+          var second = (o.ContainsKey("SecondaryLocaleList") ? o["SecondaryLocaleList"] as ArrayList : null) ?? new ArrayList();
+          var styles = (o.ContainsKey("StyleList") ? o["StyleList"] as ArrayList : null) ?? new ArrayList();
+          bool native = loc == "en-IN" || loc == "hi-IN", multi = !native && (second.Contains("hi-IN") || second.Contains("en-IN")), whisper = styles.Contains("whispering");
+          if (!native && !multi && !whisper) continue;
+          keep.Add(J.D("name", name, "locale", loc, "gender", J.Str(o, "Gender", ""), "display", J.Str(o, "DisplayName", name), "kind", native ? "native" : multi ? "multilingual" : "style",
+            "hindi", loc == "hi-IN" || second.Contains("hi-IN"), "whisper", whisper)); }
+        if (keep.Count == 0) return "Azure answered, but offers no Indian English or Hindi voices in region " + Region;
+        SetCatalog(keep); Ok(); return null; }
+      catch (AzureError e) { Fail(e); return e.Message; }
+      catch (Exception e) { return "Azure's voice list could not be read (" + U.Plain(e) + ")"; } }
+    // refresh in the background once a day, never while Azure is paused or rejected
+    public static void MaybeRefresh() {
+      if (!Ready || State == "rejected" || State == "paused" || (Catalog != null && (DateTime.Now - catalogAt).TotalHours < 24)) return;
+      if (Interlocked.Exchange(ref refreshing, 1) == 1) return;
+      Task.Run(() => { try { FetchCatalog(); } finally { Interlocked.Exchange(ref refreshing, 0); } }); }
+
+    // voices for the menu: every native en-IN / hi-IN voice, multilingual voices that list Hindi or Indian English, a whisper voice, and short stable names
+    public static List<Voice> MenuVoices() {
+      var r = new List<Voice>(); var cat = Catalog; if (!Ready || cat == null) return r;
+      Func<Dictionary<string, object>, Voice> mk = d => { string name = J.Str(d, "name", ""), loc = J.Str(d, "locale", ""), kind = J.Str(d, "kind", ""), g = J.Str(d, "gender", "");
+        return new Voice { Key = "az-" + Regex.Replace(name, "Neural$", "").ToLowerInvariant(), Name = name, Locale = loc, Gender = g, Kind = kind, Engine = "azure", IsNew = true,
+          Label = "Azure · " + (kind == "native" ? (loc == "hi-IN" ? "Hindi (India)" : "English (India)") + " · native" : kind == "multilingual" ? "multilingual (" + loc + ", also " + (J.Bool(d, "hindi", false) ? "Hindi" : "Indian English") + ")" : loc) + " · " + J.Str(d, "display", name) + " · " + g.ToLowerInvariant() }; };
+      Func<string, string, string, string, Dictionary<string, object>> find = (loc, kind, g, pref) => {
+        var pool = cat.Where(d => (loc == null || J.Str(d, "locale", "") == loc) && J.Str(d, "kind", "") == kind && J.Str(d, "gender", "").Equals(g, StringComparison.OrdinalIgnoreCase)).ToList();
+        return pool.FirstOrDefault(d => J.Str(d, "name", "").Contains(pref)) ?? pool.FirstOrDefault(); };
+      Action<string, string, Dictionary<string, object>, string, int, int> alias = (key, label, d, style, rate, pitch) => { if (d == null) return; var v = mk(d);
+        v.Key = key; v.Label = label + " - " + J.Str(d, "display", v.Name) + " (Azure, " + (v.Kind == "native" ? "native " + v.Locale : v.Kind) + ")"; v.Style = style; v.Rate = rate; v.Pitch = pitch; r.Add(v); };
+      alias("az-in-female", "Azure Indian female", find("en-IN", "native", "Female", "Neerja"), null, 0, 0); alias("az-in-male", "Azure Indian male", find("en-IN", "native", "Male", "Prabhat"), null, 0, 0);
+      alias("az-hi-female", "Azure Hindi female", find("hi-IN", "native", "Female", "Swara"), null, 0, 0); alias("az-hi-male", "Azure Hindi male", find("hi-IN", "native", "Male", "Madhur"), null, 0, 0);
+      alias("az-multi-female", "Azure multilingual female", find(null, "multilingual", "Female", "Ava"), null, 0, 0); alias("az-multi-male", "Azure multilingual male", find(null, "multilingual", "Male", "Andrew"), null, 0, 0);
+      alias("az-whisper", "Azure soft whisper (slow, low, whispering style)", cat.FirstOrDefault(d => J.Bool(d, "whisper", false) && J.Str(d, "name", "") == "en-US-JennyNeural") ?? cat.FirstOrDefault(d => J.Bool(d, "whisper", false)), "whispering", -15, -4);
+      foreach (var d in cat.Where(d => J.Str(d, "kind", "") != "style").OrderBy(d => J.Str(d, "kind", "")).ThenBy(d => J.Str(d, "locale", "")).ThenBy(d => J.Str(d, "name", ""))) r.Add(mk(d));
+      return r; }
+
+    // "Test" button: reloads the voice list and makes one short real request; nothing is played and nothing is read out in chat
     public static int Test(out string err) {
-      err = null; try { var b = Synth("Namaste, this is a test.", "en-IN-NeerjaNeural", null, 0, 0); if (b == null || b.Length < 800) { err = "Azure answered without audio"; return 0; } return b.Length; }
-      catch (Exception e) { err = U.Plain(e); return 0; } }
+      if (!Ready) { err = "Azure Speech is not set up (add the region and key, then press Save)"; return 0; }
+      Reset(); err = FetchCatalog(); if (err != null) return 0;
+      var d = Catalog.FirstOrDefault(x => J.Str(x, "locale", "") == "en-IN") ?? Catalog.First();
+      try { var b = Request("Namaste, this is a test.", new Voice { Name = J.Str(d, "name", ""), Locale = J.Str(d, "locale", "") }, 0, 0, null); if (b.Length < 200) { err = "Azure answered without audio"; return 0; } Ok(); return b.Length; }
+      catch (AzureError e) { Fail(e); err = e.Message; return 0; } }
   }
 
   // ---------------- Microsoft Edge "Read aloud" neural voices ----------------
@@ -394,29 +563,38 @@ namespace IXC {
 
   // ---------------- offline fallback: the voices installed in Windows (SAPI) ----------------
   public static class Sapi {
-    static List<string> cache;
-    public static List<string> List() {
-      if (cache != null) return cache;
-      try { using (var s = new System.Speech.Synthesis.SpeechSynthesizer()) cache = s.GetInstalledVoices().Where(v => v.Enabled).Select(v => v.VoiceInfo.Name + " (" + v.VoiceInfo.Culture.Name + ", " + v.VoiceInfo.Gender + ")").ToList(); }
-      catch { cache = new List<string>(); } return cache; }
-    // best local voice for a neural voice: Indian English (Heera/Ravi, if the Windows English (India) voice pack is installed) with the same gender, else any English
-    public static string Best(string neural) {
-      try { using (var s = new System.Speech.Synthesis.SpeechSynthesizer()) {
-        var vs = s.GetInstalledVoices().Where(v => v.Enabled).Select(v => v.VoiceInfo).ToList(); if (vs.Count == 0) return null;
-        bool female = neural != null && Regex.IsMatch(neural, "Neerja|Swara|Jenny|Aria|Female|Zira|Heera", RegexOptions.IgnoreCase);
-        var g = neural == null ? (System.Speech.Synthesis.VoiceGender?)null : female ? System.Speech.Synthesis.VoiceGender.Female : System.Speech.Synthesis.VoiceGender.Male;
-        var pick = vs.FirstOrDefault(v => v.Culture.Name == "en-IN" && (g == null || v.Gender == g)) ?? vs.FirstOrDefault(v => v.Culture.Name == "en-IN")
-                ?? vs.FirstOrDefault(v => v.Culture.Name.StartsWith("en") && (g == null || v.Gender == g)) ?? vs.First();
-        return pick.Name; } } catch { return null; } }
-    public static byte[] Synth(string text, string neural, int ratePct, out string used) {
-      byte[] result = null; string u = null; Exception err = null;
+    public class Local { public string Name, Culture, Gender; }
+    static List<Local> cache; static DateTime cacheAt = DateTime.MinValue;
+    // installed Windows voices; in test mode IXC_SAPI_FAKE="en-IN:Heera:Female;hi-IN:Kalpana:Female" stands in for them
+    public static List<Local> Installed() {
+      if (cache != null && (DateTime.Now - cacheAt).TotalSeconds < 60) return cache;
+      var fake = Program.TestMode ? Environment.GetEnvironmentVariable("IXC_SAPI_FAKE") : null; var r = new List<Local>();
+      if (fake != null) r = fake.Split(';').Where(x => x.Contains(':')).Select(x => { var p = x.Split(':'); return new Local { Culture = p[0], Name = p[1], Gender = p.Length > 2 ? p[2] : "" }; }).ToList();
+      else try { using (var s = new System.Speech.Synthesis.SpeechSynthesizer()) r = s.GetInstalledVoices().Where(v => v.Enabled).Select(v => new Local { Name = v.VoiceInfo.Name, Culture = v.VoiceInfo.Culture.Name, Gender = v.VoiceInfo.Gender.ToString() }).ToList(); } catch { }
+      cache = r; cacheAt = DateTime.Now; return r; }
+    public static List<string> List() { return Installed().Select(v => v.Name + " (" + v.Culture + ", " + v.Gender + ")").ToList(); }
+    public static bool Has(string lang) { return Installed().Any(v => v.Culture.StartsWith(lang, StringComparison.OrdinalIgnoreCase)); }
+    // a Windows voice in the SAME language (never another language): exact locale first (en-IN for Indian English), then the same language, preferring the gender
+    public static string Pick(string locale, string gender, out string err) {
+      err = null; var vs = Installed(); if (vs.Count == 0) { err = "No Windows voices are installed"; return null; }
+      Func<List<Local>, Local> byGender = pool => pool.FirstOrDefault(v => !string.IsNullOrEmpty(gender) && v.Gender.Equals(gender, StringComparison.OrdinalIgnoreCase)) ?? pool.FirstOrDefault();
+      if (string.IsNullOrEmpty(locale)) { var pick = byGender(vs.Where(v => v.Culture == "en-IN").ToList()) ?? byGender(vs.Where(v => v.Culture.StartsWith("en")).ToList()) ?? vs.First(); return pick.Name; }
+      var lang = locale.Split('-')[0]; var same = vs.Where(v => v.Culture.Split('-')[0].Equals(lang, StringComparison.OrdinalIgnoreCase)).ToList();
+      if (same.Count == 0) { err = "No Windows voice for " + Tts.LanguageName(locale) + " is installed. Install the " + (lang == "hi" ? "Hindi" : lang == "en" ? "English (India)" : locale) + " speech pack (Windows Settings > Time & language > Speech > Add voices), or pick another voice."; return null; }
+      var exact = same.Where(v => v.Culture.Equals(locale, StringComparison.OrdinalIgnoreCase)).ToList(); if (exact.Count == 0 && lang == "en") exact = same.Where(v => v.Culture == "en-IN").ToList();
+      return (byGender(exact) ?? byGender(same)).Name; }
+    // best local voice for a neural voice (used by the system check)
+    public static string Best(string neural) { string err; return Pick(neural == null ? null : Tts.LocaleOf(neural), neural != null && Regex.IsMatch(neural, "Neerja|Swara|Jenny|Aria|Sonia|Female|Zira|Heera|Kalpana", RegexOptions.IgnoreCase) ? "Female" : neural == null ? null : "Male", out err); }
+    public static byte[] Synth(string text, string neural, int ratePct, out string used) { var name = Best(neural); if (name == null) throw new Exception("no Windows voices installed"); return SynthWith(text, name, ratePct, out used); }
+    public static byte[] SynthWith(string text, string name, int ratePct, out string used) {
+      if (Program.TestMode && Environment.GetEnvironmentVariable("IXC_SAPI_FAKE") != null) { used = name; return Silence(Math.Min(4000, 300 + text.Length * 40)); }
+      byte[] result = null; Exception err = null;
       var t = new Thread(() => { try { using (var s = new System.Speech.Synthesis.SpeechSynthesizer()) using (var ms = new MemoryStream()) {
-            u = Best(neural); if (u == null) throw new Exception("no Windows voices installed"); s.SelectVoice(u);
-            s.Rate = Math.Max(-10, Math.Min(10, (int)Math.Round(ratePct / 10.0))); s.Volume = 100;
+            s.SelectVoice(name); s.Rate = Math.Max(-10, Math.Min(10, (int)Math.Round(ratePct / 10.0))); s.Volume = 100;
             s.SetOutputToAudioStream(ms, new System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, System.Speech.AudioFormat.AudioBitsPerSample.Sixteen, System.Speech.AudioFormat.AudioChannel.Mono));
             s.Speak(text); s.SetOutputToNull(); result = Wav(ms.ToArray(), 16000); } } catch (Exception e) { err = e; } });
       t.IsBackground = true; t.Start(); if (!t.Join(20000)) throw new Exception("offline voice timed out");
-      if (err != null) throw err; used = u; return result; }
+      if (err != null) throw err; used = name; return result; }
     public static byte[] Silence(int ms) { return Wav(new byte[16000 * 2 * ms / 1000], 16000); }
     static byte[] Wav(byte[] pcm, int rate) {
       var ms = new MemoryStream(); var w = new BinaryWriter(ms);

@@ -66,7 +66,8 @@ namespace IXC {
       L("songRequests.bannedSongs", 1000); L("songRequests.bannedArtists", 1000); L("songRequests.platforms", 8, "twitch", "kick", "youtube", "rumble");
       B("songRequests.allowLinks", true); B("songRequests.allowSearch", true); B("songRequests.replyInChat", true);
       // TTS
-      B("tts.on", false); B("tts.paused", false); S("tts.voice", "in-male", 60); S("tts.azure.region", "", 30); E("tts.readMode", "name", "all", "name", "tts");
+      B("tts.on", false); B("tts.paused", false); S("tts.voice", "in-male", 60); S("tts.azure.region", "", 30); E("tts.engine", "auto", "auto", "azure", "windows");
+      I("tts.azure.timeoutSec", 8, 3, 30); I("tts.azure.retries", 1, 0, 2); I("tts.azure.cooldownSec", 60, 10, 600); L("tts.pronounce", 300); E("tts.readMode", "name", "all", "name", "tts");
       I("tts.speed", 0, -50, 100); I("tts.pitch", 0, -30, 30); I("tts.volume", 100, 0, 100);
       I("tts.maxChars", 200, 40, 500); I("tts.queueMax", 15, 3, 50); I("tts.staleSec", 90, 20, 600); I("tts.perMinute", 40, 5, 120); I("tts.userCooldownSec", 2, 0, 120);
       B("tts.ignoreOwn", true); B("tts.ignoreBots", true); B("tts.readEmotes", false); B("tts.readEmoji", false); B("tts.readLinks", false); B("tts.fallback", true);

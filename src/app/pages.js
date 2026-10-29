@@ -241,34 +241,50 @@
 
   // ======================= CHAT VOICE =======================
   page('tts', 'Chat voice (TTS)', (main) => {
-    const vopts = () => S.voices.map(v => [v.key, v.label + (v.isNew ? ' ★' : '')]);
+    const LANGS = [['all', 'All languages'], ['hi', 'Hindi'], ['en-IN', 'English (India)'], ['multi', 'Multilingual'], ['other', 'Other']];
+    const langOf = (v) => v.kind === 'multilingual' ? 'multi' : !v.locale ? 'other' : v.locale.startsWith('hi') ? 'hi' : v.locale === 'en-IN' ? 'en-IN' : 'other';
+    let langF = 'all'; try { langF = localStorage.getItem('ixc.tts.lang') || 'all'; } catch (e) {}
+    const vopts = () => { const cur = S.values && S.values['tts.voice']; return S.voices.filter(v => langF === 'all' || langOf(v) === langF || v.key === cur || v.key === 'local').map(v => [v.key, v.label + (v.isNew ? ' ★' : '')]); };
     const paint = () => { main.innerHTML = `<div class="grid2"><div>` +
-      card('🔊 Chat voice', ctl.toggle('tts.on', 'Read chat out loud', 'viewers hear it through the IXC TTS source in OBS') + ctl.toggle('tts.paused', 'Paused', 'keeps messages waiting until you resume') + ctl.select('tts.voice', 'Default voice', vopts()) +
-        ctl.select('tts.readMode', 'What to read', [['name', 'Name + message ("Alex says hi")'], ['all', 'Only the message'], ['tts', 'Only messages starting with !tts']]) + ctl.range('tts.speed', 'Speed', '', 'x') + ctl.range('tts.pitch', 'Pitch') + ctl.range('tts.volume', 'Volume', '', '%') +
-        ctl.toggle('tts.fallback', 'Offline backup voice', 'if the online voice fails, use the Windows voice') + `<div class="actions"><button id="tTest">▶ Test voice</button><button id="tSkip">Skip current</button><button id="tClear">Clear waiting</button></div><div class="hint" id="tEng"></div>`) +
+      card('🔊 Chat voice', ctl.toggle('tts.on', 'Read chat out loud', 'viewers hear it through the IXC TTS source in OBS') + ctl.toggle('tts.paused', 'Paused', 'keeps messages waiting until you resume') +
+        ctl.select('tts.engine', 'Speech engine', [['auto', 'Automatic (Azure, then Windows)'], ['azure', 'Azure AI Speech only'], ['windows', 'Windows voices only (offline)']]) +
+        `<div class="field"><label class="lbl">Language</label><div class="val"><select id="tLang">${LANGS.map(([k, l]) => `<option value="${k}"${k === langF ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>` + ctl.select('tts.voice', 'Default voice', vopts()) +
+        ctl.select('tts.readMode', 'What to read', [['name', 'Name + message ("Alex says hi")'], ['all', 'Only the message'], ['tts', 'Only messages starting with !tts']]) + ctl.range('tts.speed', 'Speed', '', 'x') + ctl.range('tts.pitch', 'Pitch', 'Azure and online voices only; Windows voices ignore it') + ctl.range('tts.volume', 'Volume', '', '%') +
+        ctl.toggle('tts.fallback', 'Offline backup voice', 'if Azure fails, use a Windows voice in the same language (never another language)') +
+        `<div class="field"><label class="lbl">Test sentence<div class="hint">Preview plays here only: not on stream, not queued</div></label><div class="val"><input type="text" id="tPhrase" value="Namaste dosto, kya haal hai? Aaj ka match full masti wala hai." maxlength="300"></div></div>` +
+        `<div class="actions"><button id="tPrev">🎧 Preview here</button><button id="tTest">▶ Test on stream</button><button id="tSkip">Skip current</button><button id="tClear">Clear waiting</button></div><div class="hint" id="tEng"></div><div class="hint" id="tOff"></div>`) +
       `<div style="height:14px"></div>` + card('☁ Natural voices (Azure Speech)', `<div class="hint" style="margin-bottom:8px">Microsoft's own service, with a free tier of about 500,000 characters a month. In the Azure portal create a free <b>Speech</b> resource, then copy its <b>Key</b> and <b>Region</b> here. The key is stored encrypted on this PC and never shown again. New voices (Indian, Hindi, multilingual, soft whisper) appear in the voice list above.</div>` +
         `<div class="field"><label class="lbl">Region</label><div class="val"><input type="text" id="azRegion" placeholder="centralindia" autocomplete="off"></div></div>` +
         `<div class="field"><label class="lbl">Key<div class="hint" id="azState"></div></label><div class="val"><input type="password" id="azKey" placeholder="paste to set or replace" autocomplete="off"></div></div>` +
-        `<div class="actions"><button class="primary" id="azSave">Save</button><button id="azTest">Test key</button><button id="azRemove">Remove key</button></div>`) +
+        `<div class="actions"><button class="primary" id="azSave">Save</button><button id="azTest">Test key</button><button id="azRemove">Remove key</button></div>` +
+        ctl.range('tts.azure.timeoutSec', 'Give up after', 'then the Windows voice is used', 's') + ctl.range('tts.azure.retries', 'Retries on network errors') + ctl.range('tts.azure.cooldownSec', 'Pause Azure after 2 errors for', 'no Azure calls meanwhile, then it tries again by itself', 's') +
+        ctl.list('tts.pronounce', 'Pronunciation fixes', 'one per line: word=how to say it, e.g. gg=good game or bhai=bhaai')) +
       `<div style="height:14px"></div>` + card('🎯 What gets read', ctl.checks('tts.platforms', 'Platforms', App.PLAT_OPTS) + ctl.select('tts.minRole', 'Who', App.ROLE_OPTS) + ctl.toggle('tts.ignoreOwn', 'Skip my own messages') + ctl.toggle('tts.ignoreBots', 'Skip bots (Nightbot, StreamElements…)') +
         ctl.toggle('tts.readEmotes', 'Read emote names') + ctl.toggle('tts.readEmoji', 'Read emoji') + ctl.toggle('tts.readLinks', 'Read links out (otherwise "link")') + ctl.range('tts.maxChars', 'Longest message', 'characters') + ctl.toggle('tts.modControls', 'Moderators can control it', '!ttsskip, !ttson, !ttsoff and the other voice commands')) +
       `<div style="height:14px"></div>` + card('🚦 Busy chat', ctl.range('tts.queueMax', 'Messages waiting at most') + ctl.range('tts.staleSec', 'Skip messages older than', '', 's') + ctl.range('tts.perMinute', 'At most per minute') + ctl.range('tts.userCooldownSec', 'Same person: wait', '', 's')) +
       `<div style="height:14px"></div>` + card('📝 Lists', ctl.list('tts.neverSpeak', 'Never read these people') + ctl.list('tts.blockedWords', 'Skip messages containing') + ctl.list('tts.botNames', 'More bot names') + ctl.list('tts.ownNames', 'My other account names', 'IXC finds your connected accounts by itself')) +
       `</div><div>` + card('🗣 Now', `<div id="tNow"></div>`) + `<div style="height:14px"></div>` + card('⏳ Waiting', `<div id="tQ" class="list"></div>`) + `<div style="height:14px"></div>` + card('✅ Recently read', `<div id="tH" class="list"></div>`) + `<div style="height:14px"></div>` + card('⏭ Not read (and why)', `<div id="tS" class="list"></div>`) + `</div></div>`;
-      const az = (t) => { const s = S.tts && S.tts.settings; if ($('azState')) $('azState').textContent = s && s.azureReady ? 'ready' : s && s.azureKeySet ? 'key saved - add the region' : 'not set up'; };
+      const az = ttsStatus; az();
+      $('tLang').onchange = () => { langF = $('tLang').value; try { localStorage.setItem('ixc.tts.lang', langF); } catch (e) {} paint(); };
+      let prevAudio = null;
+      $('tPrev').onclick = async () => { $('tPrev').disabled = true; try { const r = await IXC.api('/api/tts/preview', { text: $('tPhrase').value, voice: S.values && S.values['tts.voice'] });
+          if (!r.ok) { toast(r.error || 'No audio', true); return; } if (prevAudio) prevAudio.pause(); prevAudio = new Audio('data:' + r.mime + ';base64,' + r.audio);
+          prevAudio.volume = Math.max(0, Math.min(1, ((S.values && S.values['tts.volume']) || 100) / 100)); prevAudio.play(); toast('Voice: ' + r.engine + ' (' + r.ms + ' ms)'); } finally { $('tPrev').disabled = false; } };
       az(); $('azRegion').value = (S.values && S.values['tts.azure.region']) || '';
-      $('azSave').onclick = async () => { const r = await IXC.api('/api/tts/azure', { region: $('azRegion').value, key: $('azKey').value }); $('azKey').value = ''; toast(r.ok ? 'Saved - pick one of the Azure voices above' : r.error, !r.ok);
+      $('azSave').onclick = async () => { const r = await IXC.api('/api/tts/azure', { region: $('azRegion').value, key: $('azKey').value }); $('azKey').value = ''; toast(!r.ok ? r.error : r.checkError ? 'Saved, but: ' + r.checkError : 'Saved - ' + r.azure.message, !r.ok || !!r.checkError);
         if (r.ok) { S.voices = (await IXC.api('/api/tts/voices')).voices; paint(); } };
-      $('azTest').onclick = async () => { const r = await IXC.api('/api/tts/azure-test', {}); toast(r.ok ? 'Azure works (' + r.bytes + ' bytes of audio)' : r.error, !r.ok); };
+      $('azTest').onclick = async () => { const r = await IXC.api('/api/tts/azure-test', {}); toast(r.ok ? 'Azure works - ' + r.azure.message : r.error, !r.ok); S.voices = (await IXC.api('/api/tts/voices')).voices; paint(); };
       $('azRemove').onclick = async () => { if (!(await UI.confirmBox('Remove the saved Azure key?', 'Remove'))) return; const r = await IXC.api('/api/tts/azure', { remove: true }); toast(r.ok ? 'Key removed' : r.error, !r.ok); S.voices = (await IXC.api('/api/tts/voices')).voices; paint(); };
       $('tTest').onclick = () => App.link.send({ type: 'tts.test' }); $('tSkip').onclick = () => App.link.send({ type: 'tts.skip' }); $('tClear').onclick = () => App.link.send({ type: 'tts.clear' });
       live(); };
+    function ttsStatus() { const s = S.tts && S.tts.settings; if ($('azState')) $('azState').textContent = s && s.azure ? s.azure.message : s && s.azureReady ? 'ready' : 'not set up';
+        if ($('tOff') && s && s.offline) $('tOff').textContent = 'Offline backup: ' + (s.offline.on ? 'on' : 'off') + ' · ' + s.offline.message; }
     function live() { const t = S.tts; if (!t || !$('tQ')) return; const row = (h, extra) => `<div class="item"><span class="tag ${esc(h.platform)}">${esc(P[h.platform] ? P[h.platform].tag : 'TEST')}</span><div class="t"><b>${esc(h.text)}</b><small>${esc(h.user || '')} · ${esc(h.status)}${h.engine ? ' · ' + esc(h.engine) : ''}</small></div>${extra || ''}</div>`;
       $('tNow').innerHTML = t.current ? row(t.current) : `<div class="hint">${t.paused ? 'Paused.' : 'Nothing being read.'} ${t.players ? '' : '⚠ The voice source isn\'t running in OBS.'}</div>`;
       $('tQ').innerHTML = (t.queue || []).map(h => row(h)).join('') || '<div class="hint">Nothing waiting.</div>';
       $('tH').innerHTML = (t.history || []).map(h => row(h, `<button class="small" data-rp="${h.n}" title="Say it again">↻</button>`)).join('') || '<div class="hint">Nothing read yet.</div>';
       $('tS').innerHTML = (t.skipped || []).map(h => `<div class="item"><div class="t"><b>${esc(h.user ? h.user + ': ' : '')}${esc(h.text)}</b><small>${esc(h.at)} · ${esc(h.reason)}</small></div></div>`).join('') || '<div class="hint">Nothing skipped.</div>';
-      $('tEng').textContent = 'Voice engine: ' + (t.engine || ''); $('tH').onclick = (e) => { const n = e.target.dataset.rp; if (n) App.link.send({ type: 'tts.replay', n: +n }); }; }
+      $('tEng').textContent = 'Voice engine: ' + (t.engine || ''); ttsStatus(); $('tH').onclick = (e) => { const n = e.target.dataset.rp; if (n) App.link.send({ type: 'tts.replay', n: +n }); }; }
     paint(); on('tts', live);
   });
   page('voices', 'Voices for people', (main, qs) => {

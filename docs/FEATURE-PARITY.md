@@ -57,6 +57,7 @@ needs it to start or to read chat. A streamer who runs it, as the author does, g
 | **Events** | Alerts: follow (Twitch signed in, Kick, Rumble), sub, gift, raid, superchat, member | `Chat.Ingest` kinds | ✅ shown and on overlay | auto (mock) |
 | | Chat message on an event | `Events.cs` | ✅ 3.1.0 | auto (mock) `13` |
 | **TTS** | Neural voices, offline Windows fallback | `Tts.cs` | ✅ | auto (mock, fake TTS) |
+| | Azure AI Speech (voice list from Azure), Windows backup in the same language, engine choice, cooldown, preview, pronunciation list | `Tts.cs` | ✅ | auto (MOCKED Azure); real audio: **not done** |
 | | Per-user, per-role, per-platform voices, filters, queue, rate limits, stale skip | `Tts.cs` | ✅ | auto (mock) |
 | | Audio output | plays in the OBS browser source **IXC TTS**; device and monitoring are chosen in OBS | ✅ (by design) | manual: **not done** |
 | **Music** | YouTube, Spotify links, local folders, queue that survives restarts, autoplay | `Music.cs`, `player.html` | ✅ | auto (mock) `04` |
