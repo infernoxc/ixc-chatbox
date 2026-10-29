@@ -24,7 +24,7 @@ namespace IXC {
     public Dictionary<string, object> View() { return J.D("n", N, "text", Said, "user", User, "platform", Platform, "voice", VoiceKey, "status", Status, "engine", Engine, "priority", Priority,
       "at", At.ToString("HH:mm:ss"), "age", (int)(DateTime.Now - At).TotalSeconds, "error", Error, "replayable", true); }
   }
-  public class Voice { public string Key, Label, Name, Engine = "edge"; public int Rate, Pitch; public bool IsNew; }
+  public class Voice { public string Key, Label, Name, Engine = "edge", Style; public int Rate, Pitch; public bool IsNew; }
 
   public static class Tts {
     static readonly object L = new object();
@@ -35,7 +35,7 @@ namespace IXC {
     public static readonly Dictionary<string, int> FilterCounts = new Dictionary<string, int>();
     static readonly LinkedList<DateTime> recentTimes = new LinkedList<DateTime>(); static readonly Dictionary<string, DateTime> lastByUser = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
     static readonly LinkedList<KeyValuePair<string, DateTime>> recentTexts = new LinkedList<KeyValuePair<string, DateTime>>();
-    static string edgeError = ""; static int edgeFails; static DateTime edgeOffUntil = DateTime.MinValue; static string lastEngine = ""; static bool pausedPlayback;
+    static string edgeError = "", azureError = ""; static int edgeFails; static DateTime edgeOffUntil = DateTime.MinValue; static string lastEngine = ""; static bool pausedPlayback;
 
     static readonly string[] DefaultBots = { "streamerbot", "streamer.bot", "streamer_bot", "nightbot", "streamelements", "moobot", "fossabot", "wizebot", "botrix", "botrixoficial", "kickbot", "sery_bot", "soundalerts", "streamlabs", "commanderroot", "ixc" };
     public static bool On { get { return Settings.Bool("tts.on"); } }
@@ -45,7 +45,7 @@ namespace IXC {
     static bool B(string k) { return Settings.Bool("tts." + k); }
     public static Dictionary<string, object> SettingsView() {
       var d = new Dictionary<string, object>(); foreach (var kv in Settings.Snapshot(true)) if (kv.Key.StartsWith("tts.")) d[kv.Key.Substring(4)] = kv.Value;
-      d["enabled"] = On; return d; }
+      d["enabled"] = On; d["azureReady"] = AzureTts.Ready; d["azureKeySet"] = Secrets.Has("azure.speechKey"); return d; }
 
     // ---------- voices ----------
     static Dictionary<string, Voice> voiceCache; static DateTime voiceAt; static string sapiBest; static DateTime sapiAt = DateTime.MinValue;
@@ -64,10 +64,17 @@ namespace IXC {
       add("uk-female", "UK female - Sonia", "en-GB-SoniaNeural", 0, 0, true);
       add("jarvis", "Jarvis-style - Ryan (UK)", "en-GB-RyanNeural", 6, -3, false);
       add("au-male", "Australian male - William", "en-AU-WilliamNeural", 0, 0, true);
+      if (AzureTts.Ready) {   // official Azure Speech voices: only offered once the user has pasted their own key
+        Action<string, string, string, int, int, string> az = (k, label, name, rate, pitch, style) => v[k] = new Voice { Key = k, Label = label, Name = name, Rate = rate, Pitch = pitch, Engine = "azure", Style = style, IsNew = true };
+        az("az-in-female", "Azure Indian female - Neerja (reads Hinglish)", "en-IN-NeerjaNeural", 0, 0, null); az("az-in-male", "Azure Indian male - Prabhat (reads Hinglish)", "en-IN-PrabhatNeural", 0, 0, null);
+        az("az-hi-female", "Azure Hindi female - Swara", "hi-IN-SwaraNeural", 0, 0, null); az("az-hi-male", "Azure Hindi male - Madhur", "hi-IN-MadhurNeural", 0, 0, null);
+        az("az-multi-female", "Azure multilingual female - Ava", "en-US-AvaMultilingualNeural", 0, 0, null); az("az-multi-male", "Azure multilingual male - Andrew", "en-US-AndrewMultilingualNeural", 0, 0, null);
+        az("az-whisper", "Azure soft whisper (slow, low, whispering style)", "en-US-JennyNeural", -15, -4, "whispering"); }
       var cv = Settings.Obj("tts.voices");
       foreach (var kv in cv) { var d = kv.Value as Dictionary<string, object>; if (d == null) continue; var name = J.Str(d, "voice", ""); if (name.Length == 0 || !Regex.IsMatch(name, "^[A-Za-z]{2,3}-[A-Za-z]{2,4}-\\w+Neural$")) continue;
         Voice old; v.TryGetValue(kv.Key, out old);
-        v[kv.Key] = new Voice { Key = kv.Key, Name = name, Label = J.Str(d, "label", old != null && old.Name == name ? old.Label : kv.Key + " - " + name), Rate = ParseNum(J.Str(d, "rate", "0")), Pitch = ParseNum(J.Str(d, "pitch", "0")) }; }
+        v[kv.Key] = new Voice { Key = kv.Key, Name = name, Label = J.Str(d, "label", old != null && old.Name == name ? old.Label : kv.Key + " - " + name), Rate = ParseNum(J.Str(d, "rate", "0")), Pitch = ParseNum(J.Str(d, "pitch", "0")),
+          Engine = J.Str(d, "engine", "edge") == "azure" ? "azure" : "edge", Style = Regex.IsMatch(J.Str(d, "style", ""), "^[a-z][a-z-]{2,30}$") ? J.Str(d, "style", "") : null }; }
       if ((DateTime.Now - sapiAt).TotalMinutes > 10) { sapiBest = Sapi.Best(null); sapiAt = DateTime.Now; }
       v["local"] = new Voice { Key = "local", Label = "Windows voice (offline, " + (sapiBest ?? "none installed") + ")", Name = "", Engine = "sapi" };
       voiceCache = v; voiceAt = DateTime.Now; return v; }
@@ -80,6 +87,7 @@ namespace IXC {
       unduckT = new Timer(_ => { bool idle; lock (L) idle = current == null || current.Status != "playing"; if (idle) Music.Duck(false); });
       Settings.Changed += k => {
         if (!k.StartsWith("tts.")) return;
+        if (k == "tts.voices" || k == "tts.azure.region") voiceCache = null;
         if (k == "tts.on" && !On) { lock (L) { foreach (var it in Queue) { it.Status = "cancelled (TTS off)"; AddHistory(it); } Queue.Clear(); } StopPlayback("TTS turned off"); }
         if (k == "tts.paused") { if (Paused) { Hub.Publish("tts.play", J.D("type", "tts.pause")); pausedPlayback = true; } else { Hub.Publish("tts.play", J.D("type", "tts.resume")); pausedPlayback = false; lock (L) if (current != null) currentUntil = DateTime.Now.AddSeconds(30); Pump(); } }
         Changed(); }; }
@@ -215,6 +223,11 @@ namespace IXC {
       int rate = Math.Max(-50, Math.Min(150, v.Rate + I("speed") + it.Rate)), pitch = Math.Max(-50, Math.Min(50, v.Pitch + I("pitch") + it.Pitch));
       try {
         if (Program.TestMode && Environment.GetEnvironmentVariable("IXC_TTS_FAKE") == "1") { it.Audio = Sapi.Silence(Math.Min(4000, 300 + it.Said.Length * 40)); it.Mime = "audio/wav"; it.Engine = "test voice"; return; }
+        if (v.Engine == "azure") {
+          for (int a = 0; a < 2 && it.Audio == null; a++) {
+            try { var b = AzureTts.Synth(it.Said, v.Name, v.Style, rate, pitch); if (b != null && b.Length > 800) { it.Audio = b; it.Mime = "audio/mpeg"; it.Engine = "Azure Speech (" + v.Name + (v.Style != null ? ", " + v.Style : "") + ")"; azureError = ""; } else azureError = "empty audio"; }
+            catch (Exception e) { azureError = U.Plain(e); if (azureError.Contains("rejected")) break; } }
+          if (it.Audio == null) Log.Warn("tts", "Azure voice failed (" + azureError + ")"); }
         if (v.Engine == "edge" && DateTime.Now > edgeOffUntil) {
           for (int a = 0; a < 2 && it.Audio == null; a++) {
             try { var b = EdgeTts.Synth(it.Said, v.Name, rate, pitch); if (b != null && b.Length > 800) { it.Audio = b; it.Mime = "audio/mpeg"; it.Engine = "Edge neural (" + v.Name + ")"; edgeFails = 0; edgeError = ""; } else edgeError = "empty audio"; }
@@ -223,7 +236,7 @@ namespace IXC {
         if (it.Audio == null && (v.Engine == "sapi" || B("fallback"))) {
           try { string used; it.Audio = Sapi.Synth(it.Said, v.Engine == "sapi" ? null : v.Name, rate, out used); it.Mime = "audio/wav"; it.Engine = "Windows offline (" + used + ")"; }
           catch (Exception e) { it.Error = "offline voice: " + U.Plain(e); } }
-        if (it.Audio == null && it.Error == "") it.Error = edgeError.Length > 0 ? edgeError : "no voice available"; }
+        if (it.Audio == null && it.Error == "") it.Error = v.Engine == "azure" && azureError.Length > 0 ? azureError : edgeError.Length > 0 ? edgeError : "no voice available"; }
       catch (Exception e) { it.Error = U.Plain(e); }
       finally { it.SynthMs = (int)sw.ElapsedMilliseconds; if (it.Audio != null) { Interlocked.Add(ref synthMsTotal, it.SynthMs); Interlocked.Increment(ref synthCount); lastEngine = it.Engine; } } }
 
@@ -265,6 +278,9 @@ namespace IXC {
       if ((path == "/api/tts/skip" || path == "/api/skip") && m == "POST") { SkipNow(); Http.Json(ctx, J.D("ok", true)); return true; }
       if (path == "/api/tts/clear" && m == "POST") { Clear(); Http.Json(ctx, J.D("ok", true)); return true; }
       if (path == "/api/tts/replay" && m == "POST") { var it = Replay(J.Int(Http.BodyJson(ctx), "n", 0)); Http.Json(ctx, it == null ? 404 : 200, J.D("n", it == null ? 0 : it.N)); return true; }
+      if (path == "/api/tts/azure" && m == "POST") { var b = Http.BodyJson(ctx); var err = AzureTts.Configure(J.Str(b, "region", null), J.Str(b, "key", null), J.Bool(b, "remove", false));
+        if (err == null) { voiceCache = null; Changed(); } Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "ready", AzureTts.Ready, "region", AzureTts.Region, "keySet", Secrets.Has("azure.speechKey"))); return true; }
+      if (path == "/api/tts/azure-test" && m == "POST") { string err; int n = AzureTts.Test(out err); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err, "bytes", n)); return true; }
       if (path == "/api/tts/user" && m == "POST") { var b = Http.BodyJson(ctx); var err = SetUserVoice(J.Str(b, "name", ""), J.Str(b, "platform", "*"), J.Bool(b, "remove", false) ? null : J.Obj(b, "voice")); Http.Json(ctx, err == null ? 200 : 400, J.D("ok", err == null, "error", err)); return true; }
       return false; }
     // the v2 dock sends {voice, speed, enabled, ...}: map those names to settings keys
@@ -287,6 +303,43 @@ namespace IXC {
         case "tts.replay": Replay(J.Int(msg, "n", 0)); break;
         case "tts.user": { var err = SetUserVoice(J.Str(msg, "name", ""), J.Str(msg, "platform", "*"), J.Bool(msg, "remove", false) ? null : J.Obj(msg, "voice")); if (err != null) Hub.Send(c, J.D("type", "error", "error", err)); break; }
       } }
+  }
+
+  // ---------------- Azure Speech (official Microsoft service; the user's own key, free tier about 500,000 characters a month) ----------------
+  // The key is stored encrypted in secrets.dat (like the Spotify secret), is never shown again and never written to a log or an error text.
+  public static class AzureTts {
+    public static string Region { get { return (Settings.Str("tts.azure.region") ?? "").Trim().ToLowerInvariant(); } }
+    static bool GoodRegion(string r) { return Regex.IsMatch(r ?? "", "^[a-z0-9]{3,30}$"); }
+    public static bool Ready { get { return GoodRegion(Region) && !string.IsNullOrEmpty(Secrets.Str("azure.speechKey")); } }
+    public static string Configure(string region, string key, bool remove) {
+      if (remove) { Secrets.Set("azure.speechKey", null); return null; }
+      region = (region ?? "").Trim().ToLowerInvariant(); key = (key ?? "").Trim();
+      if (region.Length > 0 && !GoodRegion(region)) return "The region looks like centralindia, eastus or southeastasia (letters and numbers only)";
+      if (key.Length > 0 && !Regex.IsMatch(key, "^[A-Za-z0-9]{20,100}$")) return "That doesn't look like an Azure Speech key (32 or more letters and numbers, no spaces)";
+      if (region.Length == 0 && !GoodRegion(Region)) return "Type the region of your Speech resource first (shown next to the key in Azure, for example centralindia)";
+      if (key.Length == 0 && !Secrets.Has("azure.speechKey")) return "Paste the key from your Speech resource in Azure";
+      if (region.Length > 0) { var e = Settings.Set("tts.azure.region", region); if (e != null) return e; }
+      if (key.Length > 0) Secrets.Set("azure.speechKey", key);
+      return Secrets.SaveError == null ? null : "Could not save the key (" + Secrets.SaveError + ")"; }
+    public static byte[] Synth(string text, string voice, string style, int ratePct, int pitchHz) {
+      var key = Secrets.Str("azure.speechKey"); var region = Region; if (!Ready) throw new Exception("Azure Speech is not set up");
+      var url = Ep.Get("AZURE_TTS", "https://" + region + ".tts.speech.microsoft.com/cognitiveservices/v1");
+      var req = (HttpWebRequest)WebRequest.Create(url); req.Method = "POST"; req.Timeout = 15000; req.ReadWriteTimeout = 15000; req.UserAgent = "IXC";
+      req.ContentType = "application/ssml+xml"; req.Headers["Ocp-Apim-Subscription-Key"] = key; req.Headers["X-Microsoft-OutputFormat"] = "audio-24khz-48kbitrate-mono-mp3";
+      string rate = (ratePct >= 0 ? "+" : "") + ratePct + "%", pitch = (pitchHz >= 0 ? "+" : "") + pitchHz + "Hz";
+      var body = System.Security.SecurityElement.Escape(text); var inner = "<prosody pitch='" + pitch + "' rate='" + rate + "'>" + body + "</prosody>";
+      if (!string.IsNullOrEmpty(style)) inner = "<mstts:express-as style='" + style + "'>" + inner + "</mstts:express-as>";
+      var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='" + voice + "'>" + inner + "</voice></speak>";
+      var data = Encoding.UTF8.GetBytes(ssml); req.ContentLength = data.Length;
+      try { using (var s = req.GetRequestStream()) s.Write(data, 0, data.Length);
+        using (var resp = (HttpWebResponse)req.GetResponse()) using (var ms = new MemoryStream()) { resp.GetResponseStream().CopyTo(ms); return ms.ToArray(); } }
+      catch (WebException e) { var r = e.Response as HttpWebResponse;
+        if (r != null) { int code = (int)r.StatusCode; throw new Exception(code == 401 || code == 403 ? "Azure rejected the key or the region (HTTP " + code + ")" : code == 429 ? "Azure's free quota is used up or there were too many requests (429)" : "Azure Speech error (HTTP " + code + ")"); }
+        throw new Exception("Azure Speech could not be reached (" + e.Status + ")"); } }
+    // "Test key" button: a real request, nothing is played and nothing is read out in chat
+    public static int Test(out string err) {
+      err = null; try { var b = Synth("Namaste, this is a test.", "en-IN-NeerjaNeural", null, 0, 0); if (b == null || b.Length < 800) { err = "Azure answered without audio"; return 0; } return b.Length; }
+      catch (Exception e) { err = U.Plain(e); return 0; } }
   }
 
   // ---------------- Microsoft Edge "Read aloud" neural voices ----------------

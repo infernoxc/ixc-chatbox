@@ -378,3 +378,6 @@ Record actual evidence only. Do not mark unverified features complete.
 
 ## 2026-10-29 Music and voice chat commands
 - Added builtins prev, shuffle, repeat, volume, ttsclear, ttspause, ttsresume, ttsvolume, ttsspeed, ttsvoice (Commands.cs) and ready-made entries for them plus skip/pause/resume/queue/ttsskip/ttson/ttsoff. Moderators only by default. Test 31 passes with 03 and 18 (5/5 on Mono). NOT tested: on the user PC (needs a new build), real TTS voice switch audio.
+
+## 2026-10-29 Azure Speech chat voices
+- Added AzureTts (Tts.cs): key and region saved from the Chat voice page (/api/tts/azure, /api/tts/azure-test), key in the encrypted secrets store, voices az-in-female/male, az-hi-female/male, az-multi-female/male, az-whisper (en-US Jenny, whispering style, rate -15%, pitch -4Hz), custom voices with engine azure and style. Test 32 passes against a fake Azure endpoint (SSML contents, key never in settings/state/logs, rejected key message, removal). NOT TESTED: a real Azure key, real audio, voice quality by ear, Hinglish pronunciation.

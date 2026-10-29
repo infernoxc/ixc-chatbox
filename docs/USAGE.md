@@ -23,6 +23,7 @@ Open IXC from the tray icon (bottom right) or the Start menu. In OBS, the **IXC 
   - what gets read: platforms, roles, emotes, emoji, links;
   - busy-chat limits;
   - lists of people and words never to read.
+- **Natural Indian voices (optional):** the Chat voice page has a card **Natural voices (Azure Speech)**. Create a free Speech resource in the Azure portal (free tier: about 500,000 characters a month), paste its region (for example `centralindia`) and key, press **Test**. IXC then offers Indian English and Hindi voices (male and female), multilingual voices and a soft whisper voice. The key is stored encrypted on your PC and is never shown again. Without a key nothing is sent to Azure. Roman Hindi (Hinglish) reads best with the Indian English voices.
 - **Voices for people:** give regulars their own voice, speed and volume. You can also set a voice for moderators, VIPs, subscribers, or a whole platform.
 - **Moderators** can type `!ttsskip`, `!ttson` and `!ttsoff` (you can turn this off). Add more voice and music commands (`!shuffle`, `!volume 40`, `!ttsvoice`, `!ttsvolume`, `!ttsspeed` ...) from Commands > Ready-made commands.
 - **`!tts message`** is read first. Read mode **"Only !tts"** reads nothing else.
