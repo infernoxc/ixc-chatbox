@@ -2,6 +2,8 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+
+## [3.3.1] - 2026-10-30
 ### Added
 - Chat commands for the music player and the chat voice, moderators only by default: `!shuffle`, `!repeat` (on, off or flip), `!volume` (40, +10, -10), `!previous` / `!prev`, `!ttsvolume`, `!ttsspeed`, `!ttsvoice` (lists voices or picks one), `!ttspause`, `!ttsresume`, `!ttsclear`. Add them from Commands > Ready-made commands, together with `!skip`, `!pause`, `!resume`, `!queue`, `!ttsskip`, `!ttson`, `!ttsoff`. Test 31.
 - Chat voice: Azure AI Speech as the main engine, with Windows voices as backup (docs/VOICES.md). Paste your own region and key on the Chat voice page (stored encrypted, never shown again). The voice list comes from Azure itself: native Indian English and Hindi voices (male and female), multilingual voices that list Hindi, and a soft whisper voice.
