@@ -48,7 +48,7 @@ needs it to start or to read chat. A streamer who runs it, as the author does, g
 | | **Your own app IDs entered in IXC** | `Accounts.SetApps`, Your apps card | ✅ 3.1.0 | auto (mock) `11` |
 | | Tokens encrypted (DPAPI), never in logs or config | `Secrets` | ✅ | auto (mock) |
 | **Moderation** | Delete message / timeout / ban from the panel | `Moderation.cs`: Twitch Helix, YouTube Data API, Kick public API (timeout/ban only) | ✅ 3.1.0 | auto (mock) `15`; manual: **not done** (Kick request fields not verified against Kick's docs from here) |
-| **Commands** | Built-ins `!np !queue !skip !uptime !wrongsong !ttsskip !ttson !ttsoff !pause !resume !viewers !songs` | `Commands.cs` | ✅ | auto (mock) `03` |
+| **Commands** | Built-ins `!np !queue !skip !uptime !wrongsong !ttsskip !ttson !ttsoff !pause !resume !viewers !songs !previous !shuffle !repeat !volume !ttsvolume !ttsspeed !ttsvoice !ttspause !ttsresume !ttsclear` | `Commands.cs` | ✅ | auto (mock) `03`, `31` |
 | | Custom text commands: permission, cooldowns, aliases, platforms, variables | `Commands.cs`, editor in app | ✅ | auto (mock) |
 | | Different reply per platform | `responses` per command | ✅ 3.1.0 | auto (mock) `13` |
 | | OBS actions from a command (`!brb` → scene) | `obs` per command | ✅ 3.1.0 | auto (mock) `14` |
@@ -57,6 +57,7 @@ needs it to start or to read chat. A streamer who runs it, as the author does, g
 | **Events** | Alerts: follow (Twitch signed in, Kick, Rumble), sub, gift, raid, superchat, member | `Chat.Ingest` kinds | ✅ shown and on overlay | auto (mock) |
 | | Chat message on an event | `Events.cs` | ✅ 3.1.0 | auto (mock) `13` |
 | **TTS** | Neural voices, offline Windows fallback | `Tts.cs` | ✅ | auto (mock, fake TTS) |
+| | Azure AI Speech (voice list from Azure), Windows backup in the same language, engine choice, cooldown, preview, pronunciation list | `Tts.cs` | ✅ | auto (MOCKED Azure); real audio: **not done** |
 | | Per-user, per-role, per-platform voices, filters, queue, rate limits, stale skip | `Tts.cs` | ✅ | auto (mock) |
 | | Audio output | plays in the OBS browser source **IXC TTS**; device and monitoring are chosen in OBS | ✅ (by design) | manual: **not done** |
 | **Music** | YouTube, Spotify links, local folders, queue that survives restarts, autoplay | `Music.cs`, `player.html` | ✅ | auto (mock) `04` |

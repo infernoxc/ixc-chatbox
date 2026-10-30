@@ -23,7 +23,8 @@ namespace IXC {
   }
 
   public static class Commands {
-    public static readonly string[] Builtins = { "np", "queue", "skip", "uptime", "wrongsong", "ttsskip", "ttson", "ttsoff", "pause", "resume", "viewers", "songs", "commands", "followage", "clip" };
+    public static readonly string[] Builtins = { "np", "queue", "skip", "uptime", "wrongsong", "ttsskip", "ttson", "ttsoff", "pause", "resume", "viewers", "songs", "commands", "followage", "clip",
+      "prev", "shuffle", "repeat", "volume", "ttsclear", "ttspause", "ttsresume", "ttsvolume", "ttsspeed", "ttsvoice" };
     static readonly Dictionary<string, DateTime> lastUse = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, int> counts = new Dictionary<string, int>();
     public static int Used;
@@ -48,14 +49,27 @@ namespace IXC {
         P(Cmd("!commands", "Commands: {commands}", "everyone", 30, "commands"), "lists the commands the chatter can use on their platform"),
         P(Cmd("!followage", "{user} has followed for {followage}", "everyone", 10, "followage"), "Twitch only, with your Twitch account connected (Kick, YouTube and Rumble don't offer this to apps)"),
         P(Cmd("!clip", "Clip: {clip}", "everyone", 30, "clip"), "Twitch: makes a Twitch clip (Twitch account connected, live). Other platforms: saves OBS's replay buffer on your PC if it's running"),
-        P(discord, "starts switched off - put your invite link in, then switch it on"), P(socials, "starts switched off - put your links in, then switch it on") }; }
+        P(discord, "starts switched off - put your invite link in, then switch it on"), P(socials, "starts switched off - put your links in, then switch it on"),
+        P(Cmd("!skip", "Skipped: {song}", "moderator", 0, "skip"), "music: skips the song (moderators)"), P(Cmd("!previous", "Back to the last song", "moderator", 0, "prev", "!prev"), "music: goes back to the last song, or to the start of this one (moderators)"),
+        P(Cmd("!pause", "Music paused", "moderator", 0, "pause"), "music: pauses (moderators)"), P(Cmd("!resume", "Music is playing", "moderator", 0, "resume"), "music: plays again (moderators)"),
+        P(Cmd("!shuffle", "Shuffle is {state}", "moderator", 0, "shuffle"), "music: !shuffle toggles, or !shuffle on / !shuffle off (moderators)"),
+        P(Cmd("!repeat", "Repeat is {state}", "moderator", 0, "repeat"), "music: !repeat toggles, or on / off (moderators)"),
+        P(Cmd("!volume", "Music volume is {volume}%", "moderator", 0, "volume"), "music: !volume shows it, !volume 40 sets it, !volume +10 / -10 changes it (moderators)"),
+        P(Cmd("!queue", "Up next: {queue}", "everyone", 15, "queue"), "music: what plays next"),
+        P(Cmd("!ttsskip", "", "moderator", 0, "ttsskip"), "chat voice: skips the message being read (moderators)"), P(Cmd("!ttson", "Chat voice is on", "moderator", 0, "ttson"), "chat voice: on (moderators)"),
+        P(Cmd("!ttsoff", "Chat voice is off", "moderator", 0, "ttsoff"), "chat voice: off (moderators)"),
+        P(Cmd("!ttspause", "Chat voice paused", "moderator", 0, "ttspause"), "chat voice: holds messages without losing the setting (moderators)"), P(Cmd("!ttsresume", "Chat voice is back", "moderator", 0, "ttsresume"), "chat voice: carries on (moderators)"),
+        P(Cmd("!ttsclear", "Chat voice queue cleared", "moderator", 0, "ttsclear"), "chat voice: drops everything waiting to be read (moderators)"),
+        P(Cmd("!ttsvolume", "Chat voice volume is {volume}%", "moderator", 0, "ttsvolume"), "chat voice: !ttsvolume 80 sets it, +10 / -10 changes it (moderators)"),
+        P(Cmd("!ttsspeed", "Chat voice speed is {volume}", "moderator", 0, "ttsspeed"), "chat voice: !ttsspeed 20 faster, -20 slower, from -50 to 100 (moderators)"),
+        P(Cmd("!ttsvoice", "Chat voice: {voice}", "moderator", 0, "ttsvoice"), "chat voice: !ttsvoice lists the voices, !ttsvoice us-male picks one (moderators)") }; }
     public static Dictionary<string, object> AddPresets(List<string> triggers) {
       var list = List(); var added = new List<string>();
       foreach (var p in Presets()) { var t = J.Str(p, "trigger", ""); if (!triggers.Contains(t) || J.Bool(p, "present", false)) continue; p.Remove("note"); p.Remove("present"); list.Add(p); added.Add(t); }
       if (added.Count == 0) return J.D("ok", true, "added", added);
       var err = Settings.Set("commands.list", list); return err == null ? J.D("ok", true, "added", added) : J.D("ok", false, "error", err); }
-    static Dictionary<string, object> Cmd(string t, string resp, string perm, int cd, string builtin) {
-      return J.D("id", builtin ?? U.Token(5), "trigger", t, "aliases", new List<string>(), "response", resp, "permission", perm, "cooldownSec", cd, "userCooldownSec", 0, "platforms", new List<string>(), "enabled", true, "builtin", builtin); }
+    static Dictionary<string, object> Cmd(string t, string resp, string perm, int cd, string builtin, params string[] aliases) {
+      return J.D("id", builtin ?? U.Token(5), "trigger", t, "aliases", aliases.ToList(), "response", resp, "permission", perm, "cooldownSec", cd, "userCooldownSec", 0, "platforms", new List<string>(), "enabled", true, "builtin", builtin); }
     public static List<Dictionary<string, object>> List() {
       var v = Cfg.Get("commands.list") as IEnumerable; if (v == null || v is string) return DefaultList();
       string err; var l = ValidateList(v, out err) as List<Dictionary<string, object>>; return l ?? DefaultList(); }
@@ -121,12 +135,44 @@ namespace IXC {
         case "ttsoff": Settings.Set("tts.on", false); return Fill(resp, m, args, b);
         case "pause": Music.Command("pause", null); return Fill(resp, m, args, b);
         case "resume": Music.Command("play", null); return Fill(resp, m, args, b);
+        case "prev": Music.Command("prev", null); return Fill(resp, m, args, b);
+        case "shuffle": return Toggle("music.shuffle", "Shuffle", args, resp, m, b);
+        case "repeat": return Toggle("music.repeat", "Repeat", args, resp, m, b);
+        case "volume": return Level("music.volume", "Music volume", args, resp, m, b, 0, 100);
+        case "ttsclear": Tts.Clear(); return Fill(resp, m, args, b);
+        case "ttspause": Settings.Set("tts.paused", true); return Fill(resp, m, args, b);
+        case "ttsresume": Settings.Set("tts.paused", false); return Fill(resp, m, args, b);
+        case "ttsvolume": return Level("tts.volume", "Chat voice volume", args, resp, m, b, 0, 100);
+        case "ttsspeed": return Level("tts.speed", "Chat voice speed", args, resp, m, b, -50, 100);
+        case "ttsvoice": return Voice(args, resp, m, b);
         case "viewers": return Viewers.Total() == null ? "Viewer count isn't available right now" : Fill(resp, m, args, b);
         case "commands": return Fill(resp, m, args, b);
         case "followage": { var f = FollowAge(m); return f.StartsWith("!") ? f.Substring(1) : Fill(resp.Replace("{followage}", f), m, args, b); }
         case "clip": { var c = Clip(m); return c.StartsWith("!") ? c.Substring(1) : Fill(resp.Replace("{clip}", c), m, args, b); }
       }
       return null; }
+    // !shuffle / !repeat: "on", "off", or nothing to flip it
+    static string Toggle(string key, string what, string args, string resp, ChatMsg m, string b) {
+      var a = (args ?? "").Trim().ToLowerInvariant(); bool on = a == "on" || a == "1" || a == "yes" ? true : a == "off" || a == "0" || a == "no" ? false : !Settings.Bool(key);
+      var err = Settings.Set(key, on); if (err != null) return err;
+      return resp.Length > 0 ? Fill(resp.Replace("{state}", on ? "on" : "off"), m, args, b) : what + " is " + (on ? "on" : "off"); }
+    // !volume / !ttsvolume / !ttsspeed: nothing shows it, "40" sets it, "+10" / "-10" nudges it
+    static string Level(string key, string what, string args, string resp, ChatMsg m, string b, int min, int max) {
+      var a = (args ?? "").Trim().TrimEnd('%'); int cur = Settings.Int(key), v;
+      if (a.Length > 0) {
+        if (!int.TryParse(a, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out v)) return "Say a number from " + min + " to " + max;
+        if (a[0] == '+' || a[0] == '-') v = cur + v;
+        v = Math.Max(min, Math.Min(max, v)); var err = Settings.Set(key, v); if (err != null) return err; cur = v; }
+      var txt = resp.Replace("{volume}", cur.ToString(CultureInfo.InvariantCulture));
+      return txt.Length > 0 ? Fill(txt, m, args, b) : what + " is " + cur; }
+    // !ttsvoice: no name lists the voices, a name (or part of its label) picks one
+    static string Voice(string args, string resp, ChatMsg m, string b) {
+      var all = Tts.Voices(); var a = (args ?? "").Trim().ToLowerInvariant();
+      if (a.Length == 0) { var s = "Voices: " + string.Join(" ", all.Keys); return s.Length > 400 ? s.Substring(0, s.LastIndexOf(' ', 397)) + " ..." : s; }
+      var hit = all.Values.FirstOrDefault(v => v.Key.ToLowerInvariant() == a) ?? all.Values.FirstOrDefault(v => (v.Label ?? "").ToLowerInvariant().Contains(a));
+      if (hit == null) return "No voice called " + a + " - !ttsvoice lists them";
+      var err = Settings.Set("tts.voice", hit.Key); if (err != null) return err;
+      return Fill((resp.Length > 0 ? resp : "Chat voice: {voice}").Replace("{voice}", hit.Label ?? hit.Key), m, args, b); }
     // the commands this chatter can use here (platform, permission), shortest list that fits one chat message
     static string Available(ChatMsg m) {
       var l = new List<string>(); foreach (var c in List()) { if (!J.Bool(c, "enabled", true)) continue; var pl = J.List(c, "platforms"); if (m != null && pl.Count > 0 && !pl.Contains(m.Platform)) continue;
