@@ -391,7 +391,90 @@
     main.onchange = (e) => { const i = e.target.dataset.en; if (i != null) { list[+i].enabled = e.target.checked; store(); } };
     load(); const iv = setInterval(() => { if (App.current !== 'timers') return clearInterval(iv); refresh(); }, 5000);
   });
-  page('commands', 'Commands', (main) => {
+  page('rewards', 'Rewards, sounds & alerts', (main) => {
+    // channel point rewards (Twitch + Kick), up to 20 sound effects, alerts read aloud with their own sound (Rewards.cs)
+    let rw = [], snd = [], info = {};
+    const ACT = [['songrequest', 'Song request (viewer types the song)'], ['command', 'Run a chat command (!skip, !shuffle, !volume ...)'], ['sound', 'Play a sound effect'], ['tts', 'Read the viewer\'s message aloud'], ['message', 'Post a chat message'], ['none', 'Nothing (just show + read the alert)']];
+    const KINDS = [['follow', 'Follow'], ['sub', 'Subscription'], ['gift', 'Gifted subs'], ['raid', 'Raid / host'], ['superchat', 'Super Chat / Rant'], ['member', 'New member'], ['reward', 'Channel point reward']];
+    async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; rw = (S.values['rewards.list'] || []).map(x => Object.assign({}, x)); snd = (S.values['sounds.list'] || []).map(x => Object.assign({}, x)); info = await IXC.api('/api/rewards'); paint(); }
+    const what = (r) => r.action === 'command' ? 'runs ' + r.arg : r.action === 'sound' ? 'plays ' + (r.arg || 'the sound the viewer types') : (ACT.find(a => a[0] === r.action) || ['', r.action])[1];
+    function paint() { if (App.current !== 'rewards') return; const tw = info.twitch || {}, ki = info.kick || {};
+      main.innerHTML = card('🎁 Channel point rewards', ctl.toggle('rewards.on', 'Rewards on', 'When a viewer claims a reward, IXC does what you chose below.') +
+        ctl.toggle('rewards.refund', 'Give Twitch points back when it fails', 'For example a song that can\'t be found. Works for rewards IXC created.') + ctl.toggle('rewards.replyOnFail', 'Tell the viewer in chat when it fails') +
+        `<div class="banner">${tw.canManage ? '✅ Twitch: IXC may create and manage your rewards.' : tw.connected ? '⚠️ Twitch: connect your Twitch account again (Platforms & Accounts) so IXC may create rewards and see claims.' : 'Twitch: connect your Twitch account in Platforms & Accounts.'} Channel points need Twitch Affiliate or Partner; until then IXC keeps your rewards ready.<br>
+          ${ki.canManage ? '✅ Kick: IXC may create your Kick rewards.' : 'Kick: create rewards with <b>exactly the same titles</b> in your Kick dashboard (Channel Points) - IXC matches them by title. Or turn on the switch below and connect Kick again.'}</div>` +
+        ctl.toggle('rewards.kickManage', 'Let IXC create Kick rewards', 'Asks Kick for the reward permission on your next Kick sign-in.') +
+        (rw.length ? `<table class="t"><tr><th>On</th><th>Reward</th><th>Cost</th><th>Does</th><th>Where</th><th></th></tr>${rw.map((r, i) => `<tr>
+          <td><label class="switch"><input type="checkbox" data-ren="${i}" ${r.enabled !== false ? 'checked' : ''} aria-label="On"><i></i></label></td>
+          <td><b>${esc(r.title)}</b><div class="tiny muted">${esc(r.prompt || '')}${r.input ? ' · viewer types text' : ''}${r.cooldownSec ? ' · cooldown ' + r.cooldownSec + ' s' : ''}</div></td>
+          <td class="small">${r.cost}</td><td class="small">${esc(what(r))}</td>
+          <td class="tiny">${(r.platforms || []).map(p => (P[p] ? P[p].name : p) + ((p === 'twitch' && r.twitchId) || (p === 'kick' && r.kickId) ? ' ✓' : '')).join(', ')}</td>
+          <td><button class="small" data-red="${i}">Edit</button> <button class="small" data-rrm="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="muted">No rewards yet - add ready-made ones or make your own.</p>') +
+        `<div class="actions"><button class="primary" id="rAdd">+ New reward</button> <button id="rPre">+ Add ready-made rewards</button> <button id="rSync">⟳ Create / update on Twitch & Kick</button></div>
+        <div class="hint" style="margin-top:8px">Claims arrive from Twitch directly, from Kick's chat connection, from Streamer.bot (Kick.bot), or from any tool that sends <code>POST /api/rewards/redeem</code> with platform, title, user and input. The same claim from two of them counts once.</div>
+        ${(info.recent || []).length ? '<h4>Recent claims</h4><table class="t">' + info.recent.slice(0, 8).map(x => `<tr><td class="small">${P[x.platform] ? P[x.platform].name : x.platform}</td><td><b>${esc(x.user)}</b> · ${esc(x.title)}${x.input ? ' <span class="muted">"' + esc(x.input) + '"</span>' : ''}</td><td class="small">${x.ok ? '✅' : '⚠️'} ${esc(x.result)}</td></tr>`).join('') + '</table>' : ''}`) +
+      card('🔊 Sound effects (' + snd.length + ' of 20)', ctl.toggle('sounds.on', 'Sound effects on') + ctl.toggle('sounds.chat', 'Viewers can play them with a chat command', 'Off = only through channel point rewards.') +
+        ctl.text('sounds.command', 'Chat command', '!sound', 'Viewers type <b>!sound name</b>; <b>!sounds</b> lists them.') + ctl.select('sounds.permission', 'Who can use the chat command', App.ROLE_OPTS) +
+        ctl.range('sounds.volume', 'Volume of all sounds', '', '%') + ctl.range('sounds.cooldownSec', 'Wait between any two sounds (chat command)', '', 's') +
+        (snd.length ? `<table class="t"><tr><th>On</th><th>Name (what viewers type)</th><th>File</th><th>Volume</th><th>Cooldown</th><th></th></tr>${snd.map((s, i) => `<tr>
+          <td><label class="switch"><input type="checkbox" data-sen="${i}" ${s.enabled !== false ? 'checked' : ''} aria-label="On"><i></i></label></td><td><b>${esc(s.name)}</b></td>
+          <td class="tiny">${esc((s.file || 'no file chosen').split(/[\\/]/).pop())}</td><td class="small">${s.volume}%</td><td class="small">${s.cooldownSec} s</td>
+          <td><button class="small" data-splay="${i}">▶</button> <button class="small" data-sed="${i}">Edit</button> <button class="small" data-srm="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="muted">No sounds yet.</p>') +
+        `<div class="actions"><button class="primary" id="sAdd" ${snd.length >= 20 ? 'disabled' : ''}>+ New sound</button></div>
+        <div class="hint">Sounds play through the <b>IXC TTS</b> source in OBS (the same one as the chat voice), so you and your viewers hear them. Music goes quieter while they play.</div>`) +
+      card('📣 Alerts read aloud', ctl.toggle('alerts.speak', 'Read alerts aloud', 'Follows, subs, gifts, raids, Super Chats, members and reward claims: an optional sound first, then the voice reads it.') +
+        ctl.range('alerts.burstSec', 'Many at once (gift bomb, follow bots): read one per kind every', '', 's') + ctl.range('alerts.soundVolume', 'Alert sound volume', '', '%') +
+        ctl.select('alerts.voice', 'Voice for alerts', [['', 'Same as the chat voice']].concat((S.voices || []).map(v => [v.key, v.label]))) +
+        `<table class="t"><tr><th>Alert</th><th>Read it</th><th>What the voice says</th><th>Sound first (file)</th></tr>${KINDS.map(([k, n]) => `<tr><td><b>${n}</b></td>
+          <td><label class="switch"><input type="checkbox" data-k="alerts.${k}.speak" data-kind="bool" ${S.values['alerts.' + k + '.speak'] ? 'checked' : ''} aria-label="Read ${n}"><i></i></label></td>
+          <td><input type="text" data-k="alerts.${k}.say" data-kind="str" value="${esc(S.values['alerts.' + k + '.say'] || '')}" aria-label="${n} text"></td>
+          <td><input type="text" data-k="alerts.${k}.sound" data-kind="str" value="${esc(S.values['alerts.' + k + '.sound'] || '')}" placeholder="C:\\Sounds\\${k}.mp3 (optional)" aria-label="${n} sound"> <label class="small"><input type="file" accept="audio/*" data-up="alerts.${k}.sound" hidden><span class="btn small" style="cursor:pointer">Upload</span></label></td></tr>`).join('')}</table>
+        <div class="hint">{user} = the name, {text} = what happened (like "gifted 5 subs" or "redeemed Skip the song: ..."), {amount} = Super Chat amount or raid viewers.</div>`); }
+    async function save(key, val) { const r = await IXC.api('/api/settings', { patch: { [key]: val } }); if (!r.ok) { toast(r.error, true); await load(); return false; } S.values = r.values; await load(); toast('Saved'); return true; }
+    async function upload(file, name) { if (file.size > 1000000) { toast('Files up to 1 MB can be uploaded - for bigger ones type the file path instead', true); return null; }
+      const ext = (file.name.split('.').pop() || 'mp3').toLowerCase(); const r = await fetch('/api/sounds/upload?name=' + encodeURIComponent(name) + '&ext=' + encodeURIComponent(ext), { method: 'POST', body: await file.arrayBuffer() }).then(x => x.json()).catch(e => ({ error: String(e) }));
+      if (!r.ok) { toast(r.error || 'Upload failed', true); return null; } return r.file; }
+    function editReward(i) { const r = i < 0 ? { title: '', cost: 500, prompt: '', input: false, action: 'songrequest', arg: '', platforms: ['twitch', 'kick'], enabled: true, cooldownSec: 0, color: '#9147FF' } : Object.assign({}, rw[i]);
+      App.modal(`<h3>${i < 0 ? 'New reward' : 'Edit reward'}</h3>
+        <div class="field"><label class="lbl">Title (what viewers see, max 45)</label><div class="val"><input type="text" id="rT" maxlength="45" value="${esc(r.title)}" placeholder="Request a song"></div></div>
+        <div class="field"><label class="lbl">Cost (points)</label><div class="val"><input type="number" id="rC" min="1" value="${r.cost}"></div></div>
+        <div class="field"><label class="lbl">Description</label><div class="val"><input type="text" id="rP" maxlength="200" value="${esc(r.prompt || '')}"></div></div>
+        <div class="field"><label class="lbl">Viewer types text</label><div class="val"><label class="switch"><input type="checkbox" id="rI" ${r.input ? 'checked' : ''} aria-label="Viewer types text"><i></i></label></div></div>
+        <div class="field"><label class="lbl">What it does</label><div class="val"><select id="rA">${ACT.map(([v, n]) => `<option value="${v}" ${r.action === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div></div>
+        <div class="field"><label class="lbl" id="rArgL">Command / sound / message</label><div class="val"><input type="text" id="rG" value="${esc(r.arg || '')}" list="rGl" placeholder="!skip  ·  airhorn  ·  {user} says hi!"><datalist id="rGl">${['!skip', '!previous', '!shuffle', '!volume', '!pause', '!resume', '!repeat', '!np', '!queue'].concat((info.sounds || [])).map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+          <div class="hint">Run a command: the command (like !skip - the viewer's text is added after it, e.g. !volume 40). Sound: a sound name, or empty = the sound the viewer types. Message: {user} {reward} {input}.</div></div></div>
+        <div class="field"><label class="lbl">Cooldown (seconds)</label><div class="val"><input type="number" id="rD" min="0" max="86400" value="${r.cooldownSec || 0}"></div></div>
+        <div class="field"><label class="lbl">Color</label><div class="val"><input type="color" id="rK" value="${esc(r.color || '#9147FF')}"></div></div>
+        <div class="field"><label class="lbl">Platforms</label><div class="val chipset" id="rPl">${[['twitch', 'Twitch'], ['kick', 'Kick']].map(([v, n]) => `<label><input type="checkbox" value="${v}" ${(r.platforms || []).includes(v) ? 'checked' : ''}>${n}</label>`).join('')}</div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button data-close>Cancel</button><button class="primary" id="rSave">Save</button></div>`);
+      $('rSave').onclick = async () => { Object.assign(r, { title: $('rT').value.trim(), cost: +$('rC').value, prompt: $('rP').value.trim(), input: $('rI').checked, action: $('rA').value, arg: $('rG').value.trim(), cooldownSec: +$('rD').value, color: $('rK').value,
+          platforms: [...document.querySelectorAll('#rPl input:checked')].map(x => x.value) });
+        if (r.action === 'songrequest' || r.action === 'tts') r.input = true;
+        const l = rw.slice(); if (i < 0) l.push(r); else l[i] = r; if (await save('rewards.list', l)) App.closeModal(); }; }
+    function editSound(i) { const s = i < 0 ? { name: '', file: '', volume: 80, cooldownSec: 10, enabled: true } : Object.assign({}, snd[i]);
+      App.modal(`<h3>${i < 0 ? 'New sound' : 'Edit sound'}</h3>
+        <div class="field"><label class="lbl">Name (viewers type it, no spaces)</label><div class="val"><input type="text" id="sN" maxlength="20" value="${esc(s.name)}" placeholder="airhorn"></div></div>
+        <div class="field"><label class="lbl">Sound file</label><div class="val"><input type="text" id="sF" value="${esc(s.file)}" placeholder="C:\\Sounds\\airhorn.mp3"> <label class="small"><input type="file" id="sU" accept="audio/*" hidden><span class="btn small" style="cursor:pointer">Upload (up to 1 MB)</span></label><div class="hint">mp3, wav, ogg or m4a, up to 8 MB when you type the path.</div></div></div>
+        <div class="field"><label class="lbl">Volume (%)</label><div class="val"><input type="number" id="sV" min="0" max="100" value="${s.volume}"></div></div>
+        <div class="field"><label class="lbl">Cooldown for the chat command (seconds)</label><div class="val"><input type="number" id="sD" min="0" max="3600" value="${s.cooldownSec}"></div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px"><button id="sTest">▶ Test</button><button data-close>Cancel</button><button class="primary" id="sSave">Save</button></div>`);
+      $('sU').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; const p = await upload(f, $('sN').value.trim() || f.name.replace(/\.[^.]+$/, '')); if (p) { $('sF').value = p; toast('Uploaded'); } };
+      $('sTest').onclick = async () => { const r = await IXC.api('/api/sounds/play', { file: $('sF').value.trim(), volume: +$('sV').value }); toast(r.ok ? 'Playing in OBS (IXC TTS source)' : r.error, !r.ok); };
+      $('sSave').onclick = async () => { Object.assign(s, { name: $('sN').value.trim().toLowerCase(), file: $('sF').value.trim(), volume: +$('sV').value, cooldownSec: +$('sD').value });
+        const l = snd.slice(); if (i < 0) l.push(s); else l[i] = s; if (await save('sounds.list', l)) App.closeModal(); }; }
+    main.onclick = async (e) => { const t = e.target, d = t.dataset;
+      if (t.id === 'rAdd') editReward(-1); if (d.red) editReward(+d.red); if (t.id === 'sAdd') editSound(-1); if (d.sed) editSound(+d.sed);
+      if (t.id === 'rPre') { const have = new Set(rw.map(r => r.title.toLowerCase())); const add = (info.presets || []).filter(p => !have.has(p.title.toLowerCase())); if (!add.length) return toast('All ready-made rewards are already added'); save('rewards.list', rw.concat(add)); }
+      if (t.id === 'rSync') { t.disabled = true; const r = await IXC.api('/api/rewards/sync', {}); t.disabled = false; (r.results || []).forEach(x => toast((P[x.platform] ? P[x.platform].name : x.platform) + ': ' + (x.ok ? 'rewards created / updated' : x.error), !x.ok)); if (!(r.results || []).length) toast('Choose Twitch or Kick on a reward first', true); load(); }
+      if (d.rrm && await UI.confirmBox('Delete the reward "' + rw[+d.rrm].title + '" from IXC? (On Twitch it is turned off at the next update.)', 'Delete')) { const l = rw.slice(); l.splice(+d.rrm, 1); save('rewards.list', l); }
+      if (d.srm && await UI.confirmBox('Delete the sound "' + snd[+d.srm].name + '"?', 'Delete')) { const l = snd.slice(); l.splice(+d.srm, 1); save('sounds.list', l); }
+      if (d.splay) { const r = await IXC.api('/api/sounds/play', { name: snd[+d.splay].name }); toast(r.ok ? 'Playing in OBS (IXC TTS source)' : r.error, !r.ok); } };
+    main.onchange = async (e) => { const d = e.target.dataset;
+      if (d.ren != null) { const l = rw.slice(); l[+d.ren] = Object.assign({}, l[+d.ren], { enabled: e.target.checked }); save('rewards.list', l); }
+      if (d.sen != null) { const l = snd.slice(); l[+d.sen] = Object.assign({}, l[+d.sen], { enabled: e.target.checked }); save('sounds.list', l); }
+      if (d.up) { const f = e.target.files[0]; if (!f) return; const p = await upload(f, d.up.split('.')[1] + '-alert'); if (p) save(d.up, p); } };
+    load(); const iv = setInterval(async () => { if (App.current !== 'rewards') return clearInterval(iv); if (document.activeElement && main.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return; const n = await IXC.api('/api/rewards'); if (JSON.stringify(n.recent) !== JSON.stringify(info.recent)) { info = n; paint(); } }, 6000);
+  });  page('commands', 'Commands', (main) => {
     let list = [];
     async function load() { const d = await IXC.api('/api/settings'); S.values = d.values || S.values; list = (S.values['commands.list'] || []).map(x => Object.assign({}, x)); paint(); }
     const BUILT = { np: 'Says what\'s playing', queue: 'Says what\'s next', skip: 'Skips the song', uptime: 'How long you\'ve been live', wrongsong: 'Removes your last request', ttsskip: 'Skips the chat voice message', commands: 'Lists the commands', followage: 'How long the chatter has followed (Twitch)', clip: 'Makes a clip (Twitch) or saves the OBS replay buffer', ttson: 'Turns the chat voice on', ttsoff: 'Turns the chat voice off', viewers: 'Says the viewer count', pause: 'Pauses music', resume: 'Resumes music', songs: 'Custom text', prev: 'Goes back to the last song', shuffle: 'Shuffle on / off (!shuffle on, !shuffle off)', repeat: 'Repeat on / off', volume: 'Music volume (!volume 40, !volume +10)', ttsclear: 'Drops the waiting chat voice messages', ttspause: 'Pauses the chat voice', ttsresume: 'Resumes the chat voice', ttsvolume: 'Chat voice volume (!ttsvolume 80)', ttsspeed: 'Chat voice speed (!ttsspeed 20)', ttsvoice: 'Lists or picks the chat voice (!ttsvoice us-male)' };

@@ -65,7 +65,7 @@ namespace IXC {
       if (m.Old) return;
       Timers.OnChat(m);
       Log.Debug("chat", m.Platform + " " + m.Name + ": " + U.Trunc(m.Text, 200));
-      try { if (Commands.Handle(m)) return; } catch (Exception e) { Log.Err("chat", "command: " + e.Message); }
+      try { if (Sounds.OnChat(m) || Commands.Handle(m)) return; } catch (Exception e) { Log.Err("chat", "command: " + e.Message); }
       if (!m.NoTts) { try { Tts.OnChat(m); } catch (Exception e) { Log.Err("tts", "chat to TTS: " + e.Message); } } }
     static bool Seen(ChatMsg m) {
       string key = m.Id != null ? m.Platform + ":" + m.Id : null;
@@ -78,7 +78,7 @@ namespace IXC {
     static void AddAlert(ChatMsg m) {
       var a = J.D("type", "alert", "kind", m.Kind, "platform", m.Platform, "name", m.Name, "text", m.Text, "amount", m.Amount, "at", U.Now(), "old", m.Old);
       lock (Alerts) { Alerts.AddLast(a); while (Alerts.Count > 50) Alerts.RemoveFirst(); }
-      if (!m.Old) { Hub.Publish("alerts", a); Log.Info("chat", m.Platform + " " + m.Kind + ": " + m.Name + (m.Amount.Length > 0 ? " " + m.Amount : "")); try { Events.OnAlert(m); } catch (Exception e) { Log.Err("chat", "event message: " + e.Message); } } }
+      if (!m.Old) { Hub.Publish("alerts", a); Log.Info("chat", m.Platform + " " + m.Kind + ": " + m.Name + (m.Amount.Length > 0 ? " " + m.Amount : "")); try { Events.OnAlert(m); } catch (Exception e) { Log.Err("chat", "event message: " + e.Message); } try { SpokenAlerts.On(m); } catch (Exception e) { Log.Err("tts", "spoken alert: " + e.Message); } } }
     public static List<Dictionary<string, object>> RecentAlerts(int n) { lock (Alerts) return Alerts.Reverse().Take(n).ToList(); }
 
     // moderation from the platform: hide deleted messages / messages of banned users everywhere
