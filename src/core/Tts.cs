@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 
 namespace IXC {
   public class TtsItem {
+    public bool IsSound;   // a sound effect / alert sound (a file), not speech
     public int N, Priority, Rate, Pitch, Volume = 100; public string Text, Said, User, Login, Platform, MsgId, VoiceKey, Status = "queued", Engine = "", Error = ""; public DateTime At = DateTime.Now, PlayedAt;
     public byte[] Audio; public string Mime = "audio/mpeg"; public Task Synth; public int SynthMs;
     public volatile bool Cancelled; public volatile Action Abort;   // skip / clear stops a voice request that is still running

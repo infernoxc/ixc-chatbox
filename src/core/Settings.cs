@@ -56,6 +56,13 @@ namespace IXC {
       B("commands.enabled", true); All["commands.list"] = new Spec { Key = "commands.list", Kind = "commands", Def = new ArrayList() };
       // event messages (thank-you on follow, sub, ...)
       foreach (var k in Events.Kinds) { B("events." + k + ".on", false); S("events." + k + ".message", Events.Defaults[k], 300); } I("events.cooldownSec", 5, 0, 300);
+      // channel point rewards, sound effects, spoken alerts (Rewards.cs)
+      B("rewards.on", true); B("rewards.refund", true); B("rewards.replyOnFail", true); B("rewards.kickManage", false);
+      All["rewards.list"] = new Spec { Key = "rewards.list", Kind = "rewards", Def = new ArrayList() };
+      B("sounds.on", true); B("sounds.chat", true); S("sounds.command", "!sound", 30); E("sounds.permission", "everyone", Roles); I("sounds.volume", 80, 0, 100); I("sounds.cooldownSec", 5, 0, 600);
+      All["sounds.list"] = new Spec { Key = "sounds.list", Kind = "sounds", Def = new ArrayList() };
+      B("alerts.speak", false); I("alerts.burstSec", 4, 0, 120); S("alerts.voice", "", 60); I("alerts.soundVolume", 80, 0, 100);
+      foreach (var k in SpokenAlerts.Kinds) { B("alerts." + k + ".speak", true); S("alerts." + k + ".say", SpokenAlerts.Defaults[k], 200); S("alerts." + k + ".sound", "", 400); }
       // timed messages
       B("timers.enabled", true); I("timers.gapSec", 60, 0, 600); All["timers.list"] = new Spec { Key = "timers.list", Kind = "timers", Def = new ArrayList() };
       // song requests
@@ -148,6 +155,8 @@ namespace IXC {
         case "voices": { var d = v as Dictionary<string, object>; if (d == null) { err = "voices must be a list"; return null; } return VoiceMap(d, out err); }
         case "commands": return Commands.ValidateList(v, out err);
         case "timers": return Timers.ValidateList(v, out err);
+        case "rewards": return Rewards.ValidateList(v, out err);
+        case "sounds": return Sounds.ValidateList(v, out err);
       }
       err = "can't change " + s.Key; return null; }
     static string Name(Spec s) { return s.Key; }

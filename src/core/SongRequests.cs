@@ -11,11 +11,14 @@ namespace IXC {
   public static class SongRequests {
     static readonly Dictionary<string, DateTime> last = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase); static DateTime lastAny = DateTime.MinValue, lastOffNote = DateTime.MinValue;
     public static int Accepted, Refused;
-    static void No(ChatMsg m, string why) { Refused++; Log.Info("music", "song request from " + m.Name + " refused: " + why); if (Settings.Bool("songRequests.replyInChat")) Chat.Reply(m, "@" + m.Name + " " + why); Hub.Publish("music.state", J.D("type", "music.request", "ok", false, "user", m.Name, "platform", m.Platform, "error", why)); }
+    // every request ends in Done (added or not, and why) - channel point rewards use it to give the points back
+    public static event Action<ChatMsg, bool, string> Done;
+    static void Result(ChatMsg m, bool ok, string why) { var h = Done; if (h != null) try { h(m, ok, why); } catch (Exception e) { Log.Err("music", "song request result: " + e.Message); } }
+    static void No(ChatMsg m, string why) { Refused++; Result(m, false, why); Log.Info("music", "song request from " + m.Name + " refused: " + why); if (Settings.Bool("songRequests.replyInChat")) Chat.Reply(m, "@" + m.Name + " " + why); Hub.Publish("music.state", J.D("type", "music.request", "ok", false, "user", m.Name, "platform", m.Platform, "error", why)); }
     public static List<Dictionary<string, object>> Pending() { var q = Music.Queue(); int cur = Music.CurrentIndex; return q.Where((x, i) => i > cur && J.Str(x, "by", "").Length > 0).ToList(); }
     public static void Handle(ChatMsg m, string args) {
-      if (!Settings.Bool("songRequests.enabled")) { if ((DateTime.Now - lastOffNote).TotalSeconds > 120) { lastOffNote = DateTime.Now; No(m, "song requests are turned off right now"); } return; }
-      if (!Settings.List("songRequests.platforms").Contains(m.Platform)) return;
+      if (!Settings.Bool("songRequests.enabled")) { Result(m, false, "song requests are turned off"); if ((DateTime.Now - lastOffNote).TotalSeconds > 120) { lastOffNote = DateTime.Now; No(m, "song requests are turned off right now"); } return; }
+      if (!Settings.List("songRequests.platforms").Contains(m.Platform)) { Result(m, false, "song requests are off on " + m.Platform); return; }
       var why = Perm.Check(m, Settings.Str("songRequests.permission")); if (why != null) { No(m, "song requests are for " + why.Replace(" only", "")); return; }
       if (args.Length == 0) { No(m, "type a song name or a YouTube link after " + Settings.List("songRequests.commands").FirstOrDefault()); return; }
       bool staff = m.Mod || m.Broadcaster; var now = DateTime.Now;
@@ -57,7 +60,7 @@ namespace IXC {
       if (q.Where((x, i) => i >= cur).Any(x => J.Str(x, "id", J.Str(x, "local", "?")) == key)) { No(m, "\"" + U.Trunc(title, 60) + "\" is already in the queue"); return; }
       item["by"] = m.Name; item["platform"] = m.Platform; if (artist.Length > 0 && J.Str(item, "artist", "").Length == 0 && J.Str(item, "kind", "") != "local") item["artist"] = artist;
       var at = Music.AddItem(item, "add"); int ahead = Math.Max(0, at - Math.Max(0, Music.CurrentIndex));
-      Accepted++; Log.Info("music", "song request from " + m.Platform + " " + m.Name + ": " + title);
+      Accepted++; Result(m, true, null); Log.Info("music", "song request from " + m.Platform + " " + m.Name + ": " + title);
       Hub.Publish("music.state", J.D("type", "music.request", "ok", true, "user", m.Name, "platform", m.Platform, "title", title));
       if (Settings.Bool("songRequests.replyInChat")) Chat.Reply(m, "@" + m.Name + " added \"" + U.Trunc(title, 80) + "\"" + (ahead > 0 ? " (#" + ahead + " in the queue)" : " - playing now")); }
     static string Short(string e) { e = Regex.Replace(e ?? "", "\\s+", " "); return U.Trunc(char.ToLowerInvariant(e.Length > 0 ? e[0] : ' ') + (e.Length > 1 ? e.Substring(1) : ""), 140); }

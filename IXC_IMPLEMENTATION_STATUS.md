@@ -385,3 +385,15 @@ Record actual evidence only. Do not mark unverified features complete.
 ## 2026-10-29 Voice architecture: Azure first, Windows backup
 - Tts.cs: tts.engine (auto/azure/windows); AzureTts with voice list from Azure (voices/list, cached in azure-voices.json, refreshed daily), circuit breaker (2 failures -> cooldown, one trial request after it, a rejected key stops calls until Save), configurable timeout/retries/cooldown, request abort on skip/clear, sentence splitting (220 chars) with joined MP3 parts, SSML xml:lang from the voice; Sapi.Pick picks a Windows voice of the same language only (Devanagari needs hi); /api/tts/preview (dashboard only); tts.pronounce list. pages.js: engine, language filter, preview, Azure/offline status, Azure timing, pronunciation list.
 - Tests (MOCKED Azure via tests/integration/fake-azure.mjs, stand-in Windows voices via IXC_SAPI_FAKE): 32 (1/1) and 33 (5/5) pass. NOT TESTED: real Azure key, real audio, voice quality, Hinglish pronunciation, real Windows Hindi/en-IN voices, DNS failure for a wrong region (only the region format check is tested).
+
+## Channel point rewards, sound effects, spoken alerts (2026-10-30, branch claude/project-thread-o8dbuw, not pushed)
+- New src/core/Rewards.cs + dashboard page "Rewards & sounds" (#rewards). Settings: rewards.*, sounds.*, alerts.* (spoken alerts off by default).
+- Rewards (Twitch + Kick): title / cost / prompt / viewer text / action (song request, any chat command, sound, read aloud, chat message) / cooldown / platforms. 9 ready-made ones.
+  Claims from Twitch EventSub (needs the new Twitch permission channel:manage:redemptions -> reconnect Twitch once), Kick chat socket (any "...Reward..." event; field names logged),
+  Streamer.bot RewardRedemption (separate, optional subscription), or POST /api/rewards/redeem. Duplicates (same id, or another source within 5 s) count once.
+  IXC creates/updates rewards on Twitch (needs Affiliate/Partner; otherwise a clear message, rewards kept). Kick: opt-in switch adds Kick scopes channel:rewards:read/write; without it the streamer creates rewards with the same titles on Kick.
+  A failed song request cancels the Twitch claim (points back) for rewards IXC created.
+- Sounds: up to 20 named files (mp3/wav/ogg/m4a, path or 1 MB upload to data\sounds), per-sound volume and chat cooldown, "!sound name" / "!sounds". Played through the IXC TTS source.
+- Spoken alerts: follow/sub/gift/raid/superchat/member/reward: optional sound file first, then the voice reads a template; one per kind per burst window.
+- Tests: tests/integration/34-rewards-sounds.test.mjs (MOCKED Kick socket, Twitch sign-in/Helix/EventSub) 2/2 pass.
+- NOT verified live: Kick's real reward event name/fields, Kick reward API scopes/endpoints, Streamer.bot reward event payloads, real Twitch Affiliate channel.

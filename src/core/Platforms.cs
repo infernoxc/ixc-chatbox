@@ -218,13 +218,22 @@ namespace IXC {
       var uid = J.Str(Accounts.Info("twitch"), "userId", "");
       var body = J.Ser(J.D("type", "channel.follow", "version", "2", "condition", J.D("broadcaster_user_id", uid, "moderator_user_id", uid), "transport", J.D("method", "websocket", "session_id", session)));
       var r = await Task.Run(() => Accounts.Helix("POST", "eventsub/subscriptions", body));
-      if (r == null || !r.Ok) throw new Exception("Twitch didn't allow follower alerts (" + (r == null ? "sign-in needed" : r.Code + " " + U.Trunc(r.Body, 120)) + ")"); }
+      if (r == null || !r.Ok) throw new Exception("Twitch didn't allow follower alerts (" + (r == null ? "sign-in needed" : r.Code + " " + U.Trunc(r.Body, 120)) + ")");
+      RewardsState = "needs the Twitch reward permission (connect Twitch again)";
+      if (J.List(Accounts.Info("twitch"), "scopes").Contains("channel:manage:redemptions")) {
+        var rb = J.Ser(J.D("type", "channel.channel_points_custom_reward_redemption.add", "version", "1", "condition", J.D("broadcaster_user_id", uid), "transport", J.D("method", "websocket", "session_id", session)));
+        var rr = await Task.Run(() => Accounts.Helix("POST", "eventsub/subscriptions", rb));
+        RewardsState = rr != null && rr.Ok ? "listening" : "Twitch didn't allow reward events (" + (rr == null ? "sign-in needed" : rr.Code + (rr.Code == 403 ? " - channel points need Affiliate or Partner" : "")) + ")";
+        Log.Info("chat", "Twitch channel point rewards: " + RewardsState); } }
+    public static string RewardsState = "not connected";
     protected override void OnText(string raw) {
       var m = J.Parse(raw); var type = J.Str(m, "metadata.message_type", "");
       if (type == "session_welcome") { session = J.Str(m, "payload.session.id", ""); IdleTimeoutSec = J.Int(m, "payload.session.keepalive_timeout_seconds", 10) + 20; welcomed.Set(); }
       else if (type == "session_reconnect") { nextUrl = J.Str(m, "payload.session.reconnect_url", null); try { ws.Abort(); } catch { } }
       else if (type == "notification" && J.Str(m, "payload.subscription.type", "") == "channel.follow") {
-        var e = J.Obj(m, "payload.event"); Chat.Ingest(new ChatMsg { Platform = "twitch", Id = "follow-" + J.Str(e, "user_id", "") + "-" + J.Str(e, "followed_at", ""), Kind = "follow", Name = J.Str(e, "user_name", "someone"), Login = J.Str(e, "user_login", ""), Text = "followed" }); } }
+        var e = J.Obj(m, "payload.event"); Chat.Ingest(new ChatMsg { Platform = "twitch", Id = "follow-" + J.Str(e, "user_id", "") + "-" + J.Str(e, "followed_at", ""), Kind = "follow", Name = J.Str(e, "user_name", "someone"), Login = J.Str(e, "user_login", ""), Text = "followed" }); }
+      else if (type == "notification" && J.Str(m, "payload.subscription.type", "") == "channel.channel_points_custom_reward_redemption.add") {
+        var e = J.Obj(m, "payload.event"); Rewards.OnRedeem("twitch", J.Str(e, "id", ""), J.Str(e, "reward.id", ""), J.Str(e, "reward.title", ""), J.Str(e, "user_name", "someone"), J.Str(e, "user_login", null), J.Str(e, "user_id", ""), J.Str(e, "user_input", ""), "ixc"); } }
   }
 
   // ======================= Kick (public chat socket; official API with a sign-in) =======================
@@ -341,9 +350,15 @@ namespace IXC {
       var got = await Task.Run(() => WaitHandle.WaitAny(new[] { established.WaitHandle, refused.WaitHandle }, 10000)); if (got == 1) throw new Exception("Kick refused the chat key"); if (got != 0) throw new Exception("Kick chat did not answer");
       foreach (var ch in new[] { "chatrooms." + src.ChatroomId + ".v2", "chatroom_" + src.ChatroomId, "channel." + src.ChannelId, "channel_" + src.ChannelId })
         if (!ch.EndsWith(".") && !ch.EndsWith("_")) await Tx(J.Ser(J.D("event", "pusher:subscribe", "data", J.D("auth", "", "channel", ch)))); }
+    static void KickReward(Dictionary<string, object> d) {
+      Func<string[], string> F = ks => { foreach (var k in ks) { var v = J.Str(d, k, ""); if (v.Length > 0) return v; } return ""; };
+      Rewards.OnRedeem("kick", F(new[] { "id", "redemption_id", "redemption.id" }), F(new[] { "reward_id", "reward.id" }), F(new[] { "reward_title", "reward.title", "title" }), F(new[] { "username", "user.username", "redeemer.username", "user_name" }),
+        F(new[] { "user.slug", "redeemer.slug", "username" }), F(new[] { "user_id", "user.id", "redeemer.user_id" }), F(new[] { "user_input", "input", "redemption.user_input" }), "ixc"); }
     protected override void OnText(string raw) {
       var m = J.Parse(raw); var ev = J.Str(m, "event", ""); var dataRaw = J.Get(m, "data");
       var data = dataRaw is string ? J.Parse((string)dataRaw) : dataRaw as Dictionary<string, object> ?? new Dictionary<string, object>();
+      // channel point claims: Kick has named this event differently over time, so any "...Reward..." event counts (its field names are logged for support)
+      if (ev.IndexOf("Reward", StringComparison.OrdinalIgnoreCase) >= 0) { Log.Info("chat", "Kick " + ev + " (fields: " + string.Join(",", data.Keys.Take(20)) + ")"); KickReward(data); return; }
       switch (ev) {
         case "pusher:connection_established": established.Set();
           if (key != null || cluster != null) { if (key != null) Cfg.Set("platforms.kick.pusherKey", key); if (cluster != null) Cfg.Set("platforms.kick.pusherCluster", cluster); Cfg.SaveNow(); Log.Info("chat", "Kick chat works with key " + Key + " on cluster " + Cluster + " - saved"); key = null; cluster = null; } tried = 0; keysTried = 0; return;
@@ -646,7 +661,9 @@ namespace IXC {
         "Twitch", new[] { "ChatMessage", "ViewerCountUpdate", "StreamOnline", "StreamOffline", "ChatMessageDeleted", "UserBanned", "UserTimedOut", "Follow", "Sub", "ReSub", "GiftSub", "Raid" },
         "YouTube", new[] { "Message", "StatisticsUpdated", "BroadcastStarted", "BroadcastEnded", "MessageDeleted", "UserBanned", "SuperChat", "NewSponsor" },
         "Kick", new[] { "ChatMessage", "ViewerCountUpdate", "StreamOnline", "StreamOffline", "ChatMessageDeleted", "UserBanned", "UserTimedOut", "Follow", "Subscription", "GiftSubscription" }))), 5000);
-      if (sub == null || J.Str(sub, "status", "ok") != "ok") throw new Exception("Streamer.bot did not accept the event subscription"); }
+      if (sub == null || J.Str(sub, "status", "ok") != "ok") throw new Exception("Streamer.bot did not accept the event subscription");
+      var rs = await Ask("subr", J.Ser(J.D("request", "Subscribe", "id", "subr", "events", J.D("Twitch", new[] { "RewardRedemption" }, "Kick", new[] { "RewardRedemption" }))), 5000);
+      Log.Info("streamerbot", "reward events: " + (rs != null && J.Str(rs, "status", "ok") == "ok" ? "on" : "not available in this Streamer.bot")); }
     protected override void OnConnected() { Task.Run(() => LoadBroadcasters()); cmdAt = DateTime.MinValue; Task.Run(() => Chat.PushSuggestions()); }
     async Task LoadBroadcasters() {
       var r = await Request(J.D("request", "GetBroadcaster"), 5000); if (r == null) return;
@@ -711,6 +728,11 @@ namespace IXC {
       if (type == "StreamOffline" || type == "BroadcastEnded") { if (vs != null && !Platforms.HandlesViewers(src)) vs.Viewers.Set(null, false, "Streamer.bot", null); return; }
       if (type == "ChatMessageDeleted" || type == "MessageDeleted") { Chat.Delete(src, Pick(G(data, "messageId"), G(data, "msgId"), G(data, "targetMessageId"), G(data, "id")), null); return; }
       if (type == "UserBanned" || type == "UserTimedOut") { var u = G(data, "user") as Dictionary<string, object>; Chat.Delete(src, null, Pick(u == null ? null : G(u, "login"), u == null ? null : G(u, "name"), G(data, "userName"), G(data, "username"))); return; }
+      if (type == "RewardRedemption" || type == "RewardRedeemed") {   // fields differ per version: data.reward.title / data.rewardTitle / data.title
+        var rw = G(data, "reward") as Dictionary<string, object>; var u = G(data, "user") as Dictionary<string, object>;
+        Rewards.OnRedeem(src, Pick(G(data, "id"), G(data, "redemptionId")), Pick(rw == null ? null : G(rw, "id"), G(data, "rewardId")), Pick(rw == null ? null : G(rw, "title"), G(data, "rewardTitle"), G(data, "title")),
+          Pick(u == null ? null : G(u, "name"), G(data, "userName"), G(data, "username"), G(data, "user_name")), Pick(u == null ? null : G(u, "login"), G(data, "userLogin")), Pick(u == null ? null : G(u, "id"), G(data, "userId")), Pick(G(data, "userInput"), G(data, "user_input"), G(data, "input"), G(data, "rawInput")), "streamerbot");
+        return; }
       var cm = Parse(src, data); if (cm == null) return; cm.Via = "streamerbot";
       if (type == "Follow") { cm.Kind = "follow"; cm.Text = "followed"; } else if (type == "Sub" || type == "ReSub" || type == "Subscription" || type == "NewSponsor") { cm.Kind = "sub"; if (string.IsNullOrEmpty(cm.Text)) cm.Text = "subscribed"; }
       else if (type == "GiftSub" || type == "GiftSubscription") { cm.Kind = "gift"; cm.Text = "gifted a sub"; } else if (type == "Raid") { cm.Kind = "raid"; cm.Text = "raided"; }

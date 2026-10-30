@@ -16,9 +16,11 @@ using System.Threading.Tasks;
 
 namespace IXC {
   public static class Accounts {
-    public static readonly string[] TwitchScopes = { "chat:read", "chat:edit", "moderator:read:followers", "channel:read:subscriptions", "moderator:manage:chat_messages", "moderator:manage:banned_users", "clips:edit" };
+    public static readonly string[] TwitchScopes = { "chat:read", "chat:edit", "moderator:read:followers", "channel:read:subscriptions", "moderator:manage:chat_messages", "moderator:manage:banned_users", "clips:edit", "channel:manage:redemptions" };
     const string GoogleScope = "https://www.googleapis.com/auth/youtube.force-ssl";
-    static readonly string[] KickScopes = { "user:read", "channel:read", "chat:write", "moderation:ban" };
+    static readonly string[] KickBase = { "user:read", "channel:read", "chat:write", "moderation:ban" };
+    // Kick reward management only when the streamer turns it on (an extra permission on the next Kick sign-in)
+    static string[] KickScopes { get { return Settings.Bool("rewards.kickManage") ? KickBase.Concat(new[] { "channel:rewards:read", "channel:rewards:write" }).ToArray() : KickBase; } }
     static readonly object L = new object();
     static readonly Dictionary<string, Dictionary<string, object>> Flows = new Dictionary<string, Dictionary<string, object>>();   // sign-ins in progress
 

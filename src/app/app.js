@@ -7,7 +7,7 @@ window.App = (() => {
   const pages = {}; let current = null, listeners = [];
   const DOCK = new URLSearchParams(location.search).get('dock') === '1'; if (DOCK) document.body.classList.add('dock');
   const NAV = [['home', '🏠', 'Overview'], ['', '', 'Live'], ['chat', '💬', 'Chat'], ['accounts', '🔗', 'Platforms & Accounts'], ['multistream', '📡', 'Streams'],
-    ['', '', 'Automation'], ['automation', '🤖', 'Automation Studio'], ['commands', '⌨️', 'Commands'], ['timers', '⏱️', 'Timers'], ['filters', '🛡️', 'Chat filters'],
+    ['', '', 'Automation'], ['automation', '🤖', 'Automation Studio'], ['commands', '⌨️', 'Commands'], ['timers', '⏱️', 'Timers'], ['rewards', '🎁', 'Rewards & sounds'], ['filters', '🛡️', 'Chat filters'],
     ['', '', 'OBS'], ['obs', '🎬', 'OBS Control'],
     ['', '', 'Audio & Music'], ['music', '🎵', 'Music'], ['requests', '🙋', 'Song requests'], ['audio', '🎚️', 'Audio routing'], ['tts', '🔊', 'Chat voice (TTS)'], ['voices', '🎙️', 'Voices for people'],
     ['', '', 'More'], ['overlays', '🖼️', 'Overlays & docks'], ['phone', '📱', 'Phone remote'],

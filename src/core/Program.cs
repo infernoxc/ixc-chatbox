@@ -166,7 +166,7 @@ namespace IXC {
       if (Viewers.Api(ctx, path, q) || NowPlaying.Api(ctx, path) || Timers.Api(ctx, path, m) || Moderation.Api(ctx, path, m) || Multistream.Api(ctx, path, m) || SbManager.Api(ctx, path, m) || Outputs.Api(ctx, path, m)) return;
       if (Routing.Api(ctx, path, m)) return;
       if (HasMusic && Music.Api(ctx, path, m, q)) return;
-      if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q))) return;
+      if (HasChat && (Chat.Api(ctx, path, m, q) || Tts.Api(ctx, path, m, q) || Rewards.Api(ctx, path, m, q) || Sounds.Api(ctx, path, m, q))) return;
       if (Remote.LocalApi(ctx, path, m)) return;
       Http.Json(ctx, 404, J.D("error", "unknown api"));
     }

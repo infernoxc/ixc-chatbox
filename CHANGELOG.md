@@ -3,6 +3,14 @@ All notable changes are listed here ([Keep a Changelog](https://keepachangelog.c
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-10-30
+### Added
+- Channel point rewards for Twitch and Kick (new page Rewards & sounds): song request, any chat command, sound effect, read the message aloud, chat message; title, cost, description, viewer text, cooldown, colour and platforms per reward; 9 ready-made rewards. IXC creates and updates them on Twitch (new Twitch permission `channel:manage:redemptions`, connect Twitch again once) and, when switched on, on Kick. Claims from Twitch EventSub, Kick's chat socket, Streamer.bot (`RewardRedemption`) or `POST /api/rewards/redeem`; duplicates count once. A failed song request gives the Twitch points back. Test 34.
+- Sound effects: up to 20 named sound files with volume and cooldown, played through the IXC TTS source; `!sound name` / `!sounds`; upload or file path.
+- Alerts read aloud (off by default): follow, sub, gift, raid, Super Chat, member, reward claim; an optional sound first, a text per kind, one per burst.
+### Not verified live
+- Kick reward claims and Kick's reward API, Streamer.bot reward payloads, Twitch rewards on an Affiliate channel (tested against simulated servers only).
+
 ## [3.3.1] - 2026-10-30
 ### Added
 - Chat commands for the music player and the chat voice, moderators only by default: `!shuffle`, `!repeat` (on, off or flip), `!volume` (40, +10, -10), `!previous` / `!prev`, `!ttsvolume`, `!ttsspeed`, `!ttsvoice` (lists voices or picks one), `!ttspause`, `!ttsresume`, `!ttsclear`. Add them from Commands > Ready-made commands, together with `!skip`, `!pause`, `!resume`, `!queue`, `!ttsskip`, `!ttson`, `!ttsoff`. Test 31.
