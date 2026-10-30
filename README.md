@@ -17,6 +17,8 @@ with song requests, overlays, and a phone remote that works on mobile data. Made
 
 ---
 
+> **New to OBS, IXC or Streamer.bot?** Start with the step-by-step [First-time setup guide](docs/FIRST-TIME-SETUP.md).
+
 ## Get started (5 minutes)
 
 1. **Install OBS Studio** (free, [obsproject.com](https://obsproject.com)) if you don't have it, and open it once.

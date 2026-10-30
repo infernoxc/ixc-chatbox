@@ -2,6 +2,24 @@
 All notable changes are listed here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)).
 
 ## [Unreleased]
+### Added
+- Chat commands for the music player and the chat voice, moderators only by default: `!shuffle`, `!repeat` (on, off or flip), `!volume` (40, +10, -10), `!previous` / `!prev`, `!ttsvolume`, `!ttsspeed`, `!ttsvoice` (lists voices or picks one), `!ttspause`, `!ttsresume`, `!ttsclear`. Add them from Commands > Ready-made commands, together with `!skip`, `!pause`, `!resume`, `!queue`, `!ttsskip`, `!ttson`, `!ttsoff`. Test 31.
+- Chat voice: Azure AI Speech as the main engine, with Windows voices as backup (docs/VOICES.md). Paste your own region and key on the Chat voice page (stored encrypted, never shown again). The voice list comes from Azure itself: native Indian English and Hindi voices (male and female), multilingual voices that list Hindi, and a soft whisper voice.
+- Speech engine choice: Automatic, Azure only, Windows only. The backup Windows voice always speaks the same language, and Devanagari text needs a Hindi voice. When none is installed, the message says what to install.
+- Azure timeout, retries and a cooldown after errors (no repeated calls; Azure comes back by itself). Skip and Clear abort a voice that is still being made. Long messages are split at sentence ends.
+- 🎧 Preview here: hear a voice in the dashboard before choosing it (not on stream, not queued). Language filter for the voice list, status lines for Azure and the offline backup, and a pronunciation list (`word=how to say it`).
+### Fixed
+- Custom voices added in settings show up straight away (the voice list was cached for 10 seconds).
+- The Streams page now has its own entry in the IXC menu (it could only be reached by its address).
+### Changed
+- docs/FIRST-TIME-SETUP.md: IXC screenshots (Streamer.bot page, Audio routing), upload-speed check, Streamer.bot connection troubleshooting table, 8000 kbps note, go-live checks.
+
+## [3.3.0] - 2026-10-27
+First official 3.3.0 release: everything from 3.3.0-rc.1 to rc.3 below.
+
+## [3.3.0-rc.3] - 2026-10-27 (pre-release)
+### Added
+- docs/FIRST-TIME-SETUP.md: complete beginner guide (OBS, IXC, Streamer.bot incl. Kick.bot, Aitum Multistream with one shared encoder, replay and vertical clips, troubleshooting) with an overview diagram.
 
 ## [3.3.0-rc.2] - 2026-10-27 (pre-release)
 ### Added
